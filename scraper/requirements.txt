@@ -1,0 +1,7 @@
+playwright>=1.40
+beautifulsoup4>=4.12
+requests>=2.31
+pandas>=2.0
+rapidfuzz>=3.0
+lxml>=4.9
+html5lib>=1.1
