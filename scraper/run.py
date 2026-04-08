@@ -29,6 +29,7 @@ from scraper_static import scrape_static
 from scraper_js import scrape_js
 from normalizer import normalize, deduplicate
 from storage import save_league_csv, append_to_master
+import extractors.registry as _extractor_registry
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,7 +52,15 @@ def scrape_league(league: dict, dry_run: bool = False) -> pd.DataFrame:
         "JS" if league.get("js_required") else "Static",
     )
 
-    raw = scrape_js(url, name) if league.get("js_required") else scrape_static(url, name)
+    # Check for a custom extractor first
+    custom = _extractor_registry.get_extractor(url)
+    if custom:
+        logger.info("Using custom extractor: %s", custom.__name__)
+        raw = custom(url, name)
+    elif league.get("js_required"):
+        raw = scrape_js(url, name)
+    else:
+        raw = scrape_static(url, name)
 
     if not raw:
         logger.warning("No clubs found for league: %s", name)
