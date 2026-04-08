@@ -1,0 +1,16 @@
+source_name,platform_name,source_kind,source_url,verification_status,notes
+MLS NEXT Clubs,MLS NEXT,official_directory,https://www.mlsnextsoccer.com/clubs,verified,Primary club directory
+ECNL Directory,ECNL,official_directory,https://theecnl.com/sports/directory,verified,Primary ECNL directory
+ECNL RL Boys,ECNL RL,official_league_page,https://theecnl.com/sports/ecnl-regional-league-boys,verified,Regional league entry point
+ECNL RL Girls,ECNL RL,official_league_page,https://theecnl.com/sports/ecnl-regional-league-girls,verified,Regional league entry point
+GA Members,Girls Academy,official_directory,https://girlsacademyleague.com/members/,verified,Primary GA member directory
+GA Aspire Membership,Girls Academy Aspire,official_directory,https://girlsacademyleague.com/aspire-membership/,verified,Primary Aspire member directory
+GA Aspire Overview,Girls Academy Aspire,official_program_page,https://girlsacademyleague.com/aspire/,verified,Explains tier-two structure
+DPL Home,DPL,official_site,https://dpleague.org/,verified,Use as seed to discover clubs/divisions
+US Club NPL Program,NPL,official_program_page,https://usclubsoccer.org/npl/,verified,National platform home
+US Club Leagues Program,US Club Soccer,official_program_page,https://usclubsoccer.org/programs/leagues/,verified,Program family page for league discovery
+USYS State Associations,US Youth Soccer,official_directory,https://www.usyouthsoccer.org/state-associations/,verified,Gateway to state-association sites
+USYS About,US Youth Soccer,official_org_page,https://www.usyouthsoccer.org/about/,verified,Contains 54 member-association context
+USL Academy League,USL Academy,official_league_page,https://www.usl-academy.com/academy-league,verified,League structure root
+USL Academy Standings,USL Academy,official_competition_page,https://www.usl-academy.com/league-standings,verified,Useful for club/team extraction
+ECNL Staff Directory,ECNL,official_directory,https://theecnl.com/sports/2024/11/12/Directory_1112240348.aspx,verified,Conference/territory hints including Pre-ECNL and RL
