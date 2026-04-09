@@ -41,3 +41,14 @@ from extractors import dpl             # noqa: E402, F401
 from extractors import edp             # noqa: E402, F401
 from extractors import socal           # noqa: E402, F401
 from extractors import mspsp           # noqa: E402, F401
+from extractors import tcsl            # noqa: E402, F401
+from extractors import az_soccer       # noqa: E402, F401
+from extractors import sssl            # noqa: E402, F401
+from extractors import frontier        # noqa: E402, F401
+from extractors import central_states  # noqa: E402, F401
+from extractors import mountain_west   # noqa: E402, F401
+from extractors import ne_impact       # noqa: E402, F401
+from extractors import supery          # noqa: E402, F401
+from extractors import heartland       # noqa: E402, F401
+from extractors import mapl            # noqa: E402, F401
+from extractors import npl_extra       # noqa: E402, F401

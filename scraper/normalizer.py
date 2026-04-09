@@ -36,6 +36,37 @@ _STRIP_PATTERN = re.compile(
 
 _WHITESPACE = re.compile(r"\s+")
 
+# Non-club strings that can appear when a generic HTML scraper picks up
+# page navigation / social media / boilerplate text.
+_GARBAGE_EXACT: frozenset = frozenset({
+    "skip to main content", "skip to primary navigation", "skip to content",
+    "skip to navigation", "skip to footer", "skip to main content",
+    "facebook", "twitter", "instagram", "youtube", "tiktok", "linkedin",
+    "pinterest", "snapchat", "vimeo", "flickr", "rss", "email",
+    "menu", "search", "close", "home", "about", "contact",
+    "like us", "tweet", "follow us",
+})
+
+_GARBAGE_PREFIXES: tuple = (
+    "skip to ", "skip to ", "connect with ", "follow us",
+    "sign up", "log in", "register ", "like us on ", "tweet ",
+)
+
+
+def is_valid_club_name(name: str) -> bool:
+    """Return False if name is a known-garbage navigation or social-media token."""
+    if not isinstance(name, str):
+        return False
+    stripped = name.strip()
+    if len(stripped) < 3:
+        return False
+    lower = stripped.lower()
+    if lower in _GARBAGE_EXACT:
+        return False
+    if any(lower.startswith(p) for p in _GARBAGE_PREFIXES):
+        return False
+    return True
+
 
 def _canonical(name: str) -> str:
     """Return a normalised canonical form of a club name."""
@@ -70,6 +101,12 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     df = df.copy()
+    # Filter out navigation/social-media garbage before canonicalising
+    before = len(df)
+    df = df[df["club_name"].apply(is_valid_club_name)].reset_index(drop=True)
+    dropped = before - len(df)
+    if dropped:
+        logger.warning("Filtered %d garbage club-name entries", dropped)
     df["canonical_name"] = df["club_name"].apply(_canonical)
     logger.info("Normalization complete: %d records", len(df))
     return df
