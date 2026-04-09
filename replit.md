@@ -28,11 +28,13 @@ scraper/
 │   ├── norcal.py         # NorCal Premier Soccer (/clubs/ table)
 │   ├── ecnl.py           # ECNL (AthleteOne API + Playwright fallback)
 │   ├── dpl.py            # DPL (WordPress pages + Playwright bracket pages)
-│   └── edp.py            # EDP Soccer (Wix static crawl)
+│   ├── edp.py            # EDP Soccer (Wix static crawl)
+│   └── state_assoc.py    # All 54 USYS tier-4 state associations (GotSport + Maps KML)
 ├── data/
-│   ├── leagues_master.csv              # 89-row league inventory (source of truth)
+│   ├── leagues_master.csv              # 98-row league inventory (source of truth)
 │   ├── league_sources_seed.csv         # Official scrape source registry
 │   ├── usys_state_associations_seed.csv # All 54 USYS member associations
+│   ├── state_assoc_config.json         # Maps state URL → {type, events/map_ids}
 │   └── canonical_schema.sql            # Postgres schema for canonical club graph
 └── output/
     ├── master.csv                       # Deduplicated master dataset
@@ -88,7 +90,9 @@ python3 run.py --list                  # print full league inventory and exit
 
 **ECNL AthleteOne API discovery**: The correct URL format is `/{event_id}/{org_id}/{org_season_id}/0/0`. Calling with event_id=0 returns the default conference data PLUS a full `<select id="event-select">` dropdown listing all conference event_ids. Each org_season maps to: 70=Boys ECNL, 69=Girls ECNL, 72=Boys RL, 71=Girls RL. The extractor auto-discovers all conference event_ids on each run.
 
-**GotSport pattern**: Several leagues (SOCAL, MSPSP) host their club rosters at `system.gotsport.com/org_event/events/{event_id}/clubs`. Use `extractors/gotsport.py` shared helper. Filter ZZ- rows (admin placeholders).
+**GotSport pattern**: Several leagues (SOCAL, MSPSP, state associations) host their club rosters at `system.gotsport.com/org_event/events/{event_id}/clubs`. Use `extractors/gotsport.py` shared helper. Filter ZZ- rows (admin placeholders).
+
+**State association strategy**: 54 USYS tier-4 sites were crawled for machine-readable data. Two methods found: GotSport event links (19 states) and Google My Maps KML feeds (6 states). Config in `data/state_assoc_config.json`. To add more states: add a `"type": "gotsport"` or `"type": "google_maps"` entry (with events/map_ids) after finding the IDs on the state's website. The 29 states with no current source return 0 clubs gracefully.
 
 ### Adding a League
 
