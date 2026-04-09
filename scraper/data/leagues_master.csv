@@ -13,8 +13,8 @@ NPL,National Premier Leagues,US Club Soccer,2,National / Regional High Performan
 USYS National League,USYS National League,US Youth Soccer,2,National / Regional High Performance,boys_and_girls,national_regional,True,high,program,https://www.usyouthsoccer.org/national-league/,USYS national platform
 USYS National League Conferences,USYS National League,US Youth Soccer,2,National / Regional High Performance,boys_and_girls,regional,True,high,program,https://www.usyouthsoccer.org/national-league/,Conference-based competition
 USYS National League P.R.O.,USYS National League,US Youth Soccer,2,National / Regional High Performance,boys_and_girls,national,True,medium,program,https://www.usyouthsoccer.org/national-league/,Top competition layer inside National League
-Pre-ECNL Boys,ECNL,ECNL,2,Pre-Elite Development,boys,regional,False,medium,staff_directory,https://theecnl.com/sports/2024/11/12/Directory_1112240348.aspx,Useful for younger pipeline mapping
-Pre-ECNL Girls,ECNL,ECNL,2,Pre-Elite Development,girls,regional,False,medium,staff_directory,https://theecnl.com/sports/2024/11/12/Directory_1112240348.aspx,Useful for younger pipeline mapping
+Pre-ECNL Boys,ECNL,ECNL,2,Pre-Elite Development,boys,regional,True,medium,athleteone_api,https://theecnl.com/sports/2024/11/12/Directory_1112240348.aspx,Useful for younger pipeline mapping; AthleteOne API org_season=67(Boys)/66(Girls)
+Pre-ECNL Girls,ECNL,ECNL,2,Pre-Elite Development,girls,regional,True,medium,athleteone_api,https://theecnl.com/sports/2024/11/12/Directory_1112240348.aspx,Useful for younger pipeline mapping; AthleteOne API org_season=67(Boys)/66(Girls)
 EDP Soccer,EDP,Independent / USYS-linked,3,Regional Power League,boys_and_girls,regional,True,high,homepage,https://www.edpsoccer.com/,Major East Coast ecosystem
 SCCL,Southeastern Clubs Champions League,Independent / USYS-linked,3,Regional Power League,boys_and_girls,regional,True,high,homepage,https://www.sccl.org/,Major Southeast ecosystem
 CCL,Club Champions League,Independent,3,Regional Power League,boys_and_girls,regional,True,high,homepage,https://www.clubchampionsleague.com/,Mid-Atlantic regional ecosystem
@@ -88,3 +88,5 @@ US Club Soccer iD,US Club Soccer,US Club Soccer,2,National / Regional High Perfo
 Heartland Soccer Association,NPL,US Club Soccer,3,NPL Member League,boys_and_girls,regional,True,medium,homepage,https://www.heartlandsoccer.net/,Large Kansas/Missouri NPL member; one of the biggest regional operators
 NorCal NPL,NPL,US Club Soccer,3,NPL Member League,boys_and_girls,regional,True,medium,homepage,https://norcalpremier.com/npl/,NPL division of NorCal Premier; clubs overlap with NorCal Premier roster
 Sunshine State Soccer League,NPL,US Club Soccer,3,NPL Member League,boys_and_girls,regional,True,medium,homepage,https://www.sssl.net/,Florida NPL member; one of the largest Southeast operators
+Pre-ECNL North Boys,ECNL,ECNL,2,Pre-Elite Development,boys,regional,True,medium,athleteone_api,https://theecnl.com/sports/2024/11/12/Directory_1112240348.aspx,AthleteOne API org_season=76; younger age groups (B2015)
+Pre-ECNL North Girls,ECNL,ECNL,2,Pre-Elite Development,girls,regional,True,medium,athleteone_api,https://theecnl.com/sports/2024/11/12/Directory_1112240348.aspx,AthleteOne API org_season=75; younger age groups (G2015)

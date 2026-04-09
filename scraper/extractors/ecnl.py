@@ -45,9 +45,14 @@ _HEADERS = {
 _BASE = "https://api.athleteone.com/api/Script/get-conference-standings"
 _ORG_ID = 12
 
-# Strip " ECNL B13Qualification:..." or " ECNL RL G12..." suffix
+# Strip " ECNL B13Qualification:..." or " ECNL RL G12..." or " - PRE ECNL B13..." suffix.
+# Handles all observed formats:
+#   "Oregon Premier ECNL B13"
+#   "Bloomingdale Lightning FC Pre-ECNL B13"
+#   "Chicago Magic  - PRE ECNL B13"   (space-dash-space before PRE)
+#   "Fort Lauderdale United FC ECNL RL G13"
 _CLUB_RE = re.compile(
-    r"^(.+?)\s+(?:Pre-)?ECNL(?:\s+RL)?\s+[BG]\d+",
+    r"^(.+?)\s+(?:-\s+)?(?:Pre[-\s]+)?ECNL(?:\s+RL)?\s+[BG]\d+",
     re.IGNORECASE,
 )
 
@@ -294,4 +299,41 @@ def scrape_ecnl_rl(url: str, league_name: str) -> List[Dict]:
         org_seasons = [71]
     else:
         org_seasons = [72, 71]
+    return _scrape_and_save_teams(org_seasons, league_name, url)
+
+
+@register(r"theecnl\.com/sports/2024/11/12/Directory")
+def scrape_pre_ecnl(url: str, league_name: str) -> List[Dict]:
+    """
+    Pre-ECNL and Pre-ECNL North — development league one tier below ECNL.
+
+    Org season IDs (org_id=12):
+      67 = Pre-ECNL Boys     (11 conferences, older age groups)
+      66 = Pre-ECNL Girls    ( 9 conferences, older age groups)
+      76 = Pre-ECNL North Boys  (16 conferences, younger B2015)
+      75 = Pre-ECNL North Girls (13 conferences, younger G2015)
+
+    Both "Pre-ECNL Boys/Girls" and "Pre-ECNL North Boys/Girls" share the
+    same directory URL, so we dispatch based on league_name.
+
+    Team name formats observed:
+      "Bloomingdale Lightning FC Pre-ECNL B13"
+      "Chicago Magic  - PRE ECNL B13"
+    Both are handled by the updated _CLUB_RE.
+    """
+    name_lower = league_name.lower()
+    logger.info("[Pre-ECNL custom] Scraping %s via AthleteOne API", league_name)
+
+    if "north" in name_lower and "boys" in name_lower:
+        org_seasons = [76]
+    elif "north" in name_lower and "girls" in name_lower:
+        org_seasons = [75]
+    elif "boys" in name_lower:
+        org_seasons = [67]
+    elif "girls" in name_lower:
+        org_seasons = [66]
+    else:
+        # Scrape all four Pre-ECNL org_seasons
+        org_seasons = [67, 66, 76, 75]
+
     return _scrape_and_save_teams(org_seasons, league_name, url)

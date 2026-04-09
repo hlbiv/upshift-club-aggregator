@@ -106,7 +106,7 @@ def _load_leagues() -> List[Dict]:
 
     state_map = _load_state_region_map()
     leagues: List[Dict] = []
-    seen_urls: set = set()
+    seen_keys: set = set()
 
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
@@ -118,12 +118,15 @@ def _load_leagues() -> List[Dict]:
             if not url:
                 continue
 
-            # Deduplicate entries that share the same URL (e.g. USYS NL rows)
-            if url in seen_urls:
-                continue
-            seen_urls.add(url)
-
             name = row.get("league_name", "").strip()
+
+            # Deduplicate on (url, name) — same URL is allowed for distinct leagues
+            # (e.g. Pre-ECNL Boys/Girls share the same directory page but are different products)
+            key = (url, name)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+
             source_type = row.get("source_type", "").strip()
 
             # For USYS state associations, look up the region abbreviation
