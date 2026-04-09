@@ -52,7 +52,10 @@ def save_league_csv(df: pd.DataFrame, league_name: str) -> str:
 
 def append_to_master(df: pd.DataFrame) -> str:
     """
-    Append `df` to the master CSV, creating it if absent.
+    Upsert `df` into the master CSV, creating it if absent.
+
+    Deduplicates on (club_name, league_name) keeping the newest row for
+    any duplicate key so that re-running a league extractor is idempotent.
 
     Returns the path of the master file.
     """
@@ -60,10 +63,19 @@ def append_to_master(df: pd.DataFrame) -> str:
     df_out = _ensure_columns(df)
 
     if os.path.exists(MASTER_CSV):
-        existing = pd.read_csv(MASTER_CSV)
+        existing = pd.read_csv(MASTER_CSV, dtype=str).fillna("")
         combined = pd.concat([existing, df_out], ignore_index=True)
     else:
         combined = df_out
+
+    # Deduplicate: keep last occurrence (newest run) for each (club_name, league_name)
+    dedup_keys = [c for c in ("club_name", "league_name") if c in combined.columns]
+    if dedup_keys:
+        before = len(combined)
+        combined = combined.drop_duplicates(subset=dedup_keys, keep="last")
+        removed = before - len(combined)
+        if removed:
+            logger.info("Master dedup removed %d duplicate rows", removed)
 
     combined.to_csv(MASTER_CSV, index=False)
     logger.info("Master CSV updated: %d total records", len(combined))

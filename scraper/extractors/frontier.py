@@ -2,10 +2,12 @@
 Custom extractor for US Club NPL – Frontier Premier League.
 
 GotSport events covering Frontier Premier League (midwest/south region NPL):
-  44015 – Frontier Premier League 2024    (15 clubs)
-  50988 – Frontier Premier League 2025-26 (14 clubs)
+  44015 – Frontier Premier League 2024     (15 clubs; MO/AR/OK/TX)
+  50987 – Frontier Premier League 2025-26B (17 clubs; OK division)
+  50988 – Frontier Premier League 2025-26A (14 clubs; MO/AR/OK/TX)
 
-Both events are merged and deduplicated. Clubs span MO, AR, OK, TX.
+All three events are merged and deduplicated. Clubs span MO, AR, OK, TX.
+Events 50987 and 50988 are two divisions of the same 2025-26 season.
 State left empty because Frontier covers multiple states.
 """
 
@@ -22,7 +24,8 @@ logger = logging.getLogger(__name__)
 
 _EVENTS = [
     (44015, "Frontier Premier 2024"),
-    (50988, "Frontier Premier 2025-26"),
+    (50987, "Frontier Premier 2025-26B (OK)"),
+    (50988, "Frontier Premier 2025-26A"),
 ]
 _STATE = ""
 
