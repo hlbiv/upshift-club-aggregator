@@ -27,6 +27,11 @@ python3 run.py --priority high
 
 # Scrape everything
 python3 run.py
+
+# After scraping ECNL-family leagues, enrich club records with official names + city/state
+python3 enrich_clubs.py                          # all ECNL-family leagues
+python3 enrich_clubs.py --leagues "ECNL Boys"    # filtered subset
+python3 enrich_clubs.py --dry-run                # preview without HTTP calls
 ```
 
 ---
@@ -55,14 +60,19 @@ Modes:
 ```
 output/
 ├── master.csv                  # Deduplicated master dataset across all leagues
-└── leagues/
-    ├── mls-next.csv
-    ├── ecnl.csv
-    ├── girls-academy.csv
-    └── ...                     # One file per scraped league
+├── clubs_enriched.csv          # ECNL-family clubs with official names + city/state/zip
+├── leagues/
+│   ├── mls-next.csv
+│   ├── ecnl.csv
+│   ├── girls-academy.csv
+│   └── ...                     # One file per scraped league
+└── teams/
+    ├── ecnl.csv                # Full team standings with AthleteOne IDs
+    ├── ecnl-regional-league-boys.csv
+    └── ...                     # One file per league with per-team standings rows
 ```
 
-### CSV Schema
+### Club Schema (`master.csv`, `leagues/*.csv`)
 
 | Column | Description |
 |---|---|
@@ -72,6 +82,36 @@ output/
 | `city` | City if available from source |
 | `state` | State/region (injected from seed for state-association entries) |
 | `source_url` | URL that was scraped |
+
+### Team Schema (`teams/*.csv`)
+
+| Column | Description |
+|---|---|
+| `club_name` | Extracted club name from team row |
+| `team_name_raw` | Full raw team string (e.g. "Oregon Premier ECNL B13Qualification:...") |
+| `age_group` | 2-digit birth year (e.g. "13" for B2013) |
+| `gender` | `Male` / `Female` |
+| `conference` | Conference name (e.g. "ECNL Boys Far West 2025-26") |
+| `org_season_id` | AthleteOne org_season ID (70=Boys ECNL, 69=Girls ECNL, …) |
+| `event_id` | AthleteOne conference event_id |
+| `club_id` | AthleteOne club_id — used for address enrichment |
+| `team_id` | AthleteOne team_id |
+| `rank`, `gp`, `w`, `l`, `d`, `gf`, `ga`, `gd`, `ppg`, `pts` | Current standings stats |
+
+### Enriched Club Schema (`clubs_enriched.csv`)
+
+| Column | Description |
+|---|---|
+| `club_id` | AthleteOne club_id (unique per club) |
+| `club_name_official` | Official name registered in AthleteOne (authoritative for canonicalization) |
+| `club_name_scraped` | Name as it appears in standings (may differ — use for alias linking) |
+| `address_line1` | Street address |
+| `city` | City |
+| `state` | State (full name, title-cased) |
+| `zip` | ZIP / postal code |
+| `event_id` | Conference event_id used for the API call |
+| `league_name` | League the team record came from |
+| `api_url` | Full get-club-info URL for reference |
 
 ---
 

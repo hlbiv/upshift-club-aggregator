@@ -22,6 +22,7 @@ CONTACTS_DIR = os.path.join(os.path.dirname(MASTER_CSV), "contacts")
 TEAMS_COLUMNS = [
     "club_name", "team_name", "team_name_raw", "age_group", "gender",
     "division", "bracket", "conference", "org_season_id", "event_id",
+    "club_id", "team_id",
     "league_name", "rank", "gp", "w", "l", "d", "gf", "ga", "gd",
     "ppg", "pts", "qualification", "source_url",
 ]

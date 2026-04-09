@@ -175,6 +175,12 @@ def _fetch_clubs_for_event(
         club, age_group, gender_letter, qualification = _parse_team_name(raw_name)
         gender = _GENDER_MAP.get(gender_letter, "")
 
+        # Extract AthleteOne IDs from the individual-team-item span
+        span = tds[1].find("span", class_="individual-team-item")
+        club_id = span.get("data-club-id", "") if span else ""
+        team_id = span.get("data-team-id", "") if span else ""
+        # data-event-id on the span equals the conference event_id we already have
+
         def _td(i: int) -> str:
             return tds[i].get_text(strip=True) if i < len(tds) else ""
 
@@ -186,6 +192,8 @@ def _fetch_clubs_for_event(
             "conference":    conf_name,
             "org_season_id": str(org_season_id),
             "event_id":      event_id,
+            "club_id":       club_id,
+            "team_id":       team_id,
             "qualification": qualification,
             "rank":  _td(0),
             "gp":    _td(2),
