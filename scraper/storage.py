@@ -83,7 +83,7 @@ def append_to_master(df: pd.DataFrame) -> str:
         if removed:
             logger.info("Master exact-dedup removed %d duplicate rows", removed)
 
-    # Pass 2: fuzzy dedup within each league group
+    # Pass 2: fuzzy dedup on the combined DataFrame
     # Ensure canonical_name is populated so deduplicate() can work.
     if "canonical_name" in combined.columns:
         missing_mask = combined["canonical_name"].fillna("").eq("")
@@ -91,18 +91,7 @@ def append_to_master(df: pd.DataFrame) -> str:
             combined.loc[missing_mask, "canonical_name"] = (
                 combined.loc[missing_mask, "club_name"].apply(_canonical)
             )
-
-    if "league_name" in combined.columns and "canonical_name" in combined.columns:
-        groups = []
-        for _league, grp in combined.groupby("league_name", sort=False):
-            grp_clean = grp[grp["canonical_name"].fillna("").ne("")]
-            grp_empty = grp[grp["canonical_name"].fillna("").eq("")]
-            if not grp_clean.empty:
-                groups.append(deduplicate(grp_clean.reset_index(drop=True)))
-            if not grp_empty.empty:
-                groups.append(grp_empty)
-        if groups:
-            combined = pd.concat(groups, ignore_index=True)
+        combined = deduplicate(combined.reset_index(drop=True))
 
     combined.to_csv(MASTER_CSV, index=False)
     logger.info("Master CSV updated: %d total records", len(combined))
