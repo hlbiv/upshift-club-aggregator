@@ -21,6 +21,14 @@ scraper/
 ├── storage.py            # Per-league CSV and master CSV writer
 ├── run.py                # CLI entry point
 ├── requirements.txt      # Python package list
+├── extractors/           # Per-site custom extractors (checked before generic scrapers)
+│   ├── registry.py       # URL-pattern → extractor function mapping
+│   ├── playwright_helper.py  # Shared Playwright render helper
+│   ├── girls_academy.py  # Girls Academy + GA Aspire (<article><li> structure)
+│   ├── norcal.py         # NorCal Premier Soccer (/clubs/ table)
+│   ├── ecnl.py           # ECNL (AthleteOne API + Playwright fallback)
+│   ├── dpl.py            # DPL (WordPress pages + Playwright bracket pages)
+│   └── edp.py            # EDP Soccer (Wix static crawl)
 ├── data/
 │   ├── leagues_master.csv              # 89-row league inventory (source of truth)
 │   ├── league_sources_seed.csv         # Official scrape source registry
@@ -62,6 +70,19 @@ python3 run.py --league "ECNL"         # single league by name (partial match)
 python3 run.py --dry-run               # run without writing files
 python3 run.py --list                  # print full league inventory and exit
 ```
+
+### Custom Extractor Results (live)
+
+| League | Extractor | Clubs collected |
+|---|---|---|
+| Girls Academy | `girls_academy.py` | 126 (with city, state, conference) |
+| GA Aspire | `girls_academy.py` | 100 (with city, state) |
+| NorCal Premier Soccer | `norcal.py` | 286 (with city, region) |
+| ECNL (all tiers combined) | `ecnl.py` via AthleteOne API | 86 (Pacific NW region only) |
+| DPL | `dpl.py` | 0 (bracket pages require Playwright + longer wait) |
+| EDP Soccer | `edp.py` | 0 (Wix site — static fallback finds noise) |
+
+ECNL note: AthleteOne API covers conference IDs 41–76 (Pacific NW region). Full national coverage (~500 clubs) requires Shadow DOM interaction for the event-select dropdown.
 
 ### Adding a League
 

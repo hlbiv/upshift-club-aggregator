@@ -109,6 +109,13 @@ All 54 official US Youth Soccer member associations. These are scraped with the 
 run.py
   └─ loads leagues from data/leagues_master.csv (filtered by your flags)
       └─ for each league:
+          ├─ custom extractor? → extractors/registry.py (URL-pattern lookup)
+          │    ├─ girlsacademyleague.com  → extractors/girls_academy.py
+          │    ├─ norcalpremier.com       → extractors/norcal.py
+          │    ├─ theecnl.com/sports/dir* → extractors/ecnl.py
+          │    ├─ theecnl.com/sports/ecnl-regional-league* → extractors/ecnl.py
+          │    ├─ dpleague.org            → extractors/dpl.py
+          │    └─ edpsoccer.com           → extractors/edp.py
           ├─ js_required=True  → scraper_js.py (Playwright headless Chromium)
           └─ js_required=False → scraper_static.py (requests + BeautifulSoup)
               └─ normalizer.py
@@ -121,7 +128,42 @@ run.py
 
 **JS detection** is inferred from `source_type` in the CSV. `state_association_hub` and `news` entries use static scraping; everything else uses Playwright.
 
-**Extraction priority**: tables → lists → anchor links. Falls back gracefully if a page layout changes.
+**Extraction priority**: custom extractor (if registered) → tables → lists → anchor links. Falls back gracefully if a page layout changes.
+
+---
+
+## Custom Extractors
+
+High-value leagues have site-specific extractors registered in `extractors/registry.py`.  Each extractor maps one or more URL patterns to a Python function that returns a clean `List[Dict]`.
+
+| League | Extractor | Data Source | Clubs (live) |
+|---|---|---|---|
+| Girls Academy (members) | `girls_academy.py` | `<article> <li>` HTML (WordPress) | ~126 |
+| GA Aspire (aspire-membership) | `girls_academy.py` | Same structure | ~100 |
+| NorCal Premier Soccer | `norcal.py` | `/clubs/` table (WordPress) | ~286 |
+| ECNL (directory) | `ecnl.py` | AthleteOne API (`api.athleteone.com`) | ~86 (Pacific NW) |
+| ECNL RL Boys/Girls | `ecnl.py` | AthleteOne API — RL conferences | ~8 per gender |
+| DPL | `dpl.py` | WordPress pages + Playwright on bracket pages | variable |
+| EDP Soccer | `edp.py` | Static + link crawl (Wix fallback) | variable |
+
+### Adding a Custom Extractor
+
+1. Create `extractors/<league>.py`
+2. Define a function and decorate with `@register(r"<url-pattern>")`
+3. Import the module in `extractors/registry.py` at the bottom
+
+```python
+# extractors/my_league.py
+from extractors.registry import register
+
+@register(r"myleague\.org/clubs")
+def scrape_my_league(url: str, league_name: str) -> list[dict]:
+    # ...return list of {"club_name": ..., "league_name": ..., "city": ..., "state": ..., "source_url": ...}
+```
+
+### ECNL Data Depth Note
+
+The AthleteOne API (`api.athleteone.com/api/Script/get-conference-standings`) exposes the ECNL standings widget backend.  Conference IDs 41–76 cover one regional conference (Pacific NW / Mountain West) per age group for the 2025-26 season.  The remaining 15 national conferences per age group are accessible via the same API but require interactive selection of the event-select dropdown (Shadow DOM widget), which is not yet automated.  Full ECNL national coverage (~500 clubs) is a future task.
 
 ---
 
