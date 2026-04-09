@@ -21,15 +21,24 @@ import logging
 import os
 from typing import List, Dict
 
+from rapidfuzz import fuzz
+
+from config import FUZZY_THRESHOLD
 from extractors.registry import register
 from extractors.gotsport import scrape_gotsport_event, scrape_gotsport_teams
+from normalizer import _canonical
 
 logger = logging.getLogger(__name__)
 
 
 def _multi_event_scrape(events: list, league_name: str, state: str = "") -> List[Dict]:
-    """Helper: scrape multiple GotSport events and deduplicate."""
-    seen: set = set()
+    """Helper: scrape multiple GotSport events and deduplicate.
+
+    Uses canonical normalization + fuzzy token_sort_ratio (>= FUZZY_THRESHOLD)
+    so near-duplicate club names across events (e.g. "FC Seattle" vs "FC Seattle SC")
+    are collapsed at extraction time rather than propagated to the caller.
+    """
+    seen_canonicals: List[str] = []
     records: List[Dict] = []
     for event_id, label in events:
         if os.environ.get("UPSHIFT_SCRAPE_TEAMS"):
@@ -39,9 +48,12 @@ def _multi_event_scrape(events: list, league_name: str, state: str = "") -> List
             save_teams_csv(teams, lbl)
             save_contacts_csv(contacts, lbl)
         for rec in scrape_gotsport_event(event_id, league_name, state=state):
-            key = rec["club_name"].lower().strip()
-            if key not in seen:
-                seen.add(key)
+            canonical = _canonical(rec["club_name"])
+            if not any(
+                fuzz.token_sort_ratio(canonical, seen) >= FUZZY_THRESHOLD
+                for seen in seen_canonicals
+            ):
+                seen_canonicals.append(canonical)
                 records.append(rec)
     return records
 

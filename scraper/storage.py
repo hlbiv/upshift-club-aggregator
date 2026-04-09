@@ -11,6 +11,7 @@ import re
 import pandas as pd
 
 from config import LEAGUES_DIR, MASTER_CSV
+from normalizer import _canonical, deduplicate
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +55,13 @@ def append_to_master(df: pd.DataFrame) -> str:
     """
     Upsert `df` into the master CSV, creating it if absent.
 
-    Deduplicates on (club_name, league_name) keeping the newest row for
-    any duplicate key so that re-running a league extractor is idempotent.
+    Two deduplication passes keep the master idempotent across incremental runs:
+
+    1. Exact-key pass: drop rows with the same (club_name, league_name), keeping
+       the newest (last) occurrence so re-running a league extractor is safe.
+    2. Fuzzy pass (per-league): call deduplicate() within each league_name group
+       so near-duplicate club names accumulated across runs are collapsed using the
+       same FUZZY_THRESHOLD used in per-league processing.
 
     Returns the path of the master file.
     """
@@ -68,14 +74,35 @@ def append_to_master(df: pd.DataFrame) -> str:
     else:
         combined = df_out
 
-    # Deduplicate: keep last occurrence (newest run) for each (club_name, league_name)
+    # Pass 1: exact dedup on (club_name, league_name) — keep newest row
     dedup_keys = [c for c in ("club_name", "league_name") if c in combined.columns]
     if dedup_keys:
         before = len(combined)
         combined = combined.drop_duplicates(subset=dedup_keys, keep="last")
         removed = before - len(combined)
         if removed:
-            logger.info("Master dedup removed %d duplicate rows", removed)
+            logger.info("Master exact-dedup removed %d duplicate rows", removed)
+
+    # Pass 2: fuzzy dedup within each league group
+    # Ensure canonical_name is populated so deduplicate() can work.
+    if "canonical_name" in combined.columns:
+        missing_mask = combined["canonical_name"].fillna("").eq("")
+        if missing_mask.any():
+            combined.loc[missing_mask, "canonical_name"] = (
+                combined.loc[missing_mask, "club_name"].apply(_canonical)
+            )
+
+    if "league_name" in combined.columns and "canonical_name" in combined.columns:
+        groups = []
+        for _league, grp in combined.groupby("league_name", sort=False):
+            grp_clean = grp[grp["canonical_name"].fillna("").ne("")]
+            grp_empty = grp[grp["canonical_name"].fillna("").eq("")]
+            if not grp_clean.empty:
+                groups.append(deduplicate(grp_clean.reset_index(drop=True)))
+            if not grp_empty.empty:
+                groups.append(grp_empty)
+        if groups:
+            combined = pd.concat(groups, ignore_index=True)
 
     combined.to_csv(MASTER_CSV, index=False)
     logger.info("Master CSV updated: %d total records", len(combined))
