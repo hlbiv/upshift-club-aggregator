@@ -118,7 +118,15 @@ def main() -> None:
                         help="Run scraper but do not write any files")
     parser.add_argument("--list", action="store_true",
                         help="Print all configured leagues and exit")
+    parser.add_argument("--teams", action="store_true",
+                        help="Also scrape team-level data (age groups, contacts) where available. "
+                             "For GotSport leagues this makes one additional HTTP request per club.")
     args = parser.parse_args()
+
+    # Signal to GotSport (and future) extractors that team-level data is wanted.
+    # We use an env var so extractors don't need a different function signature.
+    if args.teams:
+        os.environ["UPSHIFT_SCRAPE_TEAMS"] = "1"
 
     # Build the target league list
     target_leagues = get_leagues(

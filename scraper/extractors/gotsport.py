@@ -7,12 +7,19 @@ league events. Each event has a clubs tab at:
 
 The page renders plain HTML (no JS required). Rows starting with "ZZ-"
 are internal admin/SRA placeholder entries and are filtered out.
+
+Team-level data (opt-in via scrape_gotsport_teams):
+  Each club has a detail page at /clubs/{club_id} listing every team
+  registered for the event (name, gender, age group, division, bracket)
+  plus a contact directory (registrar email/phone, director).
 """
 
 from __future__ import annotations
 
 import logging
-from typing import List, Dict
+import re
+from typing import List, Dict, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from bs4 import BeautifulSoup
@@ -20,6 +27,121 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger(__name__)
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"}
+_BASE = "https://system.gotsport.com"
+
+
+def _get_clubs_with_ids(event_id: int | str) -> List[Tuple[str, str]]:
+    """
+    Fetch the clubs list page and return (club_name, club_id) pairs.
+    Filters ZZ- placeholder rows.
+    """
+    url = f"{_BASE}/org_event/events/{event_id}/clubs"
+    try:
+        r = requests.get(url, headers=_HEADERS, timeout=20)
+        r.raise_for_status()
+    except requests.RequestException as exc:
+        logger.error("GotSport clubs fetch failed (event_id=%s): %s", event_id, exc)
+        return []
+
+    soup = BeautifulSoup(r.text, "lxml")
+    clubs: List[Tuple[str, str]] = []
+
+    for row in soup.find_all("tr"):
+        tds = row.find_all("td")
+        if not tds:
+            continue
+        raw = tds[0].get_text(strip=True)
+        club_name = raw.replace("Schedule", "").strip()
+        if not club_name or len(club_name) < 2 or club_name.startswith("ZZ-"):
+            continue
+
+        link = row.find("a", href=re.compile(r"/clubs/\d+$"))
+        club_id = ""
+        if link:
+            m = re.search(r"/clubs/(\d+)$", link["href"])
+            if m:
+                club_id = m.group(1)
+
+        clubs.append((club_name, club_id))
+
+    return clubs
+
+
+def _fetch_club_detail(event_id: int | str, club_name: str, club_id: str) -> Dict:
+    """
+    Fetch one club's detail page and extract teams + contacts.
+
+    HTML structure on GotSport club pages:
+        <div class="widget">
+          <div class="widget-header">
+            <h4 class="widget-title">Teams</h4>
+          </div>
+          <div class="widget-body">
+            <table class="table">...</table>
+          </div>
+        </div>
+
+    Returns {"teams": [...], "contacts": [...], "url": str}
+    """
+    url = f"{_BASE}/org_event/events/{event_id}/clubs/{club_id}"
+    result: Dict = {"teams": [], "contacts": [], "url": url}
+
+    try:
+        r = requests.get(url, headers=_HEADERS, timeout=15)
+        r.raise_for_status()
+    except requests.RequestException as exc:
+        logger.debug("Club detail fetch failed (%s id=%s): %s", club_name, club_id, exc)
+        return result
+
+    soup = BeautifulSoup(r.text, "lxml")
+
+    for widget in soup.find_all("div", class_="widget"):
+        header_div = widget.find("div", class_="widget-header")
+        if not header_div:
+            continue
+        h4 = header_div.find("h4")
+        if not h4:
+            continue
+        section_title = h4.get_text(strip=True).lower()
+
+        body_div = widget.find("div", class_="widget-body")
+        table = body_div.find("table") if body_div else widget.find("table")
+        if not table:
+            continue
+
+        if "teams" in section_title:
+            # thead has Name/Gender/Age/Division/Bracket
+            for row in table.find_all("tr"):
+                tds = row.find_all("td")
+                if not tds:
+                    continue
+                team = {
+                    "team_name": tds[0].get_text(strip=True) if len(tds) > 0 else "",
+                    "gender":    tds[1].get_text(strip=True) if len(tds) > 1 else "",
+                    "division":  tds[3].get_text(strip=True) if len(tds) > 3 else "",
+                    "bracket":   tds[4].get_text(strip=True) if len(tds) > 4 else "",
+                }
+                # Extract age group from team name (e.g. "AC Brea Soccer G18 Red" → "G18")
+                age_m = re.search(r"\b([BG])(\d{2})\b", team["team_name"])
+                team["age_group"] = f"{age_m.group(1)}{age_m.group(2)}" if age_m else ""
+                if team["team_name"]:
+                    result["teams"].append(team)
+
+        elif "contact" in section_title:
+            for row in table.find_all("tr"):
+                tds = row.find_all("td")
+                if not tds:
+                    continue
+                contact = {
+                    "role":  tds[0].get_text(strip=True) if len(tds) > 0 else "",
+                    "name":  tds[1].get_text(strip=True) if len(tds) > 1 else "",
+                    "email": tds[2].get_text(strip=True) if len(tds) > 2 else "",
+                    "phone": tds[3].get_text(strip=True) if len(tds) > 3 else "",
+                }
+                if contact["name"] and contact["role"]:  # skip empty/header rows
+                    result["contacts"].append(contact)
+
+    return result
 
 
 def scrape_gotsport_event(event_id: int | str, league_name: str, state: str = "") -> List[Dict]:
@@ -34,30 +156,15 @@ def scrape_gotsport_event(event_id: int | str, league_name: str, state: str = ""
     Returns:
         List of club dicts ready for normalizer.
     """
-    url = f"https://system.gotsport.com/org_event/events/{event_id}/clubs"
+    url = f"{_BASE}/org_event/events/{event_id}/clubs"
     logger.info("[GotSport] Fetching event %s: %s", event_id, url)
 
-    try:
-        r = requests.get(url, headers=_HEADERS, timeout=20)
-        r.raise_for_status()
-    except requests.RequestException as exc:
-        logger.error("GotSport fetch failed (event_id=%s): %s", event_id, exc)
+    clubs = _get_clubs_with_ids(event_id)
+    if not clubs:
         return []
 
-    soup = BeautifulSoup(r.text, "lxml")
-    records: List[Dict] = []
-
-    for row in soup.find_all("tr"):
-        tds = row.find_all("td")
-        if not tds:
-            continue
-        raw = tds[0].get_text(strip=True)
-        club_name = raw.replace("Schedule", "").strip()
-        if not club_name or len(club_name) < 2:
-            continue
-        if club_name.startswith("ZZ-"):
-            continue
-
+    records = []
+    for club_name, _club_id in clubs:
         records.append({
             "club_name": club_name,
             "league_name": league_name,
@@ -68,3 +175,78 @@ def scrape_gotsport_event(event_id: int | str, league_name: str, state: str = ""
 
     logger.info("[GotSport] event %s → %d clubs", event_id, len(records))
     return records
+
+
+def scrape_gotsport_teams(
+    event_id: int | str,
+    league_name: str,
+    state: str = "",
+    max_workers: int = 20,
+) -> Tuple[List[Dict], List[Dict]]:
+    """
+    Scrape team-level and contact data from every club's detail page.
+
+    Returns:
+        (teams, contacts) — two lists of dicts ready to be written as CSVs.
+
+    teams columns:
+        club_name, team_name, gender, age_group, division, bracket,
+        league_name, event_id, source_url
+
+    contacts columns:
+        club_name, role, name, email, phone, league_name, event_id, source_url
+    """
+    logger.info("[GotSport] Scraping team details for event %s (%s)", event_id, league_name)
+
+    clubs = _get_clubs_with_ids(event_id)
+    if not clubs:
+        logger.warning("[GotSport] No clubs found for event %s", event_id)
+        return [], []
+
+    all_teams: List[Dict] = []
+    all_contacts: List[Dict] = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = {
+            ex.submit(_fetch_club_detail, event_id, club_name, club_id): (club_name, club_id)
+            for club_name, club_id in clubs
+            if club_id
+        }
+        for fut in as_completed(futs):
+            club_name, club_id = futs[fut]
+            try:
+                detail = fut.result()
+            except Exception as exc:
+                logger.debug("Detail fetch failed for %s: %s", club_name, exc)
+                continue
+
+            src = detail["url"]
+            for team in detail["teams"]:
+                all_teams.append({
+                    "club_name":   club_name,
+                    "team_name":   team["team_name"],
+                    "gender":      team["gender"],
+                    "age_group":   team["age_group"],
+                    "division":    team["division"],
+                    "bracket":     team["bracket"],
+                    "league_name": league_name,
+                    "event_id":    str(event_id),
+                    "source_url":  src,
+                })
+            for contact in detail["contacts"]:
+                all_contacts.append({
+                    "club_name":   club_name,
+                    "role":        contact["role"],
+                    "name":        contact["name"],
+                    "email":       contact["email"],
+                    "phone":       contact["phone"],
+                    "league_name": league_name,
+                    "event_id":    str(event_id),
+                    "source_url":  src,
+                })
+
+    logger.info(
+        "[GotSport] event %s → %d teams, %d contacts (from %d clubs)",
+        event_id, len(all_teams), len(all_contacts), len(clubs),
+    )
+    return all_teams, all_contacts
