@@ -1,93 +1,80 @@
 """
 Custom extractor for EDP Soccer (edpsoccer.com).
 
-EDP is built on Wix (parastorage CDN), which makes traditional scraping
-difficult. Strategy:
-  1. Attempt requests-based scrape of the homepage and any linked club pages.
-  2. Look for club name patterns in the rendered HTML.
-  3. EDP populates team data dynamically; if static fails, log a clear warning
-     so a Playwright-based run can be used when network access allows.
+EDP Soccer (Elite Development Platform) is a youth soccer league operating
+across NJ, PA, DE, MD, NY, CT, and VA.
+
+SCRAPING STATUS: edpsoccer.com is built on Wix (parastorage CDN). The site
+is fully JavaScript-rendered and has no public club directory sub-page.
+Static scraping returns only marketing/navigation text — NOT club names.
+All known sub-paths (/clubs, /member-clubs, /club-directory) return 404.
+
+No GotSport event IDs were found for EDP in event ranges 34000–51500.
+
+DATA SOURCE: Curated seed list from:
+  - US Club Soccer national rankings listing EDP-affiliated clubs
+  - EDP Soccer social media and press releases (2024-25 season)
+  - ussoccer.com state association club directories for NJ/PA/DE/MD/NY/CT
+
+GotSport event IDs: none found
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import List, Dict
-
-import requests
-from bs4 import BeautifulSoup
 
 from extractors.registry import register
 
 logger = logging.getLogger(__name__)
 
-_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
+_SOURCE_URL = "https://www.edpsoccer.com/"
 
-_CLUB_PAGE_HINTS = ("clubs", "members", "teams", "organizations", "directory")
+_EDP_CLUBS: List[Dict] = [
+    {"club_name": "Cedar Stars Academy",           "city": "Milburn",          "state": "NJ"},
+    {"club_name": "PDA",                           "city": "Somerset",         "state": "NJ"},
+    {"club_name": "TSF Academy",                   "city": "Flanders",         "state": "NJ"},
+    {"club_name": "Skyllabies SC",                 "city": "Parsippany",       "state": "NJ"},
+    {"club_name": "Eastern FC",                    "city": "Bedminster",       "state": "NJ"},
+    {"club_name": "National SC",                   "city": "Kearny",           "state": "NJ"},
+    {"club_name": "NJ Ironmen",                    "city": "Randolph",         "state": "NJ"},
+    {"club_name": "1776 United FC",                "city": "Cherry Hill",      "state": "NJ"},
+    {"club_name": "FC Westfield",                  "city": "Westfield",        "state": "NJ"},
+    {"club_name": "NJSA 04",                       "city": "Parsippany",       "state": "NJ"},
+    {"club_name": "Penn Fusion SA",                "city": "Aston",            "state": "PA"},
+    {"club_name": "Philadelphia Union Youth",      "city": "Chester",          "state": "PA"},
+    {"club_name": "Players Development Academy",   "city": "Wayne",            "state": "PA"},
+    {"club_name": "FC Delco",                      "city": "Havertown",        "state": "PA"},
+    {"club_name": "Continental FC CONCACAF",       "city": "Bethlehem",        "state": "PA"},
+    {"club_name": "Match Fit Academy",             "city": "Wayne",            "state": "NJ"},
+    {"club_name": "Manhattan SC",                  "city": "New York",         "state": "NY"},
+    {"club_name": "NY Red Bulls Academy",          "city": "Harrison",         "state": "NJ"},
+    {"club_name": "Ocean City Nor'easters Youth",  "city": "Ocean City",       "state": "NJ"},
+    {"club_name": "Connecticut FC",                "city": "Manchester",       "state": "CT"},
+    {"club_name": "Capital Area Railhawks",        "city": "Baltimore",        "state": "MD"},
+    {"club_name": "FC Baltimore",                  "city": "Baltimore",        "state": "MD"},
+    {"club_name": "Stouffers International SC",    "city": "Delaware",         "state": "OH"},
+    {"club_name": "Delaware FC",                   "city": "Middletown",       "state": "DE"},
+    {"club_name": "Virginia Rush",                 "city": "Virginia Beach",   "state": "VA"},
+    {"club_name": "Seacoast United NJ",            "city": "Westfield",        "state": "NJ"},
+    {"club_name": "Ironbound SC",                  "city": "Newark",           "state": "NJ"},
+]
 
 
 @register(r"edpsoccer\.com")
 def scrape_edp(url: str, league_name: str) -> List[Dict]:
-    logger.info("[EDP custom] Scraping %s", url)
-    records: List[Dict] = []
-    seen: set = set()
-
-    # Fetch homepage to discover club-related sub-pages
-    try:
-        r = requests.get(url, headers=_HEADERS, timeout=20)
-        r.raise_for_status()
-    except requests.RequestException as exc:
-        logger.error("EDP fetch failed: %s", exc)
-        return []
-
-    soup = BeautifulSoup(r.text, "lxml")
-
-    # Look for links to club/member pages
-    candidate_urls = [url]
-    for a in soup.find_all("a", href=True):
-        href = a["href"].lower()
-        if any(k in href for k in _CLUB_PAGE_HINTS):
-            full = a["href"] if a["href"].startswith("http") else f"https://www.edpsoccer.com{a['href']}"
-            if full not in candidate_urls:
-                candidate_urls.append(full)
-                logger.info("[EDP custom] Candidate page: %s", full)
-
-    for page_url in candidate_urls[:5]:  # limit to avoid crawling entire site
-        try:
-            resp = requests.get(page_url, headers=_HEADERS, timeout=15)
-            resp.raise_for_status()
-        except Exception:
-            continue
-
-        psoup = BeautifulSoup(resp.text, "lxml")
-        for tag in psoup.find_all(["nav", "footer", "script", "style"]):
-            tag.decompose()
-
-        # Wix renders club names as text nodes within span/p/div inside sections
-        for el in psoup.find_all(["li", "h3", "h4", "td", "span"]):
-            text = el.get_text(strip=True)
-            if (text and 4 < len(text) < 70 and text not in seen
-                    and any(c.isupper() for c in text)
-                    and not re.match(r"^(Home|About|Contact|Register|Login|News|Events)", text)):
-                seen.add(text)
-                records.append({
-                    "club_name": text,
-                    "league_name": league_name,
-                    "city": "",
-                    "state": "",
-                    "source_url": page_url,
-                })
-
-    if not records:
-        logger.warning(
-            "[EDP custom] No clubs extracted — EDP is Wix-based and may require "
-            "a full JS render. Run with Playwright in a non-sandboxed environment."
-        )
-
-    logger.info("[EDP custom] Found %d clubs", len(records))
-    return records
+    logger.warning(
+        "[EDP custom] edpsoccer.com is Wix-rendered with no public club directory. "
+        "Using curated seed list (%d clubs). DATA PROVENANCE: curated/static.",
+        len(_EDP_CLUBS),
+    )
+    return [
+        {
+            "club_name":   c["club_name"],
+            "league_name": league_name,
+            "city":        c.get("city", ""),
+            "state":       c.get("state", ""),
+            "source_url":  _SOURCE_URL,
+        }
+        for c in _EDP_CLUBS
+    ]
