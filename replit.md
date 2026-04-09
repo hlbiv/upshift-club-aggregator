@@ -73,16 +73,22 @@ python3 run.py --list                  # print full league inventory and exit
 
 ### Custom Extractor Results (live)
 
-| League | Extractor | Clubs collected |
-|---|---|---|
-| Girls Academy | `girls_academy.py` | 126 (with city, state, conference) |
-| GA Aspire | `girls_academy.py` | 100 (with city, state) |
-| NorCal Premier Soccer | `norcal.py` | 286 (with city, region) |
-| ECNL (all tiers combined) | `ecnl.py` via AthleteOne API | 86 (Pacific NW region only) |
-| DPL | `dpl.py` | 0 (bracket pages require Playwright + longer wait) |
-| EDP Soccer | `edp.py` | 0 (Wix site — static fallback finds noise) |
+| League | Extractor | Clubs | Notes |
+|---|---|---|---|
+| Girls Academy | `girls_academy.py` | 126 | with city, state, conference |
+| GA Aspire | `girls_academy.py` | 100 | with city, state |
+| NorCal Premier Soccer | `norcal.py` | 286 | with city, region |
+| ECNL (Boys + Girls) | `ecnl.py` via AthleteOne API | 200 | 26 national conferences |
+| ECNL RL Boys | `ecnl.py` | 286 | 26 national conferences |
+| ECNL RL Girls | `ecnl.py` | 281 | 24 national conferences |
+| SOCAL Soccer League | `socal.py` via GotSport | 172 | state=CA |
+| MSPSP (Michigan) | `mspsp.py` via GotSport | 88 | state=MI |
+| DPL | `dpl.py` | 0 | Wix/JS bracket pages, no static directory |
+| EDP Soccer | `edp.py` | 0 | Wix site, static fallback finds noise |
 
-ECNL note: AthleteOne API covers conference IDs 41–76 (Pacific NW region). Full national coverage (~500 clubs) requires Shadow DOM interaction for the event-select dropdown.
+**ECNL AthleteOne API discovery**: The correct URL format is `/{event_id}/{org_id}/{org_season_id}/0/0`. Calling with event_id=0 returns the default conference data PLUS a full `<select id="event-select">` dropdown listing all conference event_ids. Each org_season maps to: 70=Boys ECNL, 69=Girls ECNL, 72=Boys RL, 71=Girls RL. The extractor auto-discovers all conference event_ids on each run.
+
+**GotSport pattern**: Several leagues (SOCAL, MSPSP) host their club rosters at `system.gotsport.com/org_event/events/{event_id}/clubs`. Use `extractors/gotsport.py` shared helper. Filter ZZ- rows (admin placeholders).
 
 ### Adding a League
 

@@ -138,13 +138,16 @@ High-value leagues have site-specific extractors registered in `extractors/regis
 
 | League | Extractor | Data Source | Clubs (live) |
 |---|---|---|---|
-| Girls Academy (members) | `girls_academy.py` | `<article> <li>` HTML (WordPress) | ~126 |
-| GA Aspire (aspire-membership) | `girls_academy.py` | Same structure | ~100 |
-| NorCal Premier Soccer | `norcal.py` | `/clubs/` table (WordPress) | ~286 |
-| ECNL (directory) | `ecnl.py` | AthleteOne API (`api.athleteone.com`) | ~86 (Pacific NW) |
-| ECNL RL Boys/Girls | `ecnl.py` | AthleteOne API — RL conferences | ~8 per gender |
-| DPL | `dpl.py` | WordPress pages + Playwright on bracket pages | variable |
-| EDP Soccer | `edp.py` | Static + link crawl (Wix fallback) | variable |
+| Girls Academy (members) | `girls_academy.py` | `<article> <li>` HTML (WordPress) | 126 |
+| GA Aspire (aspire-membership) | `girls_academy.py` | Same structure | 100 |
+| NorCal Premier Soccer | `norcal.py` | `/clubs/` table (WordPress) | 286 |
+| ECNL (Boys + Girls) | `ecnl.py` | AthleteOne API — all 26 national conferences | 200 |
+| ECNL RL Boys | `ecnl.py` | AthleteOne API — all 26 national conferences | 286 |
+| ECNL RL Girls | `ecnl.py` | AthleteOne API — all 24 national conferences | 281 |
+| SOCAL Soccer League | `socal.py` | GotSport event 43086 clubs page | 172 |
+| MSPSP (Michigan) | `mspsp.py` | GotSport event 50611 clubs page | 88 |
+| DPL | `dpl.py` | WordPress pages + Playwright on bracket pages | 0 |
+| EDP Soccer | `edp.py` | Static + link crawl (Wix fallback) | 0 |
 
 ### Adding a Custom Extractor
 
@@ -161,9 +164,27 @@ def scrape_my_league(url: str, league_name: str) -> list[dict]:
     # ...return list of {"club_name": ..., "league_name": ..., "city": ..., "state": ..., "source_url": ...}
 ```
 
-### ECNL Data Depth Note
+### ECNL AthleteOne API — Full National Coverage
 
-The AthleteOne API (`api.athleteone.com/api/Script/get-conference-standings`) exposes the ECNL standings widget backend.  Conference IDs 41–76 cover one regional conference (Pacific NW / Mountain West) per age group for the 2025-26 season.  The remaining 15 national conferences per age group are accessible via the same API but require interactive selection of the event-select dropdown (Shadow DOM widget), which is not yet automated.  Full ECNL national coverage (~500 clubs) is a future task.
+The AthleteOne API (`api.athleteone.com/api/Script/get-conference-standings`) backs the TGS standings widget on theecnl.com.
+
+**Correct URL format (discovered 2026-04-09):**
+```
+/{event_id}/{org_id}/{org_season_id}/0/0
+```
+
+**Org season IDs (org_id = 12):**
+| org_season_id | League | Conferences |
+|---|---|---|
+| 70 | Boys ECNL | 16 (Far West, Florida, Heartland, Mid-America, …) |
+| 69 | Girls ECNL | 10 (Mid-Atlantic, Midwest, New England, …) |
+| 72 | Boys RL | 26 (Carolinas, Chicago Metro, Far West, …) |
+| 71 | Girls RL | 24 (Carolinas, Florida, Frontier, …) |
+
+**Discovery:** Calling `event_id=0` returns a full `<select id="event-select">` dropdown listing every conference and its event_id. The extractor auto-discovers these on each run — no hardcoded conference IDs needed.
+
+**Team name format:** `"Oregon Premier ECNL B13Qualification:Champions League..."`  
+**Club extraction regex:** `^(.+?)\s+(?:Pre-)?ECNL(?:\s+RL)?\s+[BG]\d+`
 
 ---
 

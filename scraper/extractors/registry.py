@@ -39,3 +39,5 @@ from extractors import norcal          # noqa: E402, F401
 from extractors import ecnl            # noqa: E402, F401
 from extractors import dpl             # noqa: E402, F401
 from extractors import edp             # noqa: E402, F401
+from extractors import socal           # noqa: E402, F401
+from extractors import mspsp           # noqa: E402, F401
