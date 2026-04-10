@@ -15,7 +15,7 @@ from normalizer import _canonical, deduplicate
 
 logger = logging.getLogger(__name__)
 
-COLUMNS = ["club_name", "canonical_name", "league_name", "city", "state", "source_url", "website"]
+COLUMNS = ["club_name", "canonical_name", "league_name", "city", "state", "source_url", "source_type", "website"]
 
 TEAMS_DIR = os.path.join(os.path.dirname(MASTER_CSV), "teams")
 CONTACTS_DIR = os.path.join(os.path.dirname(MASTER_CSV), "contacts")
