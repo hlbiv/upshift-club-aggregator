@@ -69,6 +69,13 @@ def scrape_girls_academy(url: str, league_name: str) -> List[Dict]:
         if el.name in ("h3", "h4"):
             current_conf = el.get_text(strip=True)
             continue
+        # Capture any direct website link in the <li> before stripping tags
+        a_tag = el.find("a", href=True)
+        website = ""
+        if a_tag:
+            href = a_tag["href"].strip()
+            if href.startswith("http"):
+                website = href
         text = el.get_text(strip=True)
         if not text or len(text) < 3:
             continue
@@ -82,6 +89,7 @@ def scrape_girls_academy(url: str, league_name: str) -> List[Dict]:
             "state": state,
             "source_url": url,
             "conference": current_conf,
+            "website": website,
         })
 
     logger.info("[GA custom] Found %d clubs on %s", len(records), url)

@@ -50,6 +50,13 @@ def scrape_norcal(url: str, league_name: str) -> List[Dict]:
             cells = row.find_all("td")
             if not cells or len(cells) <= col_club:
                 continue
+            # Capture any website link from the club name cell
+            a_tag = cells[col_club].find("a", href=True)
+            website = ""
+            if a_tag:
+                href = a_tag["href"].strip()
+                if href.startswith("http"):
+                    website = href
             club_name = cells[col_club].get_text(strip=True)
             if not club_name or len(club_name) < 2:
                 continue
@@ -64,6 +71,7 @@ def scrape_norcal(url: str, league_name: str) -> List[Dict]:
                 "state": "CA",      # NorCal is California-only
                 "source_url": clubs_url,
                 "region": region,
+                "website": website,
             })
 
     logger.info("[NorCal custom] Found %d clubs", len(records))

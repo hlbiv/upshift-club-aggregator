@@ -43,6 +43,8 @@ router.get("/search", async (req, res, next): Promise<void> => {
         state: canonicalClubs.state,
         country: canonicalClubs.country,
         status: canonicalClubs.status,
+        website: canonicalClubs.website,
+        websiteStatus: canonicalClubs.websiteStatus,
       })
       .from(canonicalClubs)
       .where(or(...orConditions))
@@ -65,6 +67,8 @@ router.get("/search", async (req, res, next): Promise<void> => {
           state: r.state ?? "",
           country: r.country ?? "USA",
           status: r.status ?? "active",
+          website: r.website ?? null,
+          website_status: r.websiteStatus ?? null,
         })),
       }),
     );

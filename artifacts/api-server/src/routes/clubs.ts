@@ -85,6 +85,8 @@ router.get("/clubs", async (req, res, next): Promise<void> => {
           state: r.state ?? "",
           country: r.country ?? "USA",
           status: r.status ?? "active",
+          website: r.website ?? null,
+          website_status: r.websiteStatus ?? null,
         })),
         total,
         page,
@@ -133,6 +135,8 @@ router.get("/clubs/:id", async (req, res, next): Promise<void> => {
         state: club.state ?? "",
         country: club.country ?? "USA",
         status: club.status ?? "active",
+        website: club.website ?? null,
+        website_status: club.websiteStatus ?? null,
         aliases: aliases.map((a) => ({
           id: a.id,
           alias_name: a.aliasName,
@@ -222,6 +226,8 @@ router.get("/clubs/:id/related", async (req, res, next): Promise<void> => {
           state: r.state ?? "",
           country: r.country ?? "USA",
           status: r.status ?? "active",
+          website: r.website ?? null,
+          website_status: r.websiteStatus ?? null,
         })),
       }),
     );

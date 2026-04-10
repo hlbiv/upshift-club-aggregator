@@ -90,6 +90,8 @@ router.get("/leagues/:id/clubs", async (req, res, next): Promise<void> => {
           state: r.state ?? "",
           country: r.country ?? "USA",
           status: r.status ?? "active",
+          website: r.website ?? null,
+          website_status: r.websiteStatus ?? null,
         })),
       }),
     );

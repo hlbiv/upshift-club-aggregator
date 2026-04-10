@@ -5,6 +5,7 @@ import {
   boolean,
   integer,
   unique,
+  timestamp,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -43,6 +44,9 @@ export const canonicalClubs = pgTable("canonical_clubs", {
   state: text("state"),
   country: text("country").default("USA"),
   status: text("status").default("active"),
+  website: text("website"),
+  websiteDiscoveredAt: timestamp("website_discovered_at"),
+  websiteStatus: text("website_status"),
 });
 
 export const clubAliases = pgTable(

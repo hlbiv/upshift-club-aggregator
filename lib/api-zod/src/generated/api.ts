@@ -54,6 +54,8 @@ export const ListClubsResponse = zod.object({
       state: zod.string(),
       country: zod.string(),
       status: zod.string(),
+      website: zod.string().nullable().optional(),
+      website_status: zod.string().nullable().optional(),
     }),
   ),
   total: zod.number(),
@@ -77,6 +79,8 @@ export const GetClubResponse = zod
     state: zod.string(),
     country: zod.string(),
     status: zod.string(),
+    website: zod.string().nullable().optional(),
+    website_status: zod.string().nullable().optional(),
   })
   .and(
     zod.object({
@@ -126,6 +130,8 @@ export const GetRelatedClubsResponse = zod.object({
       state: zod.string(),
       country: zod.string(),
       status: zod.string(),
+      website: zod.string().nullable().optional(),
+      website_status: zod.string().nullable().optional(),
     }),
   ),
 });
@@ -150,6 +156,8 @@ export const SearchClubsResponse = zod.object({
       state: zod.string(),
       country: zod.string(),
       status: zod.string(),
+      website: zod.string().nullable().optional(),
+      website_status: zod.string().nullable().optional(),
     }),
   ),
 });
@@ -195,6 +203,8 @@ export const GetLeagueClubsResponse = zod.object({
       state: zod.string(),
       country: zod.string(),
       status: zod.string(),
+      website: zod.string().nullable().optional(),
+      website_status: zod.string().nullable().optional(),
     }),
   ),
 });

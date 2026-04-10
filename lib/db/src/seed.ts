@@ -150,6 +150,7 @@ async function main() {
     city: string;
     state: string;
     sourceUrl: string;
+    website: string;
   };
 
   const allRows: ClubRecord[] = [];
@@ -164,6 +165,7 @@ async function main() {
         city: row.city || "",
         state: row.state || "",
         sourceUrl: row.source_url || "",
+        website: row.website || "",
       });
     }
   }
@@ -171,7 +173,7 @@ async function main() {
 
   const canonicalBySlug = new Map<
     string,
-    { name: string; city: string; state: string }
+    { name: string; city: string; state: string; website: string }
   >();
   for (const row of allRows) {
     const slug = slugify(row.canonicalName);
@@ -182,11 +184,13 @@ async function main() {
         name: row.canonicalName,
         city: enriched?.city || row.city || "",
         state: enriched?.state || row.state || "",
+        website: row.website || "",
       });
     } else {
       const existing = canonicalBySlug.get(slug)!;
       if (!existing.city && row.city) existing.city = row.city;
       if (!existing.state && row.state) existing.state = row.state;
+      if (!existing.website && row.website) existing.website = row.website;
     }
   }
 
@@ -194,6 +198,8 @@ async function main() {
 
   const clubSlugToId = new Map<string, number>();
   let upsertedClubs = 0;
+
+  const seedTs = new Date();
 
   for (const [slug, info] of canonicalBySlug) {
     const [rec] = await db
@@ -205,6 +211,8 @@ async function main() {
         state: info.state || null,
         country: "USA",
         status: "active",
+        website: info.website || null,
+        websiteDiscoveredAt: info.website ? seedTs : null,
       })
       .onConflictDoUpdate({
         target: canonicalClubs.clubSlug,
@@ -212,6 +220,8 @@ async function main() {
           clubNameCanonical: sql`excluded.club_name_canonical`,
           city: sql`COALESCE(NULLIF(excluded.city, ''), canonical_clubs.city)`,
           state: sql`COALESCE(NULLIF(excluded.state, ''), canonical_clubs.state)`,
+          website: sql`COALESCE(NULLIF(excluded.website, ''), canonical_clubs.website)`,
+          websiteDiscoveredAt: sql`CASE WHEN excluded.website IS NOT NULL AND excluded.website != '' AND canonical_clubs.website IS NULL THEN excluded.website_discovered_at ELSE canonical_clubs.website_discovered_at END`,
         },
       })
       .returning({ id: canonicalClubs.id });

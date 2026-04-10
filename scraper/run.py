@@ -101,6 +101,50 @@ def _print_league_list(leagues: list[dict]) -> None:
     print(f"\nTotal: {len(leagues)} leagues\n")
 
 
+def _write_website_coverage(frames: list[pd.DataFrame]) -> None:
+    """Write a website coverage report to output/website_coverage.txt."""
+    import datetime
+    from config import LEAGUES_DIR
+    output_dir = os.path.dirname(LEAGUES_DIR)
+    report_path = os.path.join(output_dir, "website_coverage.txt")
+    os.makedirs(output_dir, exist_ok=True)
+
+    lines = [
+        f"Website Coverage Report — {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+        "=" * 60,
+        "",
+    ]
+
+    total_clubs = 0
+    total_with_website = 0
+
+    for df in frames:
+        if df.empty:
+            continue
+        league = df["league_name"].iloc[0] if "league_name" in df.columns else "Unknown"
+        n = len(df)
+        if "website" in df.columns:
+            with_site = df["website"].fillna("").str.strip().ne("").sum()
+        else:
+            with_site = 0
+        pct = (with_site / n * 100) if n > 0 else 0
+        lines.append(f"  {league:<50}  {with_site:>4}/{n:<4}  ({pct:.0f}%)")
+        total_clubs += n
+        total_with_website += with_site
+
+    lines.append("")
+    lines.append("=" * 60)
+    overall_pct = (total_with_website / total_clubs * 100) if total_clubs > 0 else 0
+    lines.append(f"  TOTAL  {total_with_website}/{total_clubs} clubs have a website ({overall_pct:.1f}%)")
+    lines.append("")
+
+    report = "\n".join(lines)
+    with open(report_path, "w") as f:
+        f.write(report)
+    logger.info("Website coverage report written to %s", report_path)
+    print(report)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Upshift Club Aggregator",
@@ -176,6 +220,9 @@ def main() -> None:
         logger.info("Master dataset saved: %s (%d clubs)", path, len(master))
     else:
         logger.info("[dry-run] Master dataset would contain %d clubs", len(master))
+
+    if not args.dry_run:
+        _write_website_coverage(all_frames)
 
     print("\n" + "=" * 60)
     print(f"  Total clubs collected : {len(master)}")

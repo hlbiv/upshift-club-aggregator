@@ -14,4 +14,6 @@ export interface Club {
   state: string;
   country: string;
   status: string;
+  website?: string | null;
+  website_status?: string | null;
 }
