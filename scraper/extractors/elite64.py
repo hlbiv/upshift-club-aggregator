@@ -1,23 +1,17 @@
 """
 Custom extractor for Elite 64.
 
-Elite 64 is administered by US Club Soccer as a top-tier national invitational
-club-based league, hosted on GotSport (USYS National League platform).
-Both boys and girls programs run as separate GotSport events each season.
+Elite 64 is a US Club Soccer invitational program for boys and girls, hosted
+on GotSport (administered through the USYS National League platform).
 
 GotSport event IDs for 2024-25 season:
-  Regular season (combined boys + girls):
-    35565  Elite 64 Regular Season (171 clubs — both programs)
+  BOYS_EVENT_ID  = 38227  (January Quarters Boys — 60 clubs)
+  GIRLS_EVENT_ID = 38229  (January Quarters Girls — 37 clubs)
 
-  National playoff events by gender (for targeted boys/girls splits):
-    BOYS_EVENT_ID  = 38227  (January Quarters Boys — 60 clubs)
-    GIRLS_EVENT_ID = 38229  (January Quarters Girls — 37 clubs)
-
-NOTE: GotSport event IDs change each season. Update the constants below
-when US Club Soccer announces new season registration. Source for current IDs:
+Both programs are scraped separately and merged into one output file.
+A WARNING is logged if either event returns zero clubs — this means the
+event ID has changed for the new season. Update the constants below from:
   https://www.thenationalleague.com/schedules-results/
-A WARNING is logged for any event returning zero clubs so operators know when
-IDs need to be refreshed.
 """
 
 from __future__ import annotations
@@ -31,13 +25,10 @@ from extractors.gotsport import scrape_gotsport_event, scrape_gotsport_teams
 
 logger = logging.getLogger(__name__)
 
-# 2024-25 season — Elite 64 GotSport event IDs
-# Main regular season event (boys + girls combined)
-REGULAR_SEASON_EVENT_ID = 35565
-
-# Gender-split national event IDs (used for UPSHIFT_SCRAPE_TEAMS team-level data)
-BOYS_EVENT_ID = 38227
-GIRLS_EVENT_ID = 38229
+# Elite 64 GotSport event IDs — update each season
+# Source: https://www.thenationalleague.com/schedules-results/
+BOYS_EVENT_ID = 38227    # January Quarters Boys (2024-25)
+GIRLS_EVENT_ID = 38229   # January Quarters Girls (2024-25)
 
 _SEASON = "2024-25"
 
@@ -45,13 +36,12 @@ _SEASON = "2024-25"
 @register(r"usclubsoccer\.org/programs/leagues")
 def scrape_elite64(url: str, league_name: str) -> List[Dict]:
     """
-    Scrape clubs from the Elite 64 regular season GotSport event and optionally
-    enrich with team-level data from the separate boys/girls national events.
-    Both boys and girls clubs appear in the combined regular season event.
+    Scrape clubs from the Elite 64 boys and girls GotSport events and
+    merge them into a single deduplicated list.
+    A warning is logged if either event returns zero clubs.
     """
     logger.info(
-        "[Elite 64] Regular season event=%d; boys=%d girls=%d (season %s)",
-        REGULAR_SEASON_EVENT_ID,
+        "[Elite 64] Using GotSport event IDs boys=%d girls=%d (season %s)",
         BOYS_EVENT_ID,
         GIRLS_EVENT_ID,
         _SEASON,
@@ -69,24 +59,40 @@ def scrape_elite64(url: str, league_name: str) -> List[Dict]:
         save_teams_csv(boys_teams + girls_teams, league_name)
         save_contacts_csv(boys_contacts + girls_contacts, league_name)
 
-    clubs = scrape_gotsport_event(REGULAR_SEASON_EVENT_ID, league_name, state="")
+    boys_clubs = scrape_gotsport_event(BOYS_EVENT_ID, league_name, state="")
+    girls_clubs = scrape_gotsport_event(GIRLS_EVENT_ID, league_name, state="")
 
-    if not clubs:
+    if not boys_clubs:
         logger.warning(
-            "[Elite 64] Regular season event %d returned 0 clubs — the event "
-            "may be private/login-required or the event ID has changed for the "
-            "current season.  Also try boys event %d and girls event %d. "
-            "Update REGULAR_SEASON_EVENT_ID / BOYS_EVENT_ID / GIRLS_EVENT_ID "
-            "in extractors/elite64.py from: "
+            "[Elite 64] Boys event %d returned 0 clubs — the event may be "
+            "private/login-required or the event ID has changed for the current "
+            "season.  Update BOYS_EVENT_ID in extractors/elite64.py from: "
             "https://www.thenationalleague.com/schedules-results/",
-            REGULAR_SEASON_EVENT_ID,
             BOYS_EVENT_ID,
+        )
+    if not girls_clubs:
+        logger.warning(
+            "[Elite 64] Girls event %d returned 0 clubs — the event may be "
+            "private/login-required or the event ID has changed for the current "
+            "season.  Update GIRLS_EVENT_ID in extractors/elite64.py from: "
+            "https://www.thenationalleague.com/schedules-results/",
             GIRLS_EVENT_ID,
         )
 
+    all_clubs = boys_clubs + girls_clubs
+
+    seen: set[str] = set()
+    deduped: List[Dict] = []
+    for club in all_clubs:
+        key = club["club_name"].strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            deduped.append(club)
+
     logger.info(
-        "[Elite 64] event %d → %d clubs (boys+girls combined)",
-        REGULAR_SEASON_EVENT_ID,
-        len(clubs),
+        "[Elite 64] boys=%d girls=%d merged=%d unique clubs",
+        len(boys_clubs),
+        len(girls_clubs),
+        len(deduped),
     )
-    return clubs
+    return deduped
