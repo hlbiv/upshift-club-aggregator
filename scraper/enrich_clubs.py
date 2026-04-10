@@ -54,6 +54,7 @@ OUT_DEFAULT = os.path.join(os.path.dirname(__file__), "output", "clubs_enriched.
 ENRICHED_COLUMNS = [
     "club_id", "club_name_official", "club_name_scraped",
     "address_line1", "city", "state", "zip",
+    "website",
     "event_id", "league_name", "api_url",
 ]
 
@@ -123,12 +124,22 @@ def fetch_club_info(event_id: str, club_id: str) -> Optional[Dict]:
     official_name = divs[0].strip()
     addr = _parse_address(divs)
 
+    # Extract any external website link from the response (AthleteOne may embed
+    # the club's website as an <a href> pointing outside athleteone.com).
+    website = ""
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"].strip()
+        if href.startswith("http") and "athleteone" not in href and "athlete-one" not in href:
+            website = href
+            break
+
     return {
         "club_name_official": official_name,
         "address_line1": addr["address_line1"],
         "city": addr["city"],
         "state": addr["state"],
         "zip": addr["zip"],
+        "website": website,
         "api_url": url,
     }
 

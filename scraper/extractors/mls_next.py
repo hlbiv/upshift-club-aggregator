@@ -289,6 +289,13 @@ def _parse_live_html(html: str, league_name: str, source_url: str) -> List[Dict]
         club_name = lines[0]
         location = lines[1] if len(lines) > 1 else ""
         city, state = _split_location(location)
+        # Capture any external website link from the element
+        a_tag = el.find("a", href=True)
+        website = ""
+        if a_tag:
+            href = a_tag["href"].strip()
+            if href.startswith("http") and "mlsnext" not in href:
+                website = href
         key = club_name.lower()
         if key and key not in seen and len(club_name) > 2:
             seen.add(key)
@@ -298,6 +305,7 @@ def _parse_live_html(html: str, league_name: str, source_url: str) -> List[Dict]
                 "city": city,
                 "state": state,
                 "source_url": source_url,
+                "website": website,
             })
 
     if records:

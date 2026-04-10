@@ -39,8 +39,13 @@ logging.basicConfig(
 logger = logging.getLogger("run")
 
 
-def scrape_league(league: dict, dry_run: bool = False) -> pd.DataFrame:
-    """Scrape, normalise, and deduplicate clubs for a single league."""
+def scrape_league(league: dict, dry_run: bool = False) -> tuple[pd.DataFrame, str]:
+    """Scrape, normalise, and deduplicate clubs for a single league.
+
+    Returns (df, extractor_name) where extractor_name identifies which
+    code path produced the data (custom function name, 'scraper_js', or
+    'scraper_static').
+    """
     name = league["name"]
     url = league["url"]
     logger.info("=" * 60)
@@ -57,16 +62,19 @@ def scrape_league(league: dict, dry_run: bool = False) -> pd.DataFrame:
     if custom:
         logger.info("Using custom extractor: %s", custom.__name__)
         raw = custom(url, name)
+        extractor_name = custom.__name__
     elif league.get("js_required"):
         raw = scrape_js(url, name)
+        extractor_name = "scraper_js"
     else:
         raw = scrape_static(url, name)
+        extractor_name = "scraper_static"
 
     if not raw:
         logger.warning("No clubs found for league: %s", name)
         if not dry_run:
             save_league_csv(pd.DataFrame(), name)
-        return pd.DataFrame()
+        return pd.DataFrame(), extractor_name
 
     df = pd.DataFrame(raw)
 
@@ -86,7 +94,7 @@ def scrape_league(league: dict, dry_run: bool = False) -> pd.DataFrame:
     elif dry_run:
         logger.info("[dry-run] Would save %d clubs for '%s'", len(df), name)
 
-    return df
+    return df, extractor_name
 
 
 def _print_league_list(leagues: list[dict]) -> None:
@@ -101,13 +109,34 @@ def _print_league_list(leagues: list[dict]) -> None:
     print(f"\nTotal: {len(leagues)} leagues\n")
 
 
-def _write_website_coverage(frames: list[pd.DataFrame]) -> None:
-    """Write a website coverage report to output/website_coverage.txt."""
+def _write_website_coverage(frame_entries: list[tuple[str, pd.DataFrame]]) -> None:
+    """Write a per-extractor website coverage report to output/website_coverage.txt.
+
+    Parameters
+    ----------
+    frame_entries:
+        List of (extractor_name, df) tuples, one per processed league.
+    """
     import datetime
     from config import LEAGUES_DIR
     output_dir = os.path.dirname(LEAGUES_DIR)
     report_path = os.path.join(output_dir, "website_coverage.txt")
     os.makedirs(output_dir, exist_ok=True)
+
+    # Aggregate by extractor name
+    extractor_totals: dict[str, list[int]] = {}  # name -> [n_clubs, n_with_website]
+    for extractor_name, df in frame_entries:
+        if df.empty:
+            continue
+        n = len(df)
+        if "website" in df.columns:
+            with_site = int(df["website"].fillna("").str.strip().ne("").sum())
+        else:
+            with_site = 0
+        if extractor_name not in extractor_totals:
+            extractor_totals[extractor_name] = [0, 0]
+        extractor_totals[extractor_name][0] += n
+        extractor_totals[extractor_name][1] += with_site
 
     lines = [
         f"Website Coverage Report — {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
@@ -118,17 +147,10 @@ def _write_website_coverage(frames: list[pd.DataFrame]) -> None:
     total_clubs = 0
     total_with_website = 0
 
-    for df in frames:
-        if df.empty:
-            continue
-        league = df["league_name"].iloc[0] if "league_name" in df.columns else "Unknown"
-        n = len(df)
-        if "website" in df.columns:
-            with_site = df["website"].fillna("").str.strip().ne("").sum()
-        else:
-            with_site = 0
+    for extractor_name in sorted(extractor_totals):
+        n, with_site = extractor_totals[extractor_name]
         pct = (with_site / n * 100) if n > 0 else 0
-        lines.append(f"  {league:<50}  {with_site:>4}/{n:<4}  ({pct:.0f}%)")
+        lines.append(f"  {extractor_name:<50}  {with_site:>4}/{n:<4}  ({pct:.0f}%)")
         total_clubs += n
         total_with_website += with_site
 
@@ -202,10 +224,12 @@ def main() -> None:
     logger.info("Processing %d league(s)", len(target_leagues))
 
     all_frames = []
+    frame_entries: list[tuple[str, pd.DataFrame]] = []  # (extractor_name, df)
     for league in target_leagues:
-        df = scrape_league(league, dry_run=args.dry_run)
+        df, extractor_name = scrape_league(league, dry_run=args.dry_run)
         if not df.empty:
             all_frames.append(df)
+        frame_entries.append((extractor_name, df))
 
     if not all_frames:
         logger.warning("No data collected.")
@@ -222,7 +246,7 @@ def main() -> None:
         logger.info("[dry-run] Master dataset would contain %d clubs", len(master))
 
     if not args.dry_run:
-        _write_website_coverage(all_frames)
+        _write_website_coverage(frame_entries)
 
     print("\n" + "=" * 60)
     print(f"  Total clubs collected : {len(master)}")
