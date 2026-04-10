@@ -19,6 +19,10 @@ import argparse
 import logging
 import sys
 import os
+from collections import defaultdict
+from dataclasses import dataclass
+from enum import Enum
+from typing import List, Optional
 
 import pandas as pd
 
@@ -39,12 +43,71 @@ logging.basicConfig(
 logger = logging.getLogger("run")
 
 
-def scrape_league(league: dict, dry_run: bool = False) -> tuple[pd.DataFrame, str]:
+# ---------------------------------------------------------------------------
+# Failure classification
+# ---------------------------------------------------------------------------
+
+class FailureKind(str, Enum):
+    TIMEOUT = "timeout"
+    NETWORK = "network"
+    PARSE_ERROR = "parse_error"
+    ZERO_RESULTS = "zero_results"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class LeagueFailure:
+    league_name: str
+    url: str
+    kind: FailureKind
+    detail: str = ""
+
+
+_TIMEOUT_MARKERS = ("timeout", "timed out", "TimeoutError")
+_NETWORK_MARKERS = (
+    "connectionerror", "connection", "network", "dns",
+    "err_name_not_resolved", "err_connection", "err_internet",
+    "transient",
+)
+_PARSE_MARKERS = (
+    "beautifulsoup", "parseerror", "parse", "valueerror",
+    "keyerror", "attributeerror", "indexerror",
+)
+
+
+def _classify_exception(exc: Exception) -> FailureKind:
+    """Map an exception to a FailureKind using message content and type."""
+    msg = str(exc).lower()
+    exc_type = type(exc).__name__.lower()
+
+    if any(m in msg or m in exc_type for m in _TIMEOUT_MARKERS):
+        return FailureKind.TIMEOUT
+
+    if any(m in msg or m in exc_type for m in _NETWORK_MARKERS):
+        return FailureKind.NETWORK
+
+    if isinstance(exc, (ValueError, KeyError, AttributeError, IndexError)):
+        return FailureKind.PARSE_ERROR
+    if any(m in msg or m in exc_type for m in _PARSE_MARKERS):
+        return FailureKind.PARSE_ERROR
+
+    return FailureKind.UNKNOWN
+
+
+# ---------------------------------------------------------------------------
+# Core scraping logic
+# ---------------------------------------------------------------------------
+
+def scrape_league(
+    league: dict,
+    dry_run: bool = False,
+) -> tuple[pd.DataFrame, str, Optional[LeagueFailure]]:
     """Scrape, normalise, and deduplicate clubs for a single league.
 
-    Returns (df, extractor_name) where extractor_name identifies which
-    code path produced the data (custom function name, 'scraper_js', or
-    'scraper_static').
+    Returns (df, extractor_name, failure) where:
+      - df            is the resulting DataFrame (may be empty on failure)
+      - extractor_name identifies which code path produced the data
+      - failure       is a LeagueFailure if something went wrong, else None
     """
     name = league["name"]
     url = league["url"]
@@ -57,24 +120,51 @@ def scrape_league(league: dict, dry_run: bool = False) -> tuple[pd.DataFrame, st
         "JS" if league.get("js_required") else "Static",
     )
 
+    failure: Optional[LeagueFailure] = None
+
     # Check for a custom extractor first
     custom = _extractor_registry.get_extractor(url)
     if custom:
         logger.info("Using custom extractor: %s", custom.__name__)
-        raw = custom(url, name)
         extractor_name = custom.__name__
+        try:
+            raw = custom(url, name)
+        except Exception as exc:
+            kind = _classify_exception(exc)
+            failure = LeagueFailure(name, url, kind, str(exc))
+            logger.error("Custom extractor %s failed for %s: %s", custom.__name__, name, exc)
+            if not dry_run:
+                save_league_csv(pd.DataFrame(), name)
+            return pd.DataFrame(), extractor_name, failure
     elif league.get("js_required"):
-        raw = scrape_js(url, name)
         extractor_name = "scraper_js"
+        try:
+            raw = scrape_js(url, name)
+        except Exception as exc:
+            kind = _classify_exception(exc)
+            failure = LeagueFailure(name, url, kind, str(exc))
+            logger.error("JS scrape failed for %s: %s", name, exc)
+            if not dry_run:
+                save_league_csv(pd.DataFrame(), name)
+            return pd.DataFrame(), extractor_name, failure
     else:
-        raw = scrape_static(url, name)
         extractor_name = "scraper_static"
+        try:
+            raw = scrape_static(url, name)
+        except Exception as exc:
+            kind = _classify_exception(exc)
+            failure = LeagueFailure(name, url, kind, str(exc))
+            logger.error("Static scrape failed for %s: %s", name, exc)
+            if not dry_run:
+                save_league_csv(pd.DataFrame(), name)
+            return pd.DataFrame(), extractor_name, failure
 
     if not raw:
         logger.warning("No clubs found for league: %s", name)
+        failure = LeagueFailure(name, url, FailureKind.ZERO_RESULTS, "scraper returned empty list")
         if not dry_run:
             save_league_csv(pd.DataFrame(), name)
-        return pd.DataFrame(), extractor_name
+        return pd.DataFrame(), extractor_name, failure
 
     df = pd.DataFrame(raw)
 
@@ -94,8 +184,12 @@ def scrape_league(league: dict, dry_run: bool = False) -> tuple[pd.DataFrame, st
     elif dry_run:
         logger.info("[dry-run] Would save %d clubs for '%s'", len(df), name)
 
-    return df, extractor_name
+    return df, extractor_name, None
 
+
+# ---------------------------------------------------------------------------
+# Reporting helpers
+# ---------------------------------------------------------------------------
 
 def _print_league_list(leagues: list[dict]) -> None:
     print(f"\n{'#':>3}  {'Pri':>6}  {'Tier':>4}  {'JS':>2}  {'Scope':>10}  League")
@@ -109,22 +203,50 @@ def _print_league_list(leagues: list[dict]) -> None:
     print(f"\nTotal: {len(leagues)} leagues\n")
 
 
-def _write_website_coverage(frame_entries: list[tuple[str, pd.DataFrame]]) -> None:
-    """Write a per-extractor website coverage report to output/website_coverage.txt.
+def _print_failure_summary(failures: List[LeagueFailure]) -> None:
+    """Print a structured failure summary grouped by failure type."""
+    if not failures:
+        return
 
-    Parameters
-    ----------
-    frame_entries:
-        List of (extractor_name, df) tuples, one per processed league.
-    """
+    by_kind: dict[FailureKind, List[LeagueFailure]] = defaultdict(list)
+    for f in failures:
+        by_kind[f.kind].append(f)
+
+    print("\n" + "=" * 60)
+    print(f"  FAILURE SUMMARY ({len(failures)} league(s) failed)")
+    print("=" * 60)
+
+    kind_labels = {
+        FailureKind.TIMEOUT: "Timeout",
+        FailureKind.NETWORK: "Network / DNS",
+        FailureKind.PARSE_ERROR: "Parse Error",
+        FailureKind.ZERO_RESULTS: "Zero Results",
+        FailureKind.UNKNOWN: "Unknown Error",
+    }
+
+    for kind in [FailureKind.TIMEOUT, FailureKind.NETWORK, FailureKind.PARSE_ERROR,
+                 FailureKind.ZERO_RESULTS, FailureKind.UNKNOWN]:
+        group = by_kind.get(kind, [])
+        if not group:
+            continue
+        print(f"\n  [{kind_labels[kind]}] — {len(group)} league(s)")
+        for f in group:
+            detail = f" ({f.detail[:80]})" if f.detail else ""
+            print(f"    • {f.league_name}{detail}")
+            print(f"      {f.url}")
+
+    print("=" * 60)
+
+
+def _write_website_coverage(frame_entries: list[tuple[str, pd.DataFrame]]) -> None:
+    """Write a per-extractor website coverage report to output/website_coverage.txt."""
     import datetime
     from config import LEAGUES_DIR
     output_dir = os.path.dirname(LEAGUES_DIR)
     report_path = os.path.join(output_dir, "website_coverage.txt")
     os.makedirs(output_dir, exist_ok=True)
 
-    # Aggregate by extractor name
-    extractor_totals: dict[str, list[int]] = {}  # name -> [n_clubs, n_with_website]
+    extractor_totals: dict[str, list[int]] = {}
     for extractor_name, df in frame_entries:
         if df.empty:
             continue
@@ -167,6 +289,10 @@ def _write_website_coverage(frame_entries: list[tuple[str, pd.DataFrame]]) -> No
     print(report)
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Upshift Club Aggregator",
@@ -191,12 +317,9 @@ def main() -> None:
                              "For GotSport leagues this makes one additional HTTP request per club.")
     args = parser.parse_args()
 
-    # Signal to GotSport (and future) extractors that team-level data is wanted.
-    # We use an env var so extractors don't need a different function signature.
     if args.teams:
         os.environ["UPSHIFT_SCRAPE_TEAMS"] = "1"
 
-    # Build the target league list
     target_leagues = get_leagues(
         priority=args.priority,
         tier=args.tier,
@@ -224,18 +347,22 @@ def main() -> None:
     logger.info("Processing %d league(s)", len(target_leagues))
 
     all_frames = []
-    frame_entries: list[tuple[str, pd.DataFrame]] = []  # (extractor_name, df)
+    frame_entries: list[tuple[str, pd.DataFrame]] = []
+    all_failures: List[LeagueFailure] = []
+
     for league in target_leagues:
-        df, extractor_name = scrape_league(league, dry_run=args.dry_run)
+        df, extractor_name, failure = scrape_league(league, dry_run=args.dry_run)
+        if failure is not None:
+            all_failures.append(failure)
         if not df.empty:
             all_frames.append(df)
         frame_entries.append((extractor_name, df))
 
     if not all_frames:
         logger.warning("No data collected.")
+        _print_failure_summary(all_failures)
         return
 
-    # Cross-league deduplication in master dataset
     master = pd.concat(all_frames, ignore_index=True)
     master = deduplicate(master)
 
@@ -251,9 +378,13 @@ def main() -> None:
     print("\n" + "=" * 60)
     print(f"  Total clubs collected : {len(master)}")
     print(f"  Leagues processed     : {len(target_leagues)}")
+    print(f"  Leagues succeeded     : {len(target_leagues) - len(all_failures)}")
+    print(f"  Leagues failed        : {len(all_failures)}")
     if not args.dry_run:
         print(f"  Output directory      : output/")
     print("=" * 60)
+
+    _print_failure_summary(all_failures)
 
 
 if __name__ == "__main__":

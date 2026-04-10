@@ -17,17 +17,55 @@ Team-level data (opt-in via scrape_gotsport_teams):
 from __future__ import annotations
 
 import logging
+import os
 import re
+import sys
+import time
 from typing import List, Dict, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from bs4 import BeautifulSoup
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from config import MAX_RETRIES, RETRY_BASE_DELAY_SECONDS
+from utils.retry import retry_with_backoff, TransientError
+
 logger = logging.getLogger(__name__)
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"}
 _BASE = "https://system.gotsport.com"
+
+_RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
+
+
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+        return True
+    if isinstance(exc, requests.HTTPError):
+        code = exc.response.status_code if exc.response is not None else 0
+        return code in _RETRYABLE_STATUS_CODES
+    return False
+
+
+def _get_with_retry(url: str, timeout: int = 20) -> requests.Response:
+    """Fetch *url* with retry/backoff on transient errors."""
+    def _fetch() -> requests.Response:
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=timeout)
+            r.raise_for_status()
+            return r
+        except requests.RequestException as exc:
+            if _is_retryable(exc):
+                raise TransientError(str(exc)) from exc
+            raise
+
+    return retry_with_backoff(
+        _fetch,
+        max_retries=MAX_RETRIES,
+        base_delay=RETRY_BASE_DELAY_SECONDS,
+        label=f"gotsport:{url}",
+    )
 
 
 def _get_clubs_with_ids(event_id: int | str) -> List[Tuple[str, str]]:
@@ -37,9 +75,8 @@ def _get_clubs_with_ids(event_id: int | str) -> List[Tuple[str, str]]:
     """
     url = f"{_BASE}/org_event/events/{event_id}/clubs"
     try:
-        r = requests.get(url, headers=_HEADERS, timeout=20)
-        r.raise_for_status()
-    except requests.RequestException as exc:
+        r = _get_with_retry(url)
+    except (TransientError, requests.RequestException) as exc:
         logger.error("GotSport clubs fetch failed (event_id=%s): %s", event_id, exc)
         return []
 
@@ -71,27 +108,15 @@ def _fetch_club_detail(event_id: int | str, club_name: str, club_id: str) -> Dic
     """
     Fetch one club's detail page and extract teams + contacts.
 
-    HTML structure on GotSport club pages:
-        <div class="widget">
-          <div class="widget-header">
-            <h4 class="widget-title">Teams</h4>
-          </div>
-          <div class="widget-body">
-            <table class="table">...</table>
-          </div>
-        </div>
+    Raises requests.RequestException or TransientError on fetch failure so that
+    callers can distinguish a real failure from an empty-result page.
 
-    Returns {"teams": [...], "contacts": [...], "url": str}
+    Returns {"teams": [...], "contacts": [...], "url": str} on success.
     """
     url = f"{_BASE}/org_event/events/{event_id}/clubs/{club_id}"
     result: Dict = {"teams": [], "contacts": [], "url": url}
 
-    try:
-        r = requests.get(url, headers=_HEADERS, timeout=15)
-        r.raise_for_status()
-    except requests.RequestException as exc:
-        logger.debug("Club detail fetch failed (%s id=%s): %s", club_name, club_id, exc)
-        return result
+    r = _get_with_retry(url, timeout=15)
 
     soup = BeautifulSoup(r.text, "lxml")
 
@@ -110,7 +135,6 @@ def _fetch_club_detail(event_id: int | str, club_name: str, club_id: str) -> Dic
             continue
 
         if "teams" in section_title:
-            # thead has Name/Gender/Age/Division/Bracket
             for row in table.find_all("tr"):
                 tds = row.find_all("td")
                 if not tds:
@@ -121,7 +145,6 @@ def _fetch_club_detail(event_id: int | str, club_name: str, club_id: str) -> Dic
                     "division":  tds[3].get_text(strip=True) if len(tds) > 3 else "",
                     "bracket":   tds[4].get_text(strip=True) if len(tds) > 4 else "",
                 }
-                # Extract age group from team name (e.g. "AC Brea Soccer G18 Red" → "G18")
                 age_m = re.search(r"\b([BG])(\d{2})\b", team["team_name"])
                 team["age_group"] = f"{age_m.group(1)}{age_m.group(2)}" if age_m else ""
                 if team["team_name"]:
@@ -138,7 +161,7 @@ def _fetch_club_detail(event_id: int | str, club_name: str, club_id: str) -> Dic
                     "email": tds[2].get_text(strip=True) if len(tds) > 2 else "",
                     "phone": tds[3].get_text(strip=True) if len(tds) > 3 else "",
                 }
-                if contact["name"] and contact["role"]:  # skip empty/header rows
+                if contact["name"] and contact["role"]:
                     result["contacts"].append(contact)
 
     return result
@@ -177,47 +200,37 @@ def scrape_gotsport_event(event_id: int | str, league_name: str, state: str = ""
     return records
 
 
-def scrape_gotsport_teams(
+def _collect_detail_results(
     event_id: int | str,
     league_name: str,
-    state: str = "",
-    max_workers: int = 20,
-) -> Tuple[List[Dict], List[Dict]]:
+    clubs_with_ids: List[Tuple[str, str]],
+    max_workers: int,
+) -> Tuple[List[Dict], List[Dict], List[Tuple[str, str]]]:
     """
-    Scrape team-level and contact data from every club's detail page.
+    Run one pass of parallel club-detail fetches.
 
-    Returns:
-        (teams, contacts) — two lists of dicts ready to be written as CSVs.
-
-    teams columns:
-        club_name, team_name, gender, age_group, division, bracket,
-        league_name, event_id, source_url
-
-    contacts columns:
-        club_name, role, name, email, phone, league_name, event_id, source_url
+    Returns (teams, contacts, failed_clubs) where failed_clubs are those
+    whose futures raised an exception (fetch or parse failure).
     """
-    logger.info("[GotSport] Scraping team details for event %s (%s)", event_id, league_name)
-
-    clubs = _get_clubs_with_ids(event_id)
-    if not clubs:
-        logger.warning("[GotSport] No clubs found for event %s", event_id)
-        return [], []
-
     all_teams: List[Dict] = []
     all_contacts: List[Dict] = []
+    failed: List[Tuple[str, str]] = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futs = {
             ex.submit(_fetch_club_detail, event_id, club_name, club_id): (club_name, club_id)
-            for club_name, club_id in clubs
-            if club_id
+            for club_name, club_id in clubs_with_ids
         }
         for fut in as_completed(futs):
             club_name, club_id = futs[fut]
             try:
                 detail = fut.result()
             except Exception as exc:
-                logger.debug("Detail fetch failed for %s: %s", club_name, exc)
+                logger.debug(
+                    "[GotSport] Detail fetch failed for %s (id=%s): %s",
+                    club_name, club_id, exc,
+                )
+                failed.append((club_name, club_id))
                 continue
 
             src = detail["url"]
@@ -244,6 +257,72 @@ def scrape_gotsport_teams(
                     "event_id":    str(event_id),
                     "source_url":  src,
                 })
+
+    return all_teams, all_contacts, failed
+
+
+def scrape_gotsport_teams(
+    event_id: int | str,
+    league_name: str,
+    state: str = "",
+    max_workers: int = 20,
+) -> Tuple[List[Dict], List[Dict]]:
+    """
+    Scrape team-level and contact data from every club's detail page.
+
+    Failed workers are retried up to MAX_RETRIES times (with a short
+    delay between rounds) before being recorded as permanently failed.
+
+    Returns:
+        (teams, contacts) — two lists of dicts ready to be written as CSVs.
+
+    teams columns:
+        club_name, team_name, gender, age_group, division, bracket,
+        league_name, event_id, source_url
+
+    contacts columns:
+        club_name, role, name, email, phone, league_name, event_id, source_url
+    """
+    logger.info("[GotSport] Scraping team details for event %s (%s)", event_id, league_name)
+
+    clubs = _get_clubs_with_ids(event_id)
+    if not clubs:
+        logger.warning("[GotSport] No clubs found for event %s", event_id)
+        return [], []
+
+    clubs_with_ids = [(cn, cid) for cn, cid in clubs if cid]
+
+    all_teams: List[Dict] = []
+    all_contacts: List[Dict] = []
+    remaining = clubs_with_ids
+
+    for attempt in range(MAX_RETRIES + 1):
+        if not remaining:
+            break
+
+        if attempt > 0:
+            delay = min(RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)), 60.0)
+            logger.warning(
+                "[GotSport] event %s — retry attempt %d/%d for %d failed club(s), waiting %.1fs",
+                event_id, attempt, MAX_RETRIES, len(remaining), delay,
+            )
+            time.sleep(delay)
+
+        teams, contacts, failed = _collect_detail_results(
+            event_id, league_name, remaining, max_workers
+        )
+        all_teams.extend(teams)
+        all_contacts.extend(contacts)
+        remaining = failed
+
+    if remaining:
+        logger.error(
+            "[GotSport] event %s — %d club(s) permanently failed after %d attempt(s): %s",
+            event_id,
+            len(remaining),
+            MAX_RETRIES + 1,
+            ", ".join(cn for cn, _ in remaining),
+        )
 
     logger.info(
         "[GotSport] event %s → %d teams, %d contacts (from %d clubs)",

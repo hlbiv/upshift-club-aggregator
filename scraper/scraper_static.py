@@ -11,6 +11,9 @@ from typing import List, Dict
 import requests
 from bs4 import BeautifulSoup
 
+from config import MAX_RETRIES, RETRY_BASE_DELAY_SECONDS
+from utils.retry import retry_with_backoff, TransientError
+
 logger = logging.getLogger(__name__)
 
 HEADERS = {
@@ -18,6 +21,8 @@ HEADERS = {
         "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"
     )
 }
+
+_RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
 
 
 def _extract_clubs_from_table(soup: BeautifulSoup, url: str, league_name: str) -> List[Dict]:
@@ -107,23 +112,53 @@ def _build_record(values: List[str], headers: List[str], url: str, league_name: 
     }
 
 
+def _is_retryable(exc: Exception) -> bool:
+    """Return True if this requests exception is transient and worth retrying."""
+    if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+        return True
+    if isinstance(exc, requests.HTTPError):
+        code = exc.response.status_code if exc.response is not None else 0
+        return code in _RETRYABLE_STATUS_CODES
+    return False
+
+
 def scrape_static(url: str, league_name: str) -> List[Dict]:
     """
     Fetch a static HTML page and extract clubs from tables, lists, or links.
 
+    Retries up to MAX_RETRIES times on transient network errors (connection
+    errors, timeouts, 5xx responses) using exponential backoff.
+
     Returns a list of raw club dicts (pre-normalization).
     """
     logger.info("Static scrape: %s", url)
+
+    def _fetch() -> requests.Response:
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=20)
+            r.raise_for_status()
+            return r
+        except requests.RequestException as exc:
+            if _is_retryable(exc):
+                raise TransientError(str(exc)) from exc
+            raise
+
     try:
-        response = requests.get(url, headers=HEADERS, timeout=20)
-        response.raise_for_status()
+        response = retry_with_backoff(
+            _fetch,
+            max_retries=MAX_RETRIES,
+            base_delay=RETRY_BASE_DELAY_SECONDS,
+            label=f"static:{url}",
+        )
+    except TransientError as exc:
+        logger.error("Failed to fetch %s after retries (transient): %s", url, exc)
+        raise
     except requests.RequestException as exc:
         logger.error("Failed to fetch %s: %s", url, exc)
-        return []
+        raise
 
     soup = BeautifulSoup(response.text, "lxml")
 
-    # Remove boilerplate sections
     for tag in soup.find_all(["nav", "footer", "header", "script", "style"]):
         tag.decompose()
 

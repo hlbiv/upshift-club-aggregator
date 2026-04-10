@@ -44,6 +44,13 @@ FUZZY_THRESHOLD = 88          # RapidFuzz similarity score (0–100) to consider
 PLAYWRIGHT_TIMEOUT = 30_000   # ms to wait for JS pages to settle
 PLAYWRIGHT_WAIT_FOR = "networkidle"
 
+# ---------------------------------------------------------------------------
+# Retry / backoff settings
+# ---------------------------------------------------------------------------
+
+MAX_RETRIES = 3                  # Maximum number of retry attempts after first failure
+RETRY_BASE_DELAY_SECONDS = 2.0   # Seconds before first retry; doubles each subsequent attempt
+
 # Source types that require a headless browser (JS-rendered content)
 _JS_SOURCE_TYPES = {
     "club_directory",
