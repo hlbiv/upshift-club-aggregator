@@ -2,79 +2,187 @@
 Custom extractor for EDP Soccer (edpsoccer.com).
 
 EDP Soccer (Elite Development Platform) is a youth soccer league operating
-across NJ, PA, DE, MD, NY, CT, and VA.
+across NJ, PA, DE, MD, NY, CT, VA, and FL.
 
-SCRAPING STATUS: edpsoccer.com is built on Wix (parastorage CDN). The site
-is fully JavaScript-rendered and has no public club directory sub-page.
-Static scraping returns only marketing/navigation text — NOT club names.
-All known sub-paths (/clubs, /member-clubs, /club-directory) return 404.
+SCRAPING STRATEGY:
+  edpsoccer.com is Wix-rendered with no public static club directory. However,
+  EDP runs all its leagues and tournaments through GotSport.
 
-No GotSport event IDs were found for EDP in event ranges 34000–51500.
+  Step 1 — Dynamic discovery:
+    Fetch known EDP pages from edpsoccer.com (leagues, tournaments, etc.) and
+    scan each page's HTML for embedded GotSport event IDs (pattern: events/NNNNN).
 
-DATA SOURCE: Curated seed list from:
-  - US Club Soccer national rankings listing EDP-affiliated clubs
-  - EDP Soccer social media and press releases (2024-25 season)
-  - ussoccer.com state association club directories for NJ/PA/DE/MD/NY/CT
+  Step 2 — Known event seed:
+    A curated list of confirmed EDP GotSport event IDs is used as a seed to
+    guarantee coverage even if a page changes.  These are filtered to "EDP-branded"
+    events whose nav text begins with "EDP" on GotSport.
 
-GotSport event IDs: none found
+  Step 3 — Merge and deduplicate:
+    Scrape each unique event ID via scrape_gotsport_event() and return the union
+    of all clubs, deduplicated.
+
+CONFIRMED EDP GOTSPORT EVENTS (April 2026):
+  47702 — EDP League Spring 2026         (566 clubs)
+  44329 — EDP League Fall 2025           (525 clubs)
+  44330 — EDP Futures Fall 2025          (176 clubs)
+  49601 — EDP Futures Spring 2026        (151 clubs)
+  44410 — EDP Florida League 2025-26     (141 clubs)
+  49540 — EDP Florida League Spring 26   (140 clubs)
+  46334 — EDP League Mini Late Fall 2025 (144 clubs)
+  44331 — EDP Futures MD CMSSL Fall 2025  (54 clubs)
+  44332 — EDP Futures MD SoccerPlex Fall  (32 clubs)
+  49602 — EDP Futures MD CMSSL Spring 26  (53 clubs)
+  49603 — EDP Futures MD SoccerPlex Spr   (36 clubs)
+  41053 — EDP Fall Kickoff NJ 2025        (71 clubs)
+  34957 — EDP Fall Kickoff NJ 2024        (80 clubs)
+
+SOURCE: GotSport event pages embedded in edpsoccer.com/leagues and related pages.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import List, Dict
+import re
+from typing import List, Dict, Set
+
+import requests
 
 from extractors.registry import register
+from extractors.gotsport import scrape_gotsport_event
 
 logger = logging.getLogger(__name__)
 
-_SOURCE_URL = "https://www.edpsoccer.com/"
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"}
+_BASE_URL = "https://www.edpsoccer.com"
 
-_EDP_CLUBS: List[Dict] = [
-    {"club_name": "Cedar Stars Academy",           "city": "Milburn",          "state": "NJ"},
-    {"club_name": "PDA",                           "city": "Somerset",         "state": "NJ"},
-    {"club_name": "TSF Academy",                   "city": "Flanders",         "state": "NJ"},
-    {"club_name": "Skyllabies SC",                 "city": "Parsippany",       "state": "NJ"},
-    {"club_name": "Eastern FC",                    "city": "Bedminster",       "state": "NJ"},
-    {"club_name": "National SC",                   "city": "Kearny",           "state": "NJ"},
-    {"club_name": "NJ Ironmen",                    "city": "Randolph",         "state": "NJ"},
-    {"club_name": "1776 United FC",                "city": "Cherry Hill",      "state": "NJ"},
-    {"club_name": "FC Westfield",                  "city": "Westfield",        "state": "NJ"},
-    {"club_name": "NJSA 04",                       "city": "Parsippany",       "state": "NJ"},
-    {"club_name": "Penn Fusion SA",                "city": "Aston",            "state": "PA"},
-    {"club_name": "Philadelphia Union Youth",      "city": "Chester",          "state": "PA"},
-    {"club_name": "Players Development Academy",   "city": "Wayne",            "state": "PA"},
-    {"club_name": "FC Delco",                      "city": "Havertown",        "state": "PA"},
-    {"club_name": "Continental FC CONCACAF",       "city": "Bethlehem",        "state": "PA"},
-    {"club_name": "Match Fit Academy",             "city": "Wayne",            "state": "NJ"},
-    {"club_name": "Manhattan SC",                  "city": "New York",         "state": "NY"},
-    {"club_name": "NY Red Bulls Academy",          "city": "Harrison",         "state": "NJ"},
-    {"club_name": "Ocean City Nor'easters Youth",  "city": "Ocean City",       "state": "NJ"},
-    {"club_name": "Connecticut FC",                "city": "Manchester",       "state": "CT"},
-    {"club_name": "Capital Area Railhawks",        "city": "Baltimore",        "state": "MD"},
-    {"club_name": "FC Baltimore",                  "city": "Baltimore",        "state": "MD"},
-    {"club_name": "Stouffers International SC",    "city": "Delaware",         "state": "OH"},
-    {"club_name": "Delaware FC",                   "city": "Middletown",       "state": "DE"},
-    {"club_name": "Virginia Rush",                 "city": "Virginia Beach",   "state": "VA"},
-    {"club_name": "Seacoast United NJ",            "city": "Westfield",        "state": "NJ"},
-    {"club_name": "Ironbound SC",                  "city": "Newark",           "state": "NJ"},
+_GOTSPORT_ID_RE = re.compile(r"events/(\d{4,6})")
+
+# Club names that are actually league/org labels, not real clubs
+_NOT_A_CLUB: Set[str] = {
+    "edp soccer",
+    "edp soccer league",
+    "edp",
+    "elite development platform",
+    "gotsport",
+    "schedule",
+}
+
+
+def _is_valid_club(club_name: str) -> bool:
+    """Return False if the name looks like a league/org label rather than a club."""
+    low = club_name.lower().strip()
+    if low in _NOT_A_CLUB:
+        return False
+    if low.startswith("zz-"):
+        return False
+    return True
+
+_KNOWN_EDP_EVENT_IDS: List[int] = [
+    47702,  # EDP League Spring 2026        (current, ~566 clubs)
+    44329,  # EDP League Fall 2025          (525 clubs)
+    44330,  # EDP Futures Fall 2025         (176 clubs)
+    49601,  # EDP Futures Spring 2026       (151 clubs)
+    44410,  # EDP Florida League 2025-26    (141 clubs)
+    49540,  # EDP Florida League Spring 26  (140 clubs)
+    46334,  # EDP League Mini Late Fall 1   (144 clubs)
+    44331,  # EDP Futures MD CMSSL Fall 25  (54 clubs)
+    44332,  # EDP Futures MD SoccerPlex F   (32 clubs)
+    49602,  # EDP Futures MD CMSSL Spr 26   (53 clubs)
+    49603,  # EDP Futures MD SoccerPlex S   (36 clubs)
+    41053,  # EDP Fall Kickoff NJ 2025      (71 clubs)
+    34957,  # EDP Fall Kickoff NJ 2024      (80 clubs)
 ]
+
+_DISCOVERY_PAGES: List[str] = [
+    "/leagues",
+    "/edp-league",
+    "/fall-classic",
+    "/spring-kickoff-pa",
+    "/cup-spring",
+    "/summer-classic",
+    "/winter-classic",
+    "/futures",
+    "/ct-championship-league",
+]
+
+
+def _discover_event_ids() -> Set[int]:
+    """
+    Scrape EDP Soccer pages for embedded GotSport event IDs.
+    Returns a set of integer event IDs.
+    """
+    event_ids: Set[int] = set()
+    for path in _DISCOVERY_PAGES:
+        url = f"{_BASE_URL}{path}"
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=20)
+            if r.status_code == 200:
+                for m in _GOTSPORT_ID_RE.finditer(r.text):
+                    event_ids.add(int(m.group(1)))
+        except Exception as exc:
+            logger.debug("[EDP] Could not fetch %s: %s", url, exc)
+    logger.info("[EDP] Discovered %d candidate GotSport event IDs from EDP pages", len(event_ids))
+    return event_ids
+
+
+def _is_edp_event(event_id: int) -> bool:
+    """
+    Confirm a GotSport event ID belongs to EDP by checking that the nav text
+    starts with 'EDP'. Returns False on fetch error (conservative).
+    """
+    url = f"https://system.gotsport.com/org_event/events/{event_id}"
+    try:
+        r = requests.get(url, headers=_HEADERS, timeout=15)
+        if r.status_code != 200:
+            return False
+        nav_match = re.search(r"Toggle navigation(.{0,120})", r.text)
+        if nav_match:
+            nav_text = nav_match.group(1).strip().lower()
+            return nav_text.startswith("edp")
+        return False
+    except Exception as exc:
+        logger.debug("[EDP] Could not verify event %s: %s", event_id, exc)
+        return False
 
 
 @register(r"edpsoccer\.com")
 def scrape_edp(url: str, league_name: str) -> List[Dict]:
-    logger.warning(
-        "[EDP custom] edpsoccer.com is Wix-rendered with no public club directory. "
-        "Using curated seed list (%d clubs). DATA PROVENANCE: curated/static.",
-        len(_EDP_CLUBS),
-    )
-    return [
-        {
-            "club_name":   c["club_name"],
-            "league_name": league_name,
-            "city":        c.get("city", ""),
-            "state":       c.get("state", ""),
-            "source_url":  _SOURCE_URL,
-        }
-        for c in _EDP_CLUBS
-    ]
+    logger.info("[EDP custom] Starting scrape via GotSport")
+
+    # Seed with confirmed known IDs
+    all_event_ids: Set[int] = set(_KNOWN_EDP_EVENT_IDS)
+
+    # Augment with dynamically discovered IDs
+    try:
+        discovered = _discover_event_ids()
+        # Only add newly discovered IDs; verify they're EDP before including
+        new_ids = discovered - all_event_ids
+        if new_ids:
+            logger.info("[EDP] Verifying %d newly discovered event IDs", len(new_ids))
+            for eid in new_ids:
+                if _is_edp_event(eid):
+                    logger.info("[EDP] Confirmed new EDP event: %d", eid)
+                    all_event_ids.add(eid)
+    except Exception as exc:
+        logger.warning("[EDP] Dynamic discovery failed: %s", exc)
+
+    logger.info("[EDP] Total EDP GotSport event IDs to scrape: %d", len(all_event_ids))
+
+    seen_clubs: Set[str] = set()
+    all_records: List[Dict] = []
+
+    for event_id in sorted(all_event_ids):
+        try:
+            records = scrape_gotsport_event(event_id, league_name, state="")
+        except Exception as exc:
+            logger.warning("[EDP] GotSport event %s failed: %s", event_id, exc)
+            continue
+
+        new = [rec for rec in records
+               if rec["club_name"] not in seen_clubs and _is_valid_club(rec["club_name"])]
+        seen_clubs.update(rec["club_name"] for rec in new)
+        all_records.extend(new)
+        logger.info("[EDP] Event %s → %d clubs (%d new)", event_id, len(records), len(new))
+
+    logger.info("[EDP custom] Total unique clubs: %d", len(all_records))
+    return all_records
