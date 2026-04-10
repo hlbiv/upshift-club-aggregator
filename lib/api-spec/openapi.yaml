@@ -2,14 +2,20 @@ openapi: 3.1.0
 info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 0.2.0
+  description: Upshift Club Aggregator API — youth soccer club graph database
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: clubs
+    description: Canonical club operations
+  - name: leagues
+    description: League directory operations
+  - name: search
+    description: Fuzzy search operations
 paths:
   /healthz:
     get:
@@ -24,6 +30,165 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /clubs:
+    get:
+      operationId: listClubs
+      tags: [clubs]
+      summary: List canonical clubs
+      description: >
+        Returns a paginated list of canonical clubs. Optionally filter by
+        state (exact, case-insensitive), tier (integer 1–4), and gender_program.
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: Filter by US state abbreviation or full name (ILIKE match)
+        - name: tier
+          in: query
+          schema:
+            type: integer
+          description: Filter by competitive tier (1=National Elite … 4=State)
+        - name: gender_program
+          in: query
+          schema:
+            type: string
+          description: "Filter by gender program (e.g. boys, girls, boys_and_girls)"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated club list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubListResponse"
+
+  /clubs/{id}:
+    get:
+      operationId: getClub
+      tags: [clubs]
+      summary: Get a single club with aliases and affiliations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Club detail with aliases and league affiliations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubDetailResponse"
+        "404":
+          description: Club not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /clubs/{id}/related:
+    get:
+      operationId: getRelatedClubs
+      tags: [clubs]
+      summary: Graph traversal — clubs sharing a league affiliation
+      description: >
+        Returns clubs that share at least one league affiliation with the given
+        club (one-hop neighbourhood in the club-league bipartite graph).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Related clubs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubRelatedResponse"
+        "404":
+          description: Club not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /search:
+    get:
+      operationId: searchClubs
+      tags: [search]
+      summary: Fuzzy club name search
+      description: >
+        Returns ranked clubs whose canonical name or any known alias matches
+        the query string (ILIKE). Results are ordered: prefix matches first,
+        then substring matches.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+
+  /leagues:
+    get:
+      operationId: listLeagues
+      tags: [leagues]
+      summary: List all leagues in the master directory
+      responses:
+        "200":
+          description: Full league inventory ordered by tier then name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeagueListResponse"
+
+  /leagues/{id}/clubs:
+    get:
+      operationId: getLeagueClubs
+      tags: [leagues]
+      summary: Clubs affiliated with a league
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Clubs in the league
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeagueClubsResponse"
+        "404":
+          description: League not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +199,220 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Club:
+      type: object
+      properties:
+        id:
+          type: integer
+        club_name_canonical:
+          type: string
+        club_slug:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        status:
+          type: string
+      required:
+        - id
+        - club_name_canonical
+        - club_slug
+        - city
+        - state
+        - country
+        - status
+
+    Alias:
+      type: object
+      properties:
+        id:
+          type: integer
+        alias_name:
+          type: string
+        alias_slug:
+          type: string
+        source:
+          type: string
+        is_official:
+          type: boolean
+      required:
+        - id
+        - alias_name
+        - alias_slug
+        - source
+        - is_official
+
+    Affiliation:
+      type: object
+      properties:
+        id:
+          type: integer
+        gender_program:
+          type: string
+        platform_name:
+          type: string
+        platform_tier:
+          type: string
+        conference_name:
+          type: string
+        division_name:
+          type: string
+        season:
+          type: string
+        source_url:
+          type: string
+        source_name:
+          type: string
+        verification_status:
+          type: string
+        notes:
+          type: string
+      required:
+        - id
+        - gender_program
+        - platform_name
+        - platform_tier
+        - conference_name
+        - division_name
+        - season
+        - source_url
+        - source_name
+        - verification_status
+        - notes
+
+    League:
+      type: object
+      properties:
+        id:
+          type: integer
+        league_name:
+          type: string
+        league_family:
+          type: string
+        governing_body:
+          type: string
+        tier_numeric:
+          type: integer
+        tier_label:
+          type: string
+        gender:
+          type: string
+        geographic_scope:
+          type: string
+        has_public_clubs:
+          type: boolean
+        scrape_priority:
+          type: string
+        source_type:
+          type: string
+        official_url:
+          type: string
+        notes:
+          type: string
+      required:
+        - id
+        - league_name
+        - league_family
+        - governing_body
+        - tier_numeric
+        - tier_label
+        - gender
+        - geographic_scope
+        - has_public_clubs
+        - scrape_priority
+        - source_type
+        - official_url
+        - notes
+
+    ClubListResponse:
+      type: object
+      properties:
+        clubs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Club"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+      required:
+        - clubs
+        - total
+        - page
+        - page_size
+
+    ClubDetailResponse:
+      allOf:
+        - $ref: "#/components/schemas/Club"
+        - type: object
+          properties:
+            aliases:
+              type: array
+              items:
+                $ref: "#/components/schemas/Alias"
+            affiliations:
+              type: array
+              items:
+                $ref: "#/components/schemas/Affiliation"
+          required:
+            - aliases
+            - affiliations
+
+    ClubRelatedResponse:
+      type: object
+      properties:
+        clubs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Club"
+      required:
+        - clubs
+
+    SearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/Club"
+      required:
+        - query
+        - results
+
+    LeagueListResponse:
+      type: object
+      properties:
+        leagues:
+          type: array
+          items:
+            $ref: "#/components/schemas/League"
+      required:
+        - leagues
+
+    LeagueClubsResponse:
+      type: object
+      properties:
+        league_id:
+          type: integer
+        clubs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Club"
+      required:
+        - league_id
+        - clubs

@@ -6,6 +6,12 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface HealthStatus {
+export interface Club {
+  id: number;
+  club_name_canonical: string;
+  club_slug: string;
+  city: string;
+  state: string;
+  country: string;
   status: string;
 }

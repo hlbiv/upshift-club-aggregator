@@ -5,7 +5,8 @@
  * Upshift Club Aggregator API — youth soccer club graph database
  * OpenAPI spec version: 0.2.0
  */
+import type { League } from "./league";
 
-export interface HealthStatus {
-  status: string;
+export interface LeagueListResponse {
+  leagues: League[];
 }

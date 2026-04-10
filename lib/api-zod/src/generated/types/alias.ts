@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface Alias {
+  id: number;
+  alias_name: string;
+  alias_slug: string;
+  source: string;
+  is_official: boolean;
 }
