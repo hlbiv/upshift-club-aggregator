@@ -64,6 +64,8 @@ def scrape_league(league: dict, dry_run: bool = False) -> pd.DataFrame:
 
     if not raw:
         logger.warning("No clubs found for league: %s", name)
+        if not dry_run:
+            save_league_csv(pd.DataFrame(), name)
         return pd.DataFrame()
 
     df = pd.DataFrame(raw)
@@ -78,7 +80,7 @@ def scrape_league(league: dict, dry_run: bool = False) -> pd.DataFrame:
 
     logger.info("'%s': %d clubs after dedup", name, len(df))
 
-    if not dry_run and not df.empty:
+    if not dry_run:
         path = save_league_csv(df, name)
         logger.info("Saved: %s", path)
     elif dry_run:
