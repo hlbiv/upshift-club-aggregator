@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { canonicalClubs, clubAliases } from "@workspace/db/schema";
-import { ilike, or, asc, sql } from "drizzle-orm";
+import { ilike, or, asc, sql, inArray } from "drizzle-orm";
 import { SearchClubsResponse } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -31,9 +31,7 @@ router.get("/search", async (req, res, next): Promise<void> => {
       ilike(canonicalClubs.clubSlug, pattern),
     ];
     if (aliasClubIds.length > 0) {
-      orConditions.push(
-        sql`${canonicalClubs.id} = ANY(ARRAY[${sql.raw(aliasClubIds.join(","))}]::int[])`,
-      );
+      orConditions.push(inArray(canonicalClubs.id, aliasClubIds));
     }
 
     const rows = await db

@@ -209,7 +209,7 @@ router.get("/clubs/:id/related", async (req, res, next): Promise<void> => {
     const relatedClubs = await db
       .select()
       .from(canonicalClubs)
-      .where(inArray(canonicalClubs.id, uniqueIds.slice(0, 50)))
+      .where(inArray(canonicalClubs.id, uniqueIds))
       .orderBy(asc(canonicalClubs.clubNameCanonical));
 
     res.json(
