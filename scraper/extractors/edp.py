@@ -152,19 +152,23 @@ def scrape_edp(url: str, league_name: str) -> List[Dict]:
     # Seed with confirmed known IDs
     all_event_ids: Set[int] = set(_KNOWN_EDP_EVENT_IDS)
 
-    # Augment with dynamically discovered IDs
-    try:
-        discovered = _discover_event_ids()
-        # Only add newly discovered IDs; verify they're EDP before including
-        new_ids = discovered - all_event_ids
-        if new_ids:
-            logger.info("[EDP] Verifying %d newly discovered event IDs", len(new_ids))
-            for eid in new_ids:
-                if _is_edp_event(eid):
-                    logger.info("[EDP] Confirmed new EDP event: %d", eid)
-                    all_event_ids.add(eid)
-    except Exception as exc:
-        logger.warning("[EDP] Dynamic discovery failed: %s", exc)
+    # Augment with dynamically discovered IDs (skip in CI / fast-rebuild mode)
+    import os
+    if not os.environ.get("EDP_SKIP_DISCOVERY"):
+        try:
+            discovered = _discover_event_ids()
+            # Only add newly discovered IDs; verify they're EDP before including
+            new_ids = discovered - all_event_ids
+            if new_ids:
+                logger.info("[EDP] Verifying %d newly discovered event IDs", len(new_ids))
+                for eid in new_ids:
+                    if _is_edp_event(eid):
+                        logger.info("[EDP] Confirmed new EDP event: %d", eid)
+                        all_event_ids.add(eid)
+        except Exception as exc:
+            logger.warning("[EDP] Dynamic discovery failed: %s", exc)
+    else:
+        logger.info("[EDP] Skipping dynamic discovery (EDP_SKIP_DISCOVERY set)")
 
     logger.info("[EDP] Total EDP GotSport event IDs to scrape: %d", len(all_event_ids))
 
