@@ -8,19 +8,18 @@
     "state": "Alaska",
     "type": "gotsport",
     "events": [48529],
-    "_note": "Small state — 6 clubs: Alaska Rush, Anchorage Youth Soccer, Chugiak SC, Cook Inlet SC, Polar Vortex, Valley Revolution"
+    "_note": "6 clubs: Alaska Rush, Anchorage Youth Soccer, Chugiak SC, Cook Inlet SC, Polar Vortex, Valley Revolution — all Alaska ✓"
   },
   "https://www.azyouthsoccer.org": {
     "state": "Arizona",
     "type": "gotsport",
     "events": [45756],
-    "_note": "30 clubs — Arizona Arsenal SC, AZFC, Brazas Futebol Club confirmed AZ"
+    "_note": "30 clubs: Arizona Arsenal SC, AZFC, Brazas FC — all Arizona ✓"
   },
   "https://www.arkansassoccer.org": {
     "state": "Arkansas",
-    "type": "gotsport",
-    "events": [45826],
-    "_note": "45 clubs — Arkansas Rising SC, AYSO 300 United confirmed AR"
+    "type": "no_source_found",
+    "_note": "GotSport event 45826 checked but is a Midwest multi-state event — only 2-3 AR clubs among 45 (from IL, TN, MO, IN, TX). No verified AR-specific event found."
   },
   "https://www.calnorth.org": {
     "state": "Cal North",
@@ -31,13 +30,12 @@
     "state": "Cal South",
     "type": "gotsport",
     "events": [43065, 41862],
-    "_note": "43065=42 clubs (AC Brea, ALBION LA), 41862=41 clubs (ALBION SD, ALBION Santa Ana) — both Cal South state cup events"
+    "_note": "43065=42 clubs (AC Brea, ALBION LA, AYSO S1 Alliance — all SoCal LA/OC ✓); 41862=41 clubs (ALBION SD, ALBION Santa Ana, Anaheim FC — all SoCal ✓)"
   },
   "https://www.coloradosoccer.org": {
     "state": "Colorado",
-    "type": "gotsport",
-    "events": [46302],
-    "_note": "20 clubs — Aspire FC, Barcelona SC CO, Cebollitas FC; may have minor cross-state overlap"
+    "type": "no_source_found",
+    "_note": "GotSport event 46302 checked but contains Texas/Houston clubs (Houston Comets, HTX Oilers, Tomball Cougars — 0% CO). No Colorado-specific GotSport event found."
   },
   "https://www.cjsa.org": {
     "state": "Connecticut",
@@ -52,8 +50,8 @@
   "https://www.enysoccer.com": {
     "state": "Eastern NY",
     "type": "gotsport",
-    "events": [39275, 52052, 49587],
-    "_note": "39275=28 clubs (Atletico San Lucas, Carle Place LIJSL); 52052=31 clubs (Albertson SC, ALBION Brooklyn); 49587=28 clubs (Asphalt Green, BW Gottschee, Clarkstown SC)"
+    "events": [52052],
+    "_note": "52052=31 clubs: Albertson SC, ALBION SC Brooklyn, Asphalt Green, Baymen/LIJSL, BW Gottschee, Commack Soccer, Dix Hills SC — all Long Island / NYC ✓. Events 39275 and 49587 dropped (>40% NJ clubs, not ENY)."
   },
   "https://www.epysa.org": {
     "state": "Eastern PA",
@@ -73,7 +71,7 @@
   "https://www.hawaiisoccer.com": {
     "state": "Hawaii",
     "type": "no_source_found",
-    "_note": "No public GotSport event, Google Maps, or SportsEngine API found. Small island state with limited online presence."
+    "_note": "No public GotSport event or Google Maps found. Small island state; likely uses private platform."
   },
   "https://www.idahoyouthsoccer.org": {
     "state": "Idaho",
@@ -84,7 +82,7 @@
     "state": "Illinois",
     "type": "gotsport",
     "events": [41112, 50022],
-    "_note": "41112=87 clubs (ACS Sycamore, Addison United, Chicago clubs); 50022=86 clubs (AAC Eagles, Atlas FC Chicago, Ajax Naperville)"
+    "_note": "41112=87 clubs (ACS Sycamore, Addison United, Aurora Eagles, Chicago Fire Youth, Eclipse Select — all Chicago metro IL ✓, 1 IN club). 50022=86 clubs (Atlas FC Chicago, Ajax Naperville, Bolingbrook SC — all Chicago metro IL ✓, 1 IN club)."
   },
   "https://www.soccerindiana.org": {
     "state": "Indiana",
@@ -95,7 +93,7 @@
     "state": "Iowa",
     "type": "gotsport",
     "events": [41677, 46269],
-    "_note": "41677=18 clubs (515 Soccer/Des Moines, Ames SC, DCG SC — pure Iowa); 46269=15 clubs (AYSO Cedar Rapids, Bondurant SC)"
+    "_note": "41677=18 clubs: 515 Soccer/Des Moines area code, Ames SC, DCG SC (Dallas Center-Grimes IA), Des Moines SC, Gilbert SC, Indianola, Mason City SC — all Iowa cities ✓. 46269=15 clubs: AYSO United Cedar Rapids, Bondurant SC, Des Moines SC — all Iowa ✓."
   },
   "https://www.kansasyouthsoccer.org": {
     "state": "Kansas",
@@ -110,7 +108,7 @@
   "https://www.playlouisianasoccer.org": {
     "state": "Louisiana",
     "type": "no_source_found",
-    "_note": "No public GotSport event or Google Maps found after deep crawl and event scan. May use SportsEngine with private data."
+    "_note": "No public GotSport event or Google Maps found after deep crawl and sitemap scan."
   },
   "https://www.soccermaine.com": {
     "state": "Maine",
@@ -121,12 +119,12 @@
     "state": "Maryland",
     "type": "gotsport",
     "events": [43226, 48931],
-    "_note": "43226=51 clubs (Abingdon FC, Achilles FC, Arundel SA); 48931=23 clubs supplement"
+    "_note": "43226=51 clubs: Abingdon FC, Baltimore Bays, Bethesda SC, Coppermine SC, FC Frederick, Harford FC United, Maryland Rush, Montgomery Soccer MSI, Rockville SC — all Maryland cities ✓. 48931=23 clubs: Arundel SA, Baltimore Celtic, Catonsville Soccer, Central Carroll SC, Cockeysville FC — all Maryland ✓."
   },
   "https://www.mayouthsoccer.org": {
     "state": "Massachusetts",
     "type": "no_source_found",
-    "_note": "Large state association using SportsEngine platform with private data. No public GotSport events found."
+    "_note": "No public GotSport event or Google Maps found. Large state on SportsEngine with private data."
   },
   "https://www.michiganyouthsoccer.org": {
     "state": "Michigan",
@@ -137,12 +135,12 @@
     "state": "Minnesota",
     "type": "gotsport",
     "events": [38032],
-    "_note": "54 clubs — Albion SC Southern MN, Arrowhead Youth SA, Bloomington United confirmed MN"
+    "_note": "54 clubs: Albion SC Southern MN, Arrowhead Youth SA, Bloomington United, Edina SC, Mahtomedi SA, Mankato United SC, Minneapolis United, MN Thunder Academy, Owatonna SA, Prior Lake SC, St Paul Blackhawks, Tonka United SA, Waconia SC — predominantly Minnesota ✓ (~80% MN, ~15% WI border area, 1 IA club)."
   },
   "https://www.mississippisoccer.org": {
     "state": "Mississippi",
     "type": "no_source_found",
-    "_note": "No public GotSport event found. Small state association; likely uses private league software."
+    "_note": "No public GotSport event found. Small state association; likely private platform."
   },
   "https://www.missourisoccer.org": {
     "state": "Missouri",
@@ -153,18 +151,18 @@
     "state": "Montana",
     "type": "gotsport",
     "events": [40682],
-    "_note": "27 clubs — Bigfork SC, Big Sky Futbol Club, Billings Wolves, Flathead Rapids, Flathead Valley United SC confirmed MT"
+    "_note": "27 clubs: Bigfork SC (Bigfork MT ✓), Big Sky Futbol Club ✓, Billings Wolves (Billings MT ✓), Black Hills Rapids SC, Clark Fork Soccer Alliance, Flathead Rapids, Flathead Valley United SC — all Montana region ✓."
   },
   "https://www.nebraskastatesoccer.org": {
     "state": "Nebraska",
     "type": "no_source_found",
-    "_note": "No public GotSport event or Google Maps found. State association website has no embedded club directory."
+    "_note": "No public GotSport event or Google Maps found."
   },
   "https://www.nevadayouthsoccer.org": {
     "state": "Nevada",
     "type": "gotsport",
     "events": [44159],
-    "_note": "41 clubs — ALBION SC Las Vegas, Alliance Youth Soccer League, AYSO United Las Vegas confirmed NV"
+    "_note": "41 clubs: ALBION SC Las Vegas, Alliance Youth Soccer League, AYSO United Las Vegas — all Nevada ✓."
   },
   "https://www.soccernh.com": {
     "state": "New Hampshire",
@@ -174,8 +172,8 @@
   "https://www.njyouthsoccer.com": {
     "state": "New Jersey",
     "type": "gotsport",
-    "events": [47543, 48159],
-    "_note": "47543=50 clubs (Aberdeen Matawan, Beachwood SC); 48159=59 clubs (American SC NJ, Ardsley Panthers FC)"
+    "events": [47543],
+    "_note": "47543=50 clubs: Aberdeen Matawan, Beachwood, Berkeley, Bordentown, Cinnaminson, Colts Neck, Egg Harbor Township, Freehold, Haddon Heights, Hamilton, Hammonton, Hazlet, Holmdel, Howell, Manalapan, Marlboro, Middletown, Monroe Township, Neptune, Old Bridge, Ocean Township, Princeton, Rahway, Red Bank, Rumson, Stafford, Toms River, Wall — all New Jersey towns ✓ (1 Bucks County PA club, otherwise 98% NJ). Event 48159 dropped — contains Eastern PA and NY Hudson Valley clubs, not NJ."
   },
   "https://www.nmysa.net": {
     "state": "New Mexico",
@@ -189,9 +187,8 @@
   },
   "https://www.ncsoccer.org": {
     "state": "North Carolina",
-    "type": "gotsport",
-    "events": [48392],
-    "_note": "108 clubs — AC Independence, America FC United; multi-state event but NC-heavy"
+    "type": "no_source_found",
+    "_note": "GotSport event 48392 checked but dominated by Northeast/NY/CT/MA/ME/Quebec clubs — 0% NC content. No verified NC-specific GotSport event found."
   },
   "https://www.ndsoccer.org": {
     "state": "North Dakota",
@@ -202,13 +199,13 @@
     "state": "North Texas",
     "type": "gotsport",
     "events": [39057],
-    "_note": "78 clubs — Alacranes FC, Amarillo Rush SC, Americas Futbol Club, Arlington SA; confirmed NTX region. NOTE: event 45141 is a national USYS event (contains all state associations) — do NOT use."
+    "_note": "78 clubs: Alacranes FC, Amarillo Rush SC (TX panhandle ✓), Americas Futbol Club (DFW ✓), Arlington SA (Arlington TX ✓), Mansfield FC, Midlothian Premier, North Fort Worth Alliance, NTX Celtic, NTX United, Revolution FC LBK (Lubbock TX ✓), San Angelo Extreme (TX ✓), Solar SC (DFW ✓), Texas Spurs, WFSC (Wichita Falls TX ✓) — predominantly North Texas ✓. NOTE: event 45141 is a national USYS event (contains all 54 state associations) — do NOT use."
   },
   "https://ohio-soccer.org": {
     "state": "Ohio",
     "type": "gotsport",
     "events": [44770, 49162],
-    "_note": "49162=88 clubs (Academia De Futbol Ole, Alliance Cincinnati SC, Bellbrook SA) supplements 44770 (12 clubs)"
+    "_note": "49162=88 clubs: Alliance Cincinnati SC, Bellbrook SA, Cincinnati Elite FC, Cincinnati United, Cincinnati West, Club Ohio, Dayton FC, FC Dayton — predominantly SW Ohio ✓ (small KY/IN border overlap). Supplements 44770 (12 clubs)."
   },
   "https://www.oksoccer.com": {
     "state": "Oklahoma",
@@ -217,15 +214,13 @@
   },
   "https://www.oregonyouthsoccer.org": {
     "state": "Oregon",
-    "type": "gotsport",
-    "events": [40173],
-    "_note": "60 clubs — Alder FC, All Out SC, Appleseed Premier confirmed OR"
+    "type": "no_source_found",
+    "_note": "GotSport event 40173 checked but is entirely Ohio clubs (Canal Winchester, Central Ohio Elite, Club Ohio, Columbus United — 0% Oregon). No verified Oregon-specific GotSport event found."
   },
   "https://www.pawest-soccer.org": {
     "state": "PA West",
-    "type": "gotsport",
-    "events": [49186],
-    "_note": "91 clubs — AC United, Allentown Youth SC, Anderson Monarch SC confirmed PA West region"
+    "type": "no_source_found",
+    "_note": "GotSport event 49186 checked but contains Eastern PA clubs (Philadelphia, Allentown/Lehigh Valley, Bucks County, Montgomery County — 0% Pittsburgh/Western PA). No verified PA West-specific GotSport event found."
   },
   "https://www.soccer-ri.com": {
     "state": "Rhode Island",
@@ -271,13 +266,13 @@
     "state": "Washington",
     "type": "gotsport",
     "events": [41134, 39584],
-    "_note": "41134=26 clubs (Basin Sounders, BVBIA WA, Cascade Premier); 39584=29 clubs (BVBIA WA, Cascade Premier, CYSA Timber Barons)"
+    "_note": "41134=26 clubs: Basin Sounders, BVBIA WA Seattle, Cascade Premier, Central WA Sounders, Emerald City FC, Everett YSC, FC Edmonds, Highline Premier FC, North Kitsap SC, Puget Sound SC, Seattle Celtic, Seattle Reign Academy, West Sound Soccer Academy — all Washington state ✓. 39584=29 additional WA clubs ✓."
   },
   "https://www.wvsoccer.net": {
     "state": "West Virginia",
     "type": "gotsport",
     "events": [46532],
-    "_note": "13 clubs — Barbour County, Belpre SC, FC Ripley, KVSL clubs confirmed WV; minor OH overlap (Club Ohio)"
+    "_note": "13 clubs: Barbour County (WV ✓), Belpre SC (border OH/WV, Belpre is OH but KVSL area), Club Ohio (border), FC Ripley, KVSL (Kanawha Valley WV ✓), Putnam United FC (WV ✓), River Valley SC — predominantly WV border region ✓ with minor OH overlap."
   },
   "https://www.wiyouthsoccer.com": {
     "state": "Wisconsin",
@@ -288,6 +283,6 @@
     "state": "Wyoming",
     "type": "gotsport",
     "events": [48304],
-    "_note": "9 clubs — Casper SC, Cheyenne Soccer Club, Gillette Edge SC confirmed WY"
+    "_note": "9 clubs: Casper SC (Casper WY ✓), Cheyenne Soccer Club (Cheyenne WY ✓), Gillette Edge SC (Gillette WY ✓) — all Wyoming ✓."
   }
 }

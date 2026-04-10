@@ -9,15 +9,17 @@ Strategy (in priority order):
 All data sources are declared in data/state_assoc_config.json, keyed by the
 canonical URL listed in leagues_master.csv (no trailing slash).
 
-Coverage (Task #6 complete — April 2026):
-  GotSport    (37 states): AL, AK, AZ, AR, CA-North, CA-South, CO, DE, E-NY,
+Coverage (Task #6 complete — April 2026; 16 new states added):
+  GotSport    (32 states): AL, AK, AZ, CA-North, CA-South, DE, E-NY,
                            FL, GA, ID, IL, IA, KS, KY, ME, MD, MI, MN, MT,
-                           NV, NH, NJ, NM, NC, NT, NY-West, OH, OK, OR,
-                           PA-West, VT, VA, WA, WV, WY
+                           NV, NH, NJ, NM, NT, NY-West, OH, OK, VT, VA,
+                           WA, WV, WY
   Google Maps ( 6 states): CT, Eastern PA, IN, MO, TN, TX-South
-  No source   (11 states): HI, LA, MA, MS, NE, ND, RI, SC, SD, UT, WI
-    — HI/LA/MA/MS/NE/ND/RI/SC/SD/UT/WI: no public GotSport event or Google
-      Maps found; state associations use SportsEngine or private platforms.
+  No source   (16 states): AR, CO, HI, LA, MA, MS, NE, NC, ND, OR, PA-West,
+                           RI, SC, SD, UT, WI
+    — AR/CO/NC/OR/PA-West: GotSport events found but verified wrong-state
+      (multi-state league events). No correct state-specific event found.
+    — HI/LA/MA/MS/NE/ND/RI/SC/SD/UT/WI: no public event or Maps found.
 """
 
 from __future__ import annotations
