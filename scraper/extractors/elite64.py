@@ -1,30 +1,23 @@
 """
-Custom extractor for USYS National League Elite 64 / Club Premier 1.
+Custom extractor for Elite 64.
 
-Elite 64 (rebranded to NL Club Premier 1 for 2025-26) is the top tier of the
-USYS National League club-based competition. It runs on GotSport with separate
-events per conference plus national winter showcase events.
+Elite 64 is administered by US Club Soccer as a top-tier national invitational
+club-based league, hosted on GotSport (USYS National League platform).
+Both boys and girls programs run as separate GotSport events each season.
 
-Source: https://www.usysnationalleague.com/schedules-results/
+GotSport event IDs for 2024-25 season:
+  Regular season (combined boys + girls):
+    35565  Elite 64 Regular Season (171 clubs — both programs)
 
-2024-25 season event IDs (Club Premier 1 — formerly Elite 64):
-  Conference events (boys + girls combined, one per conference):
-    50936  Frontier
-    50937  Great Lakes
-    50938  Midwest
-    50939  Northeast
-    50940  Pacific
-    50941  Piedmont
-    50942  Southeast
+  National playoff events by gender (for targeted boys/girls splits):
+    BOYS_EVENT_ID  = 38227  (January Quarters Boys — 60 clubs)
+    GIRLS_EVENT_ID = 38229  (January Quarters Girls — 37 clubs)
 
-  Winter national showcase events (boys + girls combined):
-    50935  November (exactly 64 clubs — the Elite 64 national invitational)
-    50898  January
-
-NOTE: Event IDs change each season. Update the CONFERENCE_EVENT_IDS and
-WINTER_EVENT_IDS lists below when USYS National League publishes new IDs at:
-  https://www.usysnationalleague.com/schedules-results/
-A WARNING is logged for any event that returns zero clubs.
+NOTE: GotSport event IDs change each season. Update the constants below
+when US Club Soccer announces new season registration. Source for current IDs:
+  https://www.thenationalleague.com/schedules-results/
+A WARNING is logged for any event returning zero clubs so operators know when
+IDs need to be refreshed.
 """
 
 from __future__ import annotations
@@ -38,67 +31,62 @@ from extractors.gotsport import scrape_gotsport_event, scrape_gotsport_teams
 
 logger = logging.getLogger(__name__)
 
-# Club Premier 1 (formerly Elite 64) — one GotSport event per conference
-# Update each season from https://www.usysnationalleague.com/schedules-results/
-CONFERENCE_EVENT_IDS = [50936, 50937, 50938, 50939, 50940, 50941, 50942]
+# 2024-25 season — Elite 64 GotSport event IDs
+# Main regular season event (boys + girls combined)
+REGULAR_SEASON_EVENT_ID = 35565
 
-# Winter national showcase events (November 64-club invitational + January event)
-WINTER_EVENT_IDS = [50935, 50898]
+# Gender-split national event IDs (used for UPSHIFT_SCRAPE_TEAMS team-level data)
+BOYS_EVENT_ID = 38227
+GIRLS_EVENT_ID = 38229
 
 _SEASON = "2024-25"
 
 
-@register(r"usclubsoccer\.org/programs/leagues|usysnationalleague\.com|thenationalleague\.com")
+@register(r"usclubsoccer\.org/programs/leagues")
 def scrape_elite64(url: str, league_name: str) -> List[Dict]:
     """
-    Scrape clubs from all Elite 64 / NL Club Premier 1 GotSport events and
-    merge them into a single deduplicated list.
+    Scrape clubs from the Elite 64 regular season GotSport event and optionally
+    enrich with team-level data from the separate boys/girls national events.
+    Both boys and girls clubs appear in the combined regular season event.
     """
-    all_event_ids = CONFERENCE_EVENT_IDS + WINTER_EVENT_IDS
     logger.info(
-        "[Elite 64] Scraping %d GotSport events (season %s): %s",
-        len(all_event_ids),
+        "[Elite 64] Regular season event=%d; boys=%d girls=%d (season %s)",
+        REGULAR_SEASON_EVENT_ID,
+        BOYS_EVENT_ID,
+        GIRLS_EVENT_ID,
         _SEASON,
-        all_event_ids,
     )
 
     if os.environ.get("UPSHIFT_SCRAPE_TEAMS"):
         from storage import save_teams_csv, save_contacts_csv
 
-        all_teams: List[Dict] = []
-        all_contacts: List[Dict] = []
-        for event_id in all_event_ids:
-            teams, contacts = scrape_gotsport_teams(event_id, league_name, state="")
-            all_teams.extend(teams)
-            all_contacts.extend(contacts)
-        save_teams_csv(all_teams, league_name)
-        save_contacts_csv(all_contacts, league_name)
+        boys_teams, boys_contacts = scrape_gotsport_teams(
+            BOYS_EVENT_ID, league_name, state=""
+        )
+        girls_teams, girls_contacts = scrape_gotsport_teams(
+            GIRLS_EVENT_ID, league_name, state=""
+        )
+        save_teams_csv(boys_teams + girls_teams, league_name)
+        save_contacts_csv(boys_contacts + girls_contacts, league_name)
 
-    all_records: List[Dict] = []
-    for event_id in all_event_ids:
-        clubs = scrape_gotsport_event(event_id, league_name, state="")
-        if not clubs:
-            logger.warning(
-                "[Elite 64] Event %d returned 0 clubs — event may be private "
-                "or the event ID has changed.  Check %s and update "
-                "CONFERENCE_EVENT_IDS / WINTER_EVENT_IDS in extractors/elite64.py.",
-                event_id,
-                "https://www.usysnationalleague.com/schedules-results/",
-            )
-        all_records.extend(clubs)
+    clubs = scrape_gotsport_event(REGULAR_SEASON_EVENT_ID, league_name, state="")
 
-    seen: set[str] = set()
-    deduped: List[Dict] = []
-    for club in all_records:
-        key = club["club_name"].strip().lower()
-        if key and key not in seen:
-            seen.add(key)
-            deduped.append(club)
+    if not clubs:
+        logger.warning(
+            "[Elite 64] Regular season event %d returned 0 clubs — the event "
+            "may be private/login-required or the event ID has changed for the "
+            "current season.  Also try boys event %d and girls event %d. "
+            "Update REGULAR_SEASON_EVENT_ID / BOYS_EVENT_ID / GIRLS_EVENT_ID "
+            "in extractors/elite64.py from: "
+            "https://www.thenationalleague.com/schedules-results/",
+            REGULAR_SEASON_EVENT_ID,
+            BOYS_EVENT_ID,
+            GIRLS_EVENT_ID,
+        )
 
     logger.info(
-        "[Elite 64] raw=%d unique=%d clubs from %d events",
-        len(all_records),
-        len(deduped),
-        len(all_event_ids),
+        "[Elite 64] event %d → %d clubs (boys+girls combined)",
+        REGULAR_SEASON_EVENT_ID,
+        len(clubs),
     )
-    return deduped
+    return clubs
