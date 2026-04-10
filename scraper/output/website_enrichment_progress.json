@@ -3799,10 +3799,166 @@
     "950": {
       "status": "not_found",
       "website": null
+    },
+    "951": {
+      "status": "not_found",
+      "website": null
+    },
+    "952": {
+      "status": "not_found",
+      "website": null
+    },
+    "953": {
+      "status": "not_found",
+      "website": null
+    },
+    "954": {
+      "status": "not_found",
+      "website": null
+    },
+    "955": {
+      "status": "not_found",
+      "website": null
+    },
+    "956": {
+      "status": "not_found",
+      "website": null
+    },
+    "957": {
+      "status": "found",
+      "website": "https://www.epysa.org/new-york-sub-regional/"
+    },
+    "958": {
+      "status": "not_found",
+      "website": null
+    },
+    "959": {
+      "status": "found",
+      "website": "https://www.pennsylvaniaprimefc.com/about-3"
+    },
+    "960": {
+      "status": "not_found",
+      "website": null
+    },
+    "961": {
+      "status": "not_found",
+      "website": null
+    },
+    "962": {
+      "status": "not_found",
+      "website": null
+    },
+    "963": {
+      "status": "not_found",
+      "website": null
+    },
+    "964": {
+      "status": "not_found",
+      "website": null
+    },
+    "965": {
+      "status": "not_found",
+      "website": null
+    },
+    "966": {
+      "status": "found",
+      "website": "https://houston.beyondthenest.com/content/albion-hurricanes-fc"
+    },
+    "967": {
+      "status": "found",
+      "website": "https://www.arlingtoncoedkicks.com/"
+    },
+    "968": {
+      "status": "found",
+      "website": "https://www.atlantaunitedsoccer.com/Default.aspx?tabid=280685"
+    },
+    "969": {
+      "status": "found",
+      "website": "https://youthsoccergames.com/club/california-north/50000387"
+    },
+    "970": {
+      "status": "found",
+      "website": "https://beachsoccer.com/team/georgia-3"
+    },
+    "971": {
+      "status": "found",
+      "website": "https://www.mapquest.com/us/maryland/bethesda-soccer-club-359746278"
+    },
+    "972": {
+      "status": "found",
+      "website": "https://playclubsoccer.org/club/boise-timbers-thorns-fc"
+    },
+    "973": {
+      "status": "found",
+      "website": "https://youthsoccergames.com/team/300022321"
+    },
+    "974": {
+      "status": "found",
+      "website": "https://www.coscsoccer.org/"
+    },
+    "975": {
+      "status": "found",
+      "website": "https://www.challengesoccer.com/"
+    },
+    "976": {
+      "status": "found",
+      "website": "https://www.soccerwire.com/club/charlotte-soccer-academy/"
+    },
+    "977": {
+      "status": "found",
+      "website": "https://www.chicagointersoccer.com/Default.aspx?tabid=262496&portalid=1749&mid=291937&templateid=0&ctl=viewallfieldstatus"
+    },
+    "978": {
+      "status": "found",
+      "website": "https://www.classicselite.com/"
+    },
+    "979": {
+      "status": "found",
+      "website": "https://www.clevelandforcesc.com/"
+    },
+    "980": {
+      "status": "found",
+      "website": "https://www.teamstats.net/team/soccer/colorado-rush-academy-blue-2010"
+    },
+    "981": {
+      "status": "found",
+      "website": "https://prepsoccer.com/2024/02/ecnl-southeast-conference-overview-concorde-fire-platinum-g08/"
+    },
+    "982": {
+      "status": "found",
+      "website": "https://prepsoccer.com/program/concorde-fire-premier/"
+    },
+    "983": {
+      "status": "found",
+      "website": "https://www.gzs-usa.com/"
+    },
+    "984": {
+      "status": "found",
+      "website": "https://www.hudl.com/team/v2/530891/DKSC-06G-Monk"
+    },
+    "985": {
+      "status": "found",
+      "website": "https://dallastexans.com/"
+    },
+    "986": {
+      "status": "found",
+      "website": "https://davislegacysoccer.org/"
+    },
+    "987": {
+      "status": "error",
+      "website": null
+    },
+    "988": {
+      "status": "error",
+      "website": null
+    },
+    "989": {
+      "status": "error",
+      "website": null
     }
   },
-  "found": 518,
-  "queried": 950,
-  "errors": 0,
-  "last_updated": "2026-04-10T19:58:48.378961+00:00"
+  "found": 541,
+  "queried": 986,
+  "errors": 3,
+  "last_updated": "2026-04-10T19:59:58.954899+00:00"
 }
