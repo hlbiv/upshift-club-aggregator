@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { parsePagination } from "../lib/pagination";
-import { PG_NORMALIZE_EXPR } from "../lib/analytics";
+import { normalizeClubName, PG_NORMALIZE_EXPR } from "../lib/analytics";
 
 const router: IRouter = Router();
 
@@ -75,19 +75,29 @@ router.get("/analytics/duplicates", async (req, res, next): Promise<void> => {
         GROUP BY normalized_name, state
         HAVING COUNT(*) >= ${minClubs}
       )
-      SELECT * FROM clusters
+      SELECT
+        c.*,
+        (
+          SELECT array_agg(DISTINCT ca.source_name ORDER BY ca.source_name)
+          FROM club_affiliations ca
+          WHERE ca.club_id = ANY(c.club_ids) AND ca.source_name IS NOT NULL
+        ) AS sources
+      FROM clusters c
       ORDER BY club_count DESC, normalized_name ASC
       LIMIT ${pageSize} OFFSET ${offset}
     `);
 
     res.json({
-      duplicates: dataRows.map((r) => ({
-        normalized_name: r.normalized_name,
-        state: r.state ?? null,
-        club_count: Number(r.club_count),
-        club_ids: r.club_ids,
-        club_names: r.club_names,
-      })),
+      duplicates: dataRows
+        .filter((r) => normalizeClubName(String(r.normalized_name ?? "")).length >= 2)
+        .map((r) => ({
+          normalized_name: r.normalized_name,
+          state: r.state ?? null,
+          club_count: Number(r.club_count),
+          club_ids: r.club_ids,
+          club_names: r.club_names,
+          sources: (r.sources as string[] | null) ?? [],
+        })),
       total,
       page,
       page_size: pageSize,

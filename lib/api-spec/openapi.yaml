@@ -917,11 +917,17 @@ components:
           type: array
           items:
             type: string
+        sources:
+          type: array
+          items:
+            type: string
+          description: Distinct league/source names the clustered clubs appear in
       required:
         - normalized_name
         - club_count
         - club_ids
         - club_names
+        - sources
 
     DuplicatesResponse:
       type: object

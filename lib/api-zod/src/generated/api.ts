@@ -352,6 +352,7 @@ export const DuplicatesResponse = zod.object({
       club_count: zod.number(),
       club_ids: zod.array(zod.number()),
       club_names: zod.array(zod.string()),
+      sources: zod.array(zod.string()).describe("Distinct league/source names the clustered clubs appear in"),
     }),
   ),
   total: zod.number(),
