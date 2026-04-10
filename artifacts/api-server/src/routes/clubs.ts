@@ -17,7 +17,7 @@ const router: IRouter = Router();
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-router.get("/clubs", async (req, res, next) => {
+router.get("/clubs", async (req, res, next): Promise<void> => {
   try {
     const state = req.query.state as string | undefined;
     const tier = req.query.tier ? Number(req.query.tier) : undefined;
@@ -47,13 +47,10 @@ router.get("/clubs", async (req, res, next) => {
 
       clubIds = [...new Set(affRows.map((r) => r.clubId!))];
       if (clubIds.length === 0) {
-        const response = ListClubsResponse.parse({
-          clubs: [],
-          total: 0,
-          page,
-          page_size: pageSize,
-        });
-        return res.json(response);
+        res.json(
+          ListClubsResponse.parse({ clubs: [], total: 0, page, page_size: pageSize }),
+        );
+        return;
       }
     }
 
@@ -78,38 +75,44 @@ router.get("/clubs", async (req, res, next) => {
       .limit(pageSize)
       .offset(offset);
 
-    const response = ListClubsResponse.parse({
-      clubs: rows.map((r) => ({
-        id: r.id,
-        club_name_canonical: r.clubNameCanonical,
-        club_slug: r.clubSlug ?? "",
-        city: r.city ?? "",
-        state: r.state ?? "",
-        country: r.country ?? "USA",
-        status: r.status ?? "active",
-      })),
-      total,
-      page,
-      page_size: pageSize,
-    });
-
-    res.json(response);
+    res.json(
+      ListClubsResponse.parse({
+        clubs: rows.map((r) => ({
+          id: r.id,
+          club_name_canonical: r.clubNameCanonical,
+          club_slug: r.clubSlug ?? "",
+          city: r.city ?? "",
+          state: r.state ?? "",
+          country: r.country ?? "USA",
+          status: r.status ?? "active",
+        })),
+        total,
+        page,
+        page_size: pageSize,
+      }),
+    );
   } catch (err) {
     next(err);
   }
 });
 
-router.get("/clubs/:id", async (req, res, next) => {
+router.get("/clubs/:id", async (req, res, next): Promise<void> => {
   try {
     const id = Number(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
 
     const [club] = await db
       .select()
       .from(canonicalClubs)
       .where(eq(canonicalClubs.id, id));
 
-    if (!club) return res.status(404).json({ error: "Club not found" });
+    if (!club) {
+      res.status(404).json({ error: "Club not found" });
+      return;
+    }
 
     const aliases = await db
       .select()
@@ -121,53 +124,59 @@ router.get("/clubs/:id", async (req, res, next) => {
       .from(clubAffiliations)
       .where(eq(clubAffiliations.clubId, id));
 
-    const response = GetClubResponse.parse({
-      id: club.id,
-      club_name_canonical: club.clubNameCanonical,
-      club_slug: club.clubSlug ?? "",
-      city: club.city ?? "",
-      state: club.state ?? "",
-      country: club.country ?? "USA",
-      status: club.status ?? "active",
-      aliases: aliases.map((a) => ({
-        id: a.id,
-        alias_name: a.aliasName,
-        alias_slug: a.aliasSlug ?? "",
-        source: a.source ?? "",
-        is_official: a.isOfficial ?? false,
-      })),
-      affiliations: affiliations.map((a) => ({
-        id: a.id,
-        gender_program: a.genderProgram ?? "",
-        platform_name: a.platformName ?? "",
-        platform_tier: a.platformTier ?? "",
-        conference_name: a.conferenceName ?? "",
-        division_name: a.divisionName ?? "",
-        season: a.season ?? "",
-        source_url: a.sourceUrl ?? "",
-        source_name: a.sourceName ?? "",
-        verification_status: a.verificationStatus ?? "verified",
-        notes: a.notes ?? "",
-      })),
-    });
-
-    res.json(response);
+    res.json(
+      GetClubResponse.parse({
+        id: club.id,
+        club_name_canonical: club.clubNameCanonical,
+        club_slug: club.clubSlug ?? "",
+        city: club.city ?? "",
+        state: club.state ?? "",
+        country: club.country ?? "USA",
+        status: club.status ?? "active",
+        aliases: aliases.map((a) => ({
+          id: a.id,
+          alias_name: a.aliasName,
+          alias_slug: a.aliasSlug ?? "",
+          source: a.source ?? "",
+          is_official: a.isOfficial ?? false,
+        })),
+        affiliations: affiliations.map((a) => ({
+          id: a.id,
+          gender_program: a.genderProgram ?? "",
+          platform_name: a.platformName ?? "",
+          platform_tier: a.platformTier ?? "",
+          conference_name: a.conferenceName ?? "",
+          division_name: a.divisionName ?? "",
+          season: a.season ?? "",
+          source_url: a.sourceUrl ?? "",
+          source_name: a.sourceName ?? "",
+          verification_status: a.verificationStatus ?? "verified",
+          notes: a.notes ?? "",
+        })),
+      }),
+    );
   } catch (err) {
     next(err);
   }
 });
 
-router.get("/clubs/:id/related", async (req, res, next) => {
+router.get("/clubs/:id/related", async (req, res, next): Promise<void> => {
   try {
     const id = Number(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
 
     const [club] = await db
       .select()
       .from(canonicalClubs)
       .where(eq(canonicalClubs.id, id));
 
-    if (!club) return res.status(404).json({ error: "Club not found" });
+    if (!club) {
+      res.status(404).json({ error: "Club not found" });
+      return;
+    }
 
     const myAffiliations = await db
       .select({ sourceName: clubAffiliations.sourceName })
@@ -179,8 +188,8 @@ router.get("/clubs/:id/related", async (req, res, next) => {
     ] as string[];
 
     if (leagueNames.length === 0) {
-      const response = GetRelatedClubsResponse.parse({ clubs: [] });
-      return res.json(response);
+      res.json(GetRelatedClubsResponse.parse({ clubs: [] }));
+      return;
     }
 
     const relatedIds = await db
@@ -189,14 +198,12 @@ router.get("/clubs/:id/related", async (req, res, next) => {
       .where(inArray(clubAffiliations.sourceName, leagueNames));
 
     const uniqueIds = [
-      ...new Set(
-        relatedIds.map((r) => r.clubId!).filter((cid) => cid !== id),
-      ),
+      ...new Set(relatedIds.map((r) => r.clubId!).filter((cid) => cid !== id)),
     ];
 
     if (uniqueIds.length === 0) {
-      const response = GetRelatedClubsResponse.parse({ clubs: [] });
-      return res.json(response);
+      res.json(GetRelatedClubsResponse.parse({ clubs: [] }));
+      return;
     }
 
     const relatedClubs = await db
@@ -205,19 +212,19 @@ router.get("/clubs/:id/related", async (req, res, next) => {
       .where(inArray(canonicalClubs.id, uniqueIds.slice(0, 50)))
       .orderBy(asc(canonicalClubs.clubNameCanonical));
 
-    const response = GetRelatedClubsResponse.parse({
-      clubs: relatedClubs.map((r) => ({
-        id: r.id,
-        club_name_canonical: r.clubNameCanonical,
-        club_slug: r.clubSlug ?? "",
-        city: r.city ?? "",
-        state: r.state ?? "",
-        country: r.country ?? "USA",
-        status: r.status ?? "active",
-      })),
-    });
-
-    res.json(response);
+    res.json(
+      GetRelatedClubsResponse.parse({
+        clubs: relatedClubs.map((r) => ({
+          id: r.id,
+          club_name_canonical: r.clubNameCanonical,
+          club_slug: r.clubSlug ?? "",
+          city: r.city ?? "",
+          state: r.state ?? "",
+          country: r.country ?? "USA",
+          status: r.status ?? "active",
+        })),
+      }),
+    );
   } catch (err) {
     next(err);
   }

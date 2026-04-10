@@ -8,7 +8,6 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
 
 export const leaguesMaster = pgTable("leagues_master", {
   id: serial("id").primaryKey(),
@@ -128,7 +127,7 @@ export type ClubAlias = typeof clubAliases.$inferSelect;
 export type ClubAffiliation = typeof clubAffiliations.$inferSelect;
 export type LeagueSource = typeof leagueSources.$inferSelect;
 
-export type InsertLeague = z.infer<typeof insertLeagueMasterSchema>;
-export type InsertCanonicalClub = z.infer<typeof insertCanonicalClubSchema>;
-export type InsertClubAlias = z.infer<typeof insertClubAliasSchema>;
-export type InsertClubAffiliation = z.infer<typeof insertClubAffiliationSchema>;
+export type InsertLeague = typeof leaguesMaster.$inferInsert;
+export type InsertCanonicalClub = typeof canonicalClubs.$inferInsert;
+export type InsertClubAlias = typeof clubAliases.$inferInsert;
+export type InsertClubAffiliation = typeof clubAffiliations.$inferInsert;

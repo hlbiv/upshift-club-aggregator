@@ -10,7 +10,8 @@
   "scripts": {
     "push": "drizzle-kit push --config ./drizzle.config.ts",
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
-    "seed": "/home/runner/workspace/node_modules/.pnpm/node_modules/.bin/tsx src/seed.ts"
+    "migrate": "drizzle-kit push --config ./drizzle.config.ts",
+    "seed": "pnpm exec tsx src/seed.ts"
   },
   "dependencies": {
     "csv-parse": "^6.2.1",
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "^8.18.0",
-    "drizzle-kit": "^0.31.9"
+    "drizzle-kit": "^0.31.9",
+    "tsx": "catalog:"
   }
 }
