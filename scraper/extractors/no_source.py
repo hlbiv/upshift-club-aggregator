@@ -21,10 +21,11 @@ Leagues covered:
     Scraping this hub would duplicate those clubs with garbage nav text.
 
   SCCL (Southeastern Clubs Champions League)
-    URL: sccl.org in leagues_master.csv is wrong — sccl.org is the Santa
-    Cruz County Library system. The correct SCCL soccer website has not
-    been identified as of April 2026. Once the correct URL is found,
-    update leagues_master.csv and replace or remove this stub.
+    URL: sccl.org in leagues_master.csv is wrong — sccl.org redirects to
+    sccld.org (Santa Clara County Library District), which has nothing to do
+    with soccer. The correct SCCL soccer website has not been identified as of
+    April 2026. Once the correct URL is found, update leagues_master.csv and
+    replace or remove this stub.
 """
 
 from __future__ import annotations
@@ -64,9 +65,9 @@ def scrape_npl_hub(url: str, league_name: str) -> List[Dict]:
 def scrape_sccl(url: str, league_name: str) -> List[Dict]:
     logger.warning(
         "[SCCL] The URL sccl.org in leagues_master.csv is incorrect — "
-        "sccl.org belongs to the Santa Cruz County Library, not the "
-        "Southeastern Clubs Champions League. The correct SCCL soccer URL "
-        "has not been identified. Update leagues_master.csv with the correct "
-        "URL once found. Returning 0 clubs."
+        "sccl.org redirects to sccld.org (Santa Clara County Library District), "
+        "not the Southeastern Clubs Champions League. The correct SCCL soccer "
+        "URL has not been identified as of April 2026. Update leagues_master.csv "
+        "with the correct URL once found. Returning 0 clubs."
     )
     return []

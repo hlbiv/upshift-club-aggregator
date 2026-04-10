@@ -43,13 +43,41 @@ def _extract_clubs_from_table(soup: BeautifulSoup, url: str, league_name: str) -
     return records
 
 
+_LIST_BLOCKLIST = {
+    "home", "about", "about us", "contact", "contact us", "login", "log in",
+    "sign in", "sign up", "register", "menu", "search", "privacy policy",
+    "terms of use", "terms of service", "sitemap", "accessibility", "faq",
+    "faqs", "help", "support", "donate", "shop", "store", "news", "blog",
+    "events", "calendar", "media", "gallery", "photos", "videos", "resources",
+    "forms", "documents", "downloads", "links", "partners", "sponsors",
+    "sponsorship", "advertise", "newsletter", "subscribe", "follow us",
+    "facebook", "twitter", "instagram", "youtube", "linkedin", "tiktok",
+    "twitter / x", "social media", "© ", "copyright", "all rights reserved",
+    "powered by", "sportsengine", "blue star", "siteline", "read more",
+    "learn more", "click here", "find out more", "view all", "see all",
+    "back to top", "skip to content", "main content", "navigation",
+    "breadcrumb", "cookie", "gdpr",
+}
+
+_LIST_BLOCKLIST_CONTAINS = {
+    "sponsor", "partner", "advertis", "newsletter", "subscribe",
+    "powered by", "sportsengine", "copyright", "all rights reserved",
+    "privacy", "terms of", "cookie",
+}
+
+
 def _extract_clubs_from_lists(soup: BeautifulSoup, url: str, league_name: str) -> List[Dict]:
     """Extract clubs from <ul>/<ol> lists and definition lists."""
     records = []
     for ul in soup.find_all(["ul", "ol"]):
         for li in ul.find_all("li"):
             text = li.get_text(strip=True)
-            if len(text) < 3:
+            if len(text) < 3 or len(text) > 120:
+                continue
+            lower = text.lower().strip()
+            if lower in _LIST_BLOCKLIST:
+                continue
+            if any(phrase in lower for phrase in _LIST_BLOCKLIST_CONTAINS):
                 continue
             records.append({
                 "club_name": text,
@@ -61,29 +89,52 @@ def _extract_clubs_from_lists(soup: BeautifulSoup, url: str, league_name: str) -
     return records
 
 
+_LINK_BLOCKLIST_STARTSWITH = (
+    "home", "about", "contact", "log", "sign", "menu", "search",
+    "register", "privacy", "terms", "cookie", "sitemap", "faq",
+    "news", "blog", "events", "calendar", "media", "gallery",
+    "shop", "store", "donate", "help", "support", "resources",
+    "forms", "documents", "downloads", "links", "partners",
+    "sponsors", "follow", "facebook", "twitter", "instagram",
+    "youtube", "linkedin", "tiktok", "back to", "skip to",
+    "read more", "learn more", "click here", "view all", "see all",
+)
+
+_LINK_BLOCKLIST_CONTAINS = {
+    "sponsor", "partner", "advertis", "newsletter", "subscribe",
+    "powered by", "sportsengine", "copyright", "privacy policy",
+    "terms of", "cookie policy", "all rights",
+}
+
+
 def _extract_clubs_from_links(soup: BeautifulSoup, url: str, league_name: str) -> List[Dict]:
     """
     Fall-through: pull club names from anchor text when no table/list is present.
-    Only keeps links that look like club names (title-case, > 3 chars).
+    Only keeps links that look like club names (title-case, > 3 chars, not nav/sponsor items).
     """
     records = []
     seen = set()
     for a in soup.find_all("a", href=True):
         text = a.get_text(strip=True)
-        if (
-            len(text) > 3
-            and text not in seen
-            and any(c.isupper() for c in text)
-            and not text.lower().startswith(("home", "about", "contact", "log", "sign", "menu", "search"))
-        ):
-            seen.add(text)
-            records.append({
-                "club_name": text,
-                "league_name": league_name,
-                "city": "",
-                "state": "",
-                "source_url": url,
-            })
+        if len(text) <= 3 or len(text) > 120:
+            continue
+        if text in seen:
+            continue
+        if not any(c.isupper() for c in text):
+            continue
+        lower = text.lower()
+        if lower.startswith(_LINK_BLOCKLIST_STARTSWITH):
+            continue
+        if any(phrase in lower for phrase in _LINK_BLOCKLIST_CONTAINS):
+            continue
+        seen.add(text)
+        records.append({
+            "club_name": text,
+            "league_name": league_name,
+            "city": "",
+            "state": "",
+            "source_url": url,
+        })
     return records
 
 

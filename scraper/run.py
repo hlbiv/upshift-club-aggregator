@@ -160,7 +160,11 @@ def scrape_league(
             return pd.DataFrame(), extractor_name, failure
 
     if not raw:
-        logger.warning("No clubs found for league: %s", name)
+        logger.warning(
+            "[ZERO-CLUBS] League '%s' returned 0 clubs — possible stale event ID, "
+            "bad URL, or site structure change. Investigate before next run.",
+            name,
+        )
         failure = LeagueFailure(name, url, FailureKind.ZERO_RESULTS, "scraper returned empty list")
         if not dry_run:
             save_league_csv(pd.DataFrame(), name)
@@ -168,15 +172,37 @@ def scrape_league(
 
     df = pd.DataFrame(raw)
 
-    # Inject default state from the seed (for state-association entries)
+    # Inject default state from the seed (for state-association entries).
+    # Skip rows tagged _state_derived=True — those come from multi-state GotSport
+    # events where state is deliberately left blank for downstream enrichment.
     state_default = league.get("state", "")
     if state_default and "state" in df.columns:
-        df["state"] = df["state"].where(df["state"].str.strip() != "", state_default)
+        if "_state_derived" in df.columns:
+            mask_no_state = df["state"].str.strip() == ""
+            mask_not_derived = ~df["_state_derived"].fillna(False)
+            df.loc[mask_no_state & mask_not_derived, "state"] = state_default
+            df = df.drop(columns=["_state_derived"])
+        else:
+            df["state"] = df["state"].where(df["state"].str.strip() != "", state_default)
 
     df = normalize(df)
     df = deduplicate(df)
 
-    logger.info("'%s': %d clubs after dedup", name, len(df))
+    club_count = len(df)
+    if club_count == 0:
+        logger.warning(
+            "[ZERO-CLUBS] League '%s' had raw records but 0 clubs after normalize/dedup — "
+            "check normalizer filters or data quality.",
+            name,
+        )
+    elif club_count < 3:
+        logger.warning(
+            "[LOW-CLUBS] League '%s' has only %d club(s) after dedup — "
+            "suspiciously low; verify source data or event ID.",
+            name, club_count,
+        )
+
+    logger.info("'%s': %d clubs after dedup", name, club_count)
 
     if not dry_run:
         path = save_league_csv(df, name)
@@ -347,8 +373,10 @@ def main() -> None:
     logger.info("Processing %d league(s)", len(target_leagues))
 
     all_frames = []
-    frame_entries: list[tuple[str, pd.DataFrame]] = []
+    frame_entries: list[tuple[str, pd.DataFrame]] = []  # (extractor_name, df)
     all_failures: List[LeagueFailure] = []
+    zero_club_leagues: list[str] = []
+    low_club_leagues: list[tuple[str, int]] = []
 
     for league in target_leagues:
         df, extractor_name, failure = scrape_league(league, dry_run=args.dry_run)
@@ -357,6 +385,11 @@ def main() -> None:
         if not df.empty:
             all_frames.append(df)
         frame_entries.append((extractor_name, df))
+        n = len(df)
+        if n == 0:
+            zero_club_leagues.append(league["name"])
+        elif n < 3:
+            low_club_leagues.append((league["name"], n))
 
     if not all_frames:
         logger.warning("No data collected.")
@@ -385,6 +418,16 @@ def main() -> None:
     print("=" * 60)
 
     _print_failure_summary(all_failures)
+
+    if zero_club_leagues or low_club_leagues:
+        print("\n[VALIDATION] Leagues requiring review:")
+        for name in zero_club_leagues:
+            print(f"  [ZERO-CLUBS]  {name}")
+            logger.warning("[VALIDATION] Zero clubs: %s", name)
+        for name, count in low_club_leagues:
+            print(f"  [LOW-CLUBS]   {name}  ({count} club(s))")
+            logger.warning("[VALIDATION] Suspiciously low club count (%d): %s", count, name)
+        print()
 
 
 if __name__ == "__main__":

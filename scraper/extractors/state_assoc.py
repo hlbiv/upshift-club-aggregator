@@ -83,10 +83,15 @@ def _multi_event_dedup(clubs_list: List[Dict]) -> List[Dict]:
     return out
 
 
-def _scrape_gotsport(event_ids: List[int], league_name: str, state: str) -> List[Dict]:
+def _scrape_gotsport(
+    event_ids: List[int],
+    league_name: str,
+    state: str,
+    multi_state: bool = False,
+) -> List[Dict]:
     raw: List[Dict] = []
     for eid in event_ids:
-        clubs = scrape_gotsport_event(eid, league_name, state=state)
+        clubs = scrape_gotsport_event(eid, league_name, state=state, multi_state=multi_state)
         raw.extend(clubs)
         logger.info("  GotSport event %s: %d clubs", eid, len(clubs))
     return _multi_event_dedup(raw)
@@ -266,7 +271,8 @@ def _scrape_state(url: str, league_name: str) -> List[Dict]:
 
     if src_type == "gotsport":
         event_ids = [int(e) for e in cfg.get("events", [])]
-        return _scrape_gotsport(event_ids, league_name, state)
+        multi_state = cfg.get("multi_state", False)
+        return _scrape_gotsport(event_ids, league_name, state, multi_state=multi_state)
 
     if src_type == "google_maps":
         map_ids = cfg.get("map_ids", [])

@@ -167,14 +167,24 @@ def _fetch_club_detail(event_id: int | str, club_name: str, club_id: str) -> Dic
     return result
 
 
-def scrape_gotsport_event(event_id: int | str, league_name: str, state: str = "") -> List[Dict]:
+def scrape_gotsport_event(
+    event_id: int | str,
+    league_name: str,
+    state: str = "",
+    multi_state: bool = False,
+) -> List[Dict]:
     """
     Fetch all clubs from a GotSport event clubs page.
 
     Args:
         event_id:    The numeric event ID from the GotSport URL.
         league_name: League name to tag on each record.
-        state:       Two-letter state code to inject (empty if multi-state).
+        state:       State name/code to inject when the event is single-state.
+                     Ignored when multi_state=True.
+        multi_state: When True, the event spans clubs from multiple states.
+                     Club state is left empty so downstream enrichment (e.g.
+                     geocoding or manual mapping) can derive it from the club's
+                     own data rather than inheriting the parent event's region.
 
     Returns:
         List of club dicts ready for normalizer.
@@ -186,15 +196,26 @@ def scrape_gotsport_event(event_id: int | str, league_name: str, state: str = ""
     if not clubs:
         return []
 
+    effective_state = "" if multi_state else state
+    if multi_state and state:
+        logger.info(
+            "[GotSport] event %s is multi-state; ignoring hardcoded state '%s' — "
+            "club state will be derived from club data",
+            event_id, state,
+        )
+
     records = []
     for club_name, _club_id in clubs:
-        records.append({
+        rec = {
             "club_name": club_name,
             "league_name": league_name,
             "city": "",
-            "state": state,
+            "state": effective_state,
             "source_url": url,
-        })
+        }
+        if multi_state:
+            rec["_state_derived"] = True
+        records.append(rec)
 
     logger.info("[GotSport] event %s → %d clubs", event_id, len(records))
     return records

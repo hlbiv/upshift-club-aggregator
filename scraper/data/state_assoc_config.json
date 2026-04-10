@@ -2,7 +2,8 @@
   "https://www.alsoccer.org": {
     "state": "Alabama",
     "type": "gotsport",
-    "events": [49334]
+    "events": [49334],
+    "_note": "49334 active Apr 2026 (returns 200 with club rows). No replacement needed."
   },
   "https://www.alaskayouthsoccer.org": {
     "state": "Alaska",
@@ -25,7 +26,8 @@
   "https://www.calnorth.org": {
     "state": "Cal North",
     "type": "gotsport",
-    "events": [48917]
+    "events": [48917],
+    "_note": "48917 active Apr 2026 (returns 200 with club rows)."
   },
   "https://www.calsouth.com": {
     "state": "Cal South",
@@ -47,7 +49,8 @@
   "https://www.dysa.org": {
     "state": "Delaware",
     "type": "gotsport",
-    "events": [52446]
+    "events": [52446],
+    "_note": "52446 active Apr 2026 (returns 200 with club rows)."
   },
   "https://www.enysoccer.com": {
     "state": "Eastern NY",
@@ -63,12 +66,14 @@
   "https://www.fysa.com": {
     "state": "Florida",
     "type": "gotsport",
-    "events": [43009, 46366]
+    "events": [43009, 46366],
+    "_note": "43009 and 46366 both active Apr 2026 (200 with club rows)."
   },
   "https://www.georgiasoccer.org": {
     "state": "Georgia",
     "type": "gotsport",
-    "events": [50910]
+    "events": [50910],
+    "_note": "50910 active Apr 2026 (returns 200 with club rows)."
   },
   "https://www.hawaiisoccer.com": {
     "state": "Hawaii",
@@ -131,13 +136,15 @@
   "https://www.michiganyouthsoccer.org": {
     "state": "Michigan",
     "type": "gotsport",
-    "events": [50299]
+    "events": [50299],
+    "_note": "50299 active Apr 2026 (70 rows returned)."
   },
   "https://www.mnyouthsoccer.org": {
     "state": "Minnesota",
     "type": "gotsport",
     "events": [38032],
-    "_note": "54 clubs: Albion SC Southern MN, Arrowhead Youth SA, Bloomington United, Edina SC, Mahtomedi SA, Mankato United SC, Minneapolis United, MN Thunder Academy, Owatonna SA, Prior Lake SC, St Paul Blackhawks, Tonka United SA, Waconia SC — predominantly Minnesota ✓ (~80% MN, ~15% WI border area, 1 IA club)."
+    "multi_state": true,
+    "_note": "54 clubs: Albion SC Southern MN, Arrowhead Youth SA, Bloomington United, Edina SC, Mahtomedi SA, Mankato United SC, Minneapolis United, MN Thunder Academy, Owatonna SA, Prior Lake SC, St Paul Blackhawks, Tonka United SA, Waconia SC — predominantly Minnesota ✓ (~80% MN, ~15% WI border area, 1 IA club). multi_state=true: club states left blank for enrichment due to notable WI/IA cross-border presence (~20% non-MN clubs)."
   },
   "https://www.mississippisoccer.org": {
     "state": "Mississippi",
@@ -169,7 +176,8 @@
   "https://www.soccernh.com": {
     "state": "New Hampshire",
     "type": "gotsport",
-    "events": [42251]
+    "events": [42251],
+    "_note": "42251 active Apr 2026 (56 rows returned)."
   },
   "https://www.njyouthsoccer.com": {
     "state": "New Jersey",
@@ -180,12 +188,14 @@
   "https://www.nmysa.net": {
     "state": "New Mexico",
     "type": "gotsport",
-    "events": [23574]
+    "events": [23574],
+    "_note": "23574 active Apr 2026 (17 rows returned)."
   },
   "https://www.nyswysa.org": {
     "state": "NY West",
     "type": "gotsport",
-    "events": [49820]
+    "events": [49820],
+    "_note": "49820 active Apr 2026 (35 rows returned)."
   },
   "https://www.ncsoccer.org": {
     "state": "North Carolina",
@@ -214,7 +224,8 @@
   "https://www.oksoccer.com": {
     "state": "Oklahoma",
     "type": "gotsport",
-    "events": [45220, 50535]
+    "events": [45220, 50535],
+    "_note": "45220 (37 rows) and 50535 (32 rows) both active Apr 2026."
   },
   "https://www.oregonyouthsoccer.org": {
     "state": "Oregon",
@@ -293,12 +304,14 @@
   "https://www.vermontsoccer.org": {
     "state": "Vermont",
     "type": "gotsport",
-    "events": [53253, 46649]
+    "events": [53253, 46649],
+    "_note": "53253 (33 rows) and 46649 (32 rows) both active Apr 2026."
   },
   "https://www.vysa.com": {
     "state": "Virginia",
     "type": "gotsport",
-    "events": [50831]
+    "events": [50831],
+    "_note": "50831 active Apr 2026 (34 rows returned)."
   },
   "https://washingtonyouthsoccer.org": {
     "state": "Washington",
@@ -310,7 +323,8 @@
     "state": "West Virginia",
     "type": "gotsport",
     "events": [46532],
-    "_note": "13 clubs. Confirmed WV (6/13 = 46%): Barbour County WV, FC Ripley (Ripley WV, Jackson County seat), KVSL-Competitive (Kanawha Valley WV), KVSL-Great Teays SC (Great Teays, Putnam County WV), Ohio Valley Soccer League (Parkersburg WV based), Putnam United FC (Putnam County WV). Confirmed non-WV (2/13): Belpre Soccer Club (Belpre OH, directly across Ohio River from Parkersburg WV — cross-river border participation), Club Ohio (large OH club). Unknown (5/13): FC Alliance, Legacy FC, PK Soccer Academy, River Valley SC, Shawnee Soccer Rec. Best-case estimate: 85% WV if unknowns are WV-based."
+    "multi_state": true,
+    "_note": "13 clubs. Confirmed WV (6/13 = 46%): Barbour County WV, FC Ripley (Ripley WV, Jackson County seat), KVSL-Competitive (Kanawha Valley WV), KVSL-Great Teays SC (Great Teays, Putnam County WV), Ohio Valley Soccer League (Parkersburg WV based), Putnam United FC (Putnam County WV). Confirmed non-WV (2/13): Belpre Soccer Club (Belpre OH, directly across Ohio River from Parkersburg WV — cross-river border participation), Club Ohio (large OH club). Unknown (5/13): FC Alliance, Legacy FC, PK Soccer Academy, River Valley SC, Shawnee Soccer Rec. Best-case estimate: 85% WV if unknowns are WV-based. multi_state=true: club states left blank for enrichment rather than inheriting 'West Virginia' for all clubs."
   },
   "https://www.wiyouthsoccer.com": {
     "state": "Wisconsin",
@@ -321,6 +335,6 @@
     "state": "Wyoming",
     "type": "gotsport",
     "events": [48304],
-    "_note": "9 clubs: Casper SC (Casper WY ✓), Cheyenne Soccer Club (Cheyenne WY ✓), Gillette Edge SC (Gillette WY ✓) — all Wyoming ✓."
+    "_note": "9 clubs: Casper SC (Casper WY ✓), Cheyenne Soccer Club (Cheyenne WY ✓), Gillette Edge SC (Gillette WY ✓) — all Wyoming ✓. 48304 active Apr 2026 (9 rows returned). AUDIT Apr 2026: All GotSport event IDs in this file verified active via HTTP 200 check. No stale IDs found. NE Impact event 21393 (ne_impact.py) is the one retired/404 event — handled by curated seed fallback."
   }
 }
