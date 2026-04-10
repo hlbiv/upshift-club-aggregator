@@ -292,9 +292,23 @@ def _scrape_and_save_teams(org_season_ids: List[int], league_name: str, url: str
 
 @register(r"theecnl\.com/sports/directory")
 def scrape_ecnl(url: str, league_name: str) -> List[Dict]:
-    """ECNL (Boys + Girls) — all 16+10=26 regional conferences."""
-    logger.info("[ECNL custom] Scraping Boys + Girls ECNL via AthleteOne API")
-    return _scrape_and_save_teams([70, 69], league_name, url)
+    """ECNL — gender-aware dispatch.
+
+    league_name contains "girls"  → Girls ECNL only  (org_season_id=69, 10 conferences)
+    league_name contains "boys"   → Boys  ECNL only  (org_season_id=70, 16 conferences)
+    otherwise (combined row)      → both genders      (org_season_ids=70, 69)
+    """
+    name_lower = league_name.lower()
+    if "girls" in name_lower and "boys" not in name_lower:
+        org_seasons = [69]
+        logger.info("[ECNL custom] Girls ECNL only (org_season=69)")
+    elif "boys" in name_lower and "girls" not in name_lower:
+        org_seasons = [70]
+        logger.info("[ECNL custom] Boys ECNL only (org_season=70)")
+    else:
+        org_seasons = [70, 69]
+        logger.info("[ECNL custom] Boys + Girls ECNL (org_seasons=70,69)")
+    return _scrape_and_save_teams(org_seasons, league_name, url)
 
 
 @register(r"theecnl\.com/sports/ecnl-regional-league")
