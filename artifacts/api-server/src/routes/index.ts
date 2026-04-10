@@ -5,6 +5,7 @@ import leaguesRouter from "./leagues";
 import searchRouter from "./search";
 import eventsRouter from "./events";
 import coachesRouter from "./coaches";
+import analyticsRouter from "./analytics";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(leaguesRouter);
 router.use(searchRouter);
 router.use(eventsRouter);
 router.use(coachesRouter);
+router.use(analyticsRouter);
 
 export default router;

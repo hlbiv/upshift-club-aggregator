@@ -333,3 +333,89 @@ export const GetLeagueClubsResponse = zod.object({
     }),
   ),
 });
+
+/**
+ * @summary Detect near-duplicate clubs by normalized name and state
+ */
+export const AnalyticsDuplicatesQueryParams = zod.object({
+  state: zod.coerce.string().optional().describe("Limit to a single US state"),
+  min_clubs: zod.coerce.number().min(2).default(2).describe("Minimum cluster size to flag"),
+  page: zod.coerce.number().default(1),
+  page_size: zod.coerce.number().max(100).default(20),
+});
+
+export const DuplicatesResponse = zod.object({
+  duplicates: zod.array(
+    zod.object({
+      normalized_name: zod.string(),
+      state: zod.string().nullable().optional(),
+      club_count: zod.number(),
+      club_ids: zod.array(zod.number()),
+      club_names: zod.array(zod.string()),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
+ * @summary Coverage gaps — per-state and per-league club counts
+ */
+export const AnalyticsCoverageQueryParams = zod.object({
+  min_clubs: zod.coerce.number().min(1).default(5).describe("States below this threshold are flagged"),
+});
+
+export const CoverageResponse = zod.object({
+  summary: zod.object({
+    total_clubs: zod.number(),
+    total_states: zod.number(),
+    states_below_threshold: zod.number(),
+    threshold: zod.number(),
+    website_coverage: zod.object({
+      with_website: zod.number(),
+      without_website: zod.number(),
+      pct: zod.number(),
+    }),
+  }),
+  states: zod.array(
+    zod.object({
+      state: zod.string(),
+      club_count: zod.number(),
+      below_threshold: zod.boolean(),
+    }),
+  ),
+  leagues: zod.array(
+    zod.object({
+      league: zod.string(),
+      club_count: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary Clubs with multiple league affiliations
+ */
+export const AnalyticsOverlapQueryParams = zod.object({
+  state: zod.coerce.string().optional().describe("Limit to a single US state"),
+  min_leagues: zod.coerce.number().min(2).default(2).describe("Minimum distinct league count"),
+  page: zod.coerce.number().default(1),
+  page_size: zod.coerce.number().max(100).default(20),
+});
+
+export const OverlapResponse = zod.object({
+  clubs: zod.array(
+    zod.object({
+      id: zod.number(),
+      club_name_canonical: zod.string(),
+      city: zod.string().nullable().optional(),
+      state: zod.string().nullable().optional(),
+      league_count: zod.number(),
+      leagues: zod.array(zod.string()),
+      gender_programs: zod.array(zod.string()),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});

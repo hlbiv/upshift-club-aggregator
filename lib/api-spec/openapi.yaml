@@ -16,6 +16,8 @@ tags:
     description: League directory operations
   - name: search
     description: Fuzzy search operations
+  - name: analytics
+    description: Duplicate detection, coverage gaps, and league overlap analytics
 paths:
   /healthz:
     get:
@@ -380,6 +382,112 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CoachSearchResponse"
+
+  /analytics/duplicates:
+    get:
+      operationId: analyticsDuplicates
+      tags: [analytics]
+      summary: Detect near-duplicate clubs by normalized name and state
+      description: >
+        Groups clubs by a normalized name (common suffixes like FC, SC, United,
+        Academy stripped) within the same state. Returns clusters with two or
+        more clubs, indicating likely duplicates or near-duplicates.
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: Limit duplicate detection to a single US state (abbreviation or full name)
+        - name: min_clubs
+          in: query
+          schema:
+            type: integer
+            default: 2
+            minimum: 2
+          description: Minimum number of clubs in a cluster to be flagged
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Duplicate clusters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DuplicatesResponse"
+
+  /analytics/coverage:
+    get:
+      operationId: analyticsCoverage
+      tags: [analytics]
+      summary: Coverage gaps — per-state and per-league club counts
+      description: >
+        Returns club counts aggregated by US state and by league affiliation,
+        highlighting states below a configurable minimum threshold.
+      parameters:
+        - name: min_clubs
+          in: query
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+          description: States with fewer clubs than this threshold are flagged
+      responses:
+        "200":
+          description: Coverage summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverageResponse"
+
+  /analytics/overlap:
+    get:
+      operationId: analyticsOverlap
+      tags: [analytics]
+      summary: Clubs with multiple league affiliations
+      description: >
+        Returns clubs that appear in more than one league or region directory,
+        useful for detecting incorrect source associations or legitimately
+        cross-affiliated clubs.
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: Limit results to a single US state
+        - name: min_leagues
+          in: query
+          schema:
+            type: integer
+            default: 2
+            minimum: 2
+          description: Minimum number of distinct leagues to be returned
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Overlap results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlapResponse"
 
 components:
   schemas:
@@ -786,6 +894,160 @@ components:
           type: integer
       required:
         - coaches
+        - total
+        - page
+        - page_size
+
+    DuplicateCluster:
+      type: object
+      properties:
+        normalized_name:
+          type: string
+          description: Club name after stripping common suffixes (FC, SC, United, Academy, etc.)
+        state:
+          type: string
+          nullable: true
+        club_count:
+          type: integer
+        club_ids:
+          type: array
+          items:
+            type: integer
+        club_names:
+          type: array
+          items:
+            type: string
+      required:
+        - normalized_name
+        - club_count
+        - club_ids
+        - club_names
+
+    DuplicatesResponse:
+      type: object
+      properties:
+        duplicates:
+          type: array
+          items:
+            $ref: "#/components/schemas/DuplicateCluster"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+      required:
+        - duplicates
+        - total
+        - page
+        - page_size
+
+    StateCoverage:
+      type: object
+      properties:
+        state:
+          type: string
+        club_count:
+          type: integer
+        below_threshold:
+          type: boolean
+      required:
+        - state
+        - club_count
+        - below_threshold
+
+    LeagueCoverage:
+      type: object
+      properties:
+        league:
+          type: string
+        club_count:
+          type: integer
+      required:
+        - league
+        - club_count
+
+    CoverageResponse:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            total_clubs:
+              type: integer
+            total_states:
+              type: integer
+            states_below_threshold:
+              type: integer
+            threshold:
+              type: integer
+            website_coverage:
+              type: object
+              properties:
+                with_website:
+                  type: integer
+                without_website:
+                  type: integer
+                pct:
+                  type: number
+        states:
+          type: array
+          items:
+            $ref: "#/components/schemas/StateCoverage"
+        leagues:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeagueCoverage"
+      required:
+        - summary
+        - states
+        - leagues
+
+    OverlapClub:
+      type: object
+      properties:
+        id:
+          type: integer
+        club_name_canonical:
+          type: string
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        league_count:
+          type: integer
+        leagues:
+          type: array
+          items:
+            type: string
+        gender_programs:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - club_name_canonical
+        - league_count
+        - leagues
+        - gender_programs
+
+    OverlapResponse:
+      type: object
+      properties:
+        clubs:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlapClub"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+      required:
+        - clubs
         - total
         - page
         - page_size
