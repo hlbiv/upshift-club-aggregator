@@ -2,199 +2,268 @@
   "https://www.alsoccer.org": {
     "state": "Alabama",
     "type": "gotsport",
-    "events": [49334],
+    "events": [
+      49334
+    ],
     "_note": "49334 active Apr 2026 (returns 200 with club rows). No replacement needed."
   },
   "https://www.alaskayouthsoccer.org": {
     "state": "Alaska",
     "type": "gotsport",
-    "events": [48529],
-    "_note": "6 clubs: Alaska Rush, Anchorage Youth Soccer, Chugiak SC, Cook Inlet SC, Polar Vortex, Valley Revolution — all Alaska ✓"
+    "events": [
+      48529
+    ],
+    "_note": "6 clubs: Alaska Rush, Anchorage Youth Soccer, Chugiak SC, Cook Inlet SC, Polar Vortex, Valley Revolution \u2014 all Alaska \u2713"
   },
   "https://www.azyouthsoccer.org": {
     "state": "Arizona",
     "type": "gotsport",
-    "events": [45756],
-    "_note": "30 clubs: Arizona Arsenal SC, AZFC, Brazas FC — all Arizona ✓"
+    "events": [
+      45756
+    ],
+    "_note": "30 clubs: Arizona Arsenal SC, AZFC, Brazas FC \u2014 all Arizona \u2713"
   },
   "https://www.arkansassoccer.org": {
     "state": "Arkansas",
     "type": "gotsport",
-    "events": [40662, 25983],
-    "_note": "40662=26 clubs (Advantage Academy, Arkadelphia SA, Arkansas Comets FC, Arkansas Football Club Benton, Arkansas Rising, AVSA, Bentonville FC Prodigy, Central AR SC, De Queen SA, FC Arkansas, FC Horizon, Greene County Soccer, Hot Springs Soccer, Jonesboro CC, Little Rock Rangers, Mighty Bluebirds, NEA Soccer Club, NWA Dragons, River Valley FC, Searcy YSA, Siloam Springs Futbol, Specialized Soccer, Sporting Arkansas, Texarkana SC, Tigres Academy — all AR cities/abbreviations ✓). 25983=25 additional clubs, same core AR roster. Spot-checked: 'Arkadelphia SA' (Arkadelphia AR ✓), 'NWA Dragons' (Northwest Arkansas ✓), 'Jonesboro CC' (Jonesboro AR ✓). Event 45826 dropped — Midwest multi-state (IL/TN/MO/IN/TX)."
+    "events": [
+      40662,
+      25983
+    ],
+    "_note": "40662=26 clubs (Advantage Academy, Arkadelphia SA, Arkansas Comets FC, Arkansas Football Club Benton, Arkansas Rising, AVSA, Bentonville FC Prodigy, Central AR SC, De Queen SA, FC Arkansas, FC Horizon, Greene County Soccer, Hot Springs Soccer, Jonesboro CC, Little Rock Rangers, Mighty Bluebirds, NEA Soccer Club, NWA Dragons, River Valley FC, Searcy YSA, Siloam Springs Futbol, Specialized Soccer, Sporting Arkansas, Texarkana SC, Tigres Academy \u2014 all AR cities/abbreviations \u2713). 25983=25 additional clubs, same core AR roster. Spot-checked: 'Arkadelphia SA' (Arkadelphia AR \u2713), 'NWA Dragons' (Northwest Arkansas \u2713), 'Jonesboro CC' (Jonesboro AR \u2713). Event 45826 dropped \u2014 Midwest multi-state (IL/TN/MO/IN/TX)."
   },
   "https://www.calnorth.org": {
     "state": "Cal North",
     "type": "gotsport",
-    "events": [48917],
+    "events": [
+      48917
+    ],
     "_note": "48917 active Apr 2026 (returns 200 with club rows)."
   },
   "https://www.calsouth.com": {
     "state": "Cal South",
     "type": "gotsport",
-    "events": [43065, 41862],
-    "_note": "43065=42 clubs (AC Brea, ALBION LA, AYSO S1 Alliance — all SoCal LA/OC ✓); 41862=41 clubs (ALBION SD, ALBION Santa Ana, Anaheim FC — all SoCal ✓)"
+    "events": [
+      43065,
+      41862
+    ],
+    "_note": "43065=42 clubs (AC Brea, ALBION LA, AYSO S1 Alliance \u2014 all SoCal LA/OC \u2713); 41862=41 clubs (ALBION SD, ALBION Santa Ana, Anaheim FC \u2014 all SoCal \u2713)"
   },
   "https://www.coloradosoccer.org": {
     "state": "Colorado",
     "type": "gotsport",
-    "events": [5829],
-    "_note": "5829=28 clubs (ALBION SC Colorado, ALBION SC Denver, Arsenal Colorado, Avalanche SC, B-Elite Soccer Academy of Denver, Broomfield SC, Club America of Colorado, CO Elevation FC, Colorado EDGE, Colorado Ice, Colorado International SA, Colorado Rapids Youth Soccer Club, Colorado Rush, Colorado Rush COS, Colorado Soccer Association, Colorado United, Denver Kickers Sport Club, Indios Denver SC, North Denver Rush, Northern Colorado Rush, Pikes Peak FC, Pride SC, Real Colorado, Riverside SC, Rocky Mountain Soccer Academy, United Soccer Club CO, Vail Valley SC, Westy Soccer — all Colorado cities ✓). Event 46302 dropped — Texas/Houston clubs only (0% CO)."
+    "events": [
+      5829
+    ],
+    "_note": "5829=28 clubs (ALBION SC Colorado, ALBION SC Denver, Arsenal Colorado, Avalanche SC, B-Elite Soccer Academy of Denver, Broomfield SC, Club America of Colorado, CO Elevation FC, Colorado EDGE, Colorado Ice, Colorado International SA, Colorado Rapids Youth Soccer Club, Colorado Rush, Colorado Rush COS, Colorado Soccer Association, Colorado United, Denver Kickers Sport Club, Indios Denver SC, North Denver Rush, Northern Colorado Rush, Pikes Peak FC, Pride SC, Real Colorado, Riverside SC, Rocky Mountain Soccer Academy, United Soccer Club CO, Vail Valley SC, Westy Soccer \u2014 all Colorado cities \u2713). Event 46302 dropped \u2014 Texas/Houston clubs only (0% CO)."
   },
   "https://www.cjsa.org": {
     "state": "Connecticut",
     "type": "google_maps",
-    "map_ids": ["1qbhtLKgowyEMKObPH4xsTwLAvW0ZOkA"]
+    "map_ids": [
+      "1qbhtLKgowyEMKObPH4xsTwLAvW0ZOkA"
+    ]
   },
   "https://www.dysa.org": {
     "state": "Delaware",
     "type": "gotsport",
-    "events": [52446],
+    "events": [
+      52446
+    ],
     "_note": "52446 active Apr 2026 (returns 200 with club rows)."
   },
   "https://www.enysoccer.com": {
     "state": "Eastern NY",
     "type": "gotsport",
-    "events": [52052],
-    "_note": "52052=31 clubs: Albertson SC, ALBION SC Brooklyn, Asphalt Green, Baymen/LIJSL, BW Gottschee, Commack Soccer, Dix Hills SC — all Long Island / NYC ✓. Events 39275 and 49587 dropped (>40% NJ clubs, not ENY)."
+    "events": [
+      52052
+    ],
+    "_note": "52052=31 clubs: Albertson SC, ALBION SC Brooklyn, Asphalt Green, Baymen/LIJSL, BW Gottschee, Commack Soccer, Dix Hills SC \u2014 all Long Island / NYC \u2713. Events 39275 and 49587 dropped (>40% NJ clubs, not ENY)."
   },
   "https://www.epysa.org": {
     "state": "Eastern PA",
     "type": "google_maps",
-    "map_ids": ["1LEvbghoFLjxzt4z_UyuykmhEqm-n58g"]
+    "map_ids": [
+      "1LEvbghoFLjxzt4z_UyuykmhEqm-n58g"
+    ]
   },
   "https://www.fysa.com": {
     "state": "Florida",
     "type": "gotsport",
-    "events": [43009, 46366],
+    "events": [
+      43009,
+      46366
+    ],
     "_note": "43009 and 46366 both active Apr 2026 (200 with club rows)."
   },
   "https://www.georgiasoccer.org": {
     "state": "Georgia",
     "type": "gotsport",
-    "events": [50910],
+    "events": [
+      50910
+    ],
     "_note": "50910 active Apr 2026 (returns 200 with club rows)."
   },
   "https://www.hawaiisoccer.com": {
     "state": "Hawaii",
-    "type": "no_source_found",
-    "_note": "No public GotSport event or Google Maps found. Small island state; likely uses private platform."
+    "type": "soccerwire",
+    "_note": "SoccerWire WP REST API \u2014 6 clubs verified: Kona Crush Academy, ALBION SC Hawaii, Honolulu Bulls, Hawaii Surf, Hawaii Rush, Hawaii Rush Big Island. AYSO sections unreachable (DNS); US Club Soccer no public registry. Slug keywords: hawaii, honolulu, kona, big-island."
   },
   "https://www.idahoyouthsoccer.org": {
     "state": "Idaho",
     "type": "gotsport",
-    "events": [46645, 50328]
+    "events": [
+      46645,
+      50328
+    ]
   },
   "https://illinoisyouthsoccer.org": {
     "state": "Illinois",
     "type": "gotsport",
-    "events": [41112, 50022],
-    "_note": "41112=87 clubs (ACS Sycamore, Addison United, Aurora Eagles, Chicago Fire Youth, Eclipse Select — all Chicago metro IL ✓, 1 IN club). 50022=86 clubs (Atlas FC Chicago, Ajax Naperville, Bolingbrook SC — all Chicago metro IL ✓, 1 IN club)."
+    "events": [
+      41112,
+      50022
+    ],
+    "_note": "41112=87 clubs (ACS Sycamore, Addison United, Aurora Eagles, Chicago Fire Youth, Eclipse Select \u2014 all Chicago metro IL \u2713, 1 IN club). 50022=86 clubs (Atlas FC Chicago, Ajax Naperville, Bolingbrook SC \u2014 all Chicago metro IL \u2713, 1 IN club)."
   },
   "https://www.soccerindiana.org": {
     "state": "Indiana",
     "type": "google_maps",
-    "map_ids": ["1Wolg1Q7juM55WP0VIGUXHRErDOpcMKo"]
+    "map_ids": [
+      "1Wolg1Q7juM55WP0VIGUXHRErDOpcMKo"
+    ]
   },
   "https://www.iowasoccer.org": {
     "state": "Iowa",
     "type": "gotsport",
-    "events": [41677, 46269],
-    "_note": "41677=18 clubs: 515 Soccer/Des Moines area code, Ames SC, DCG SC (Dallas Center-Grimes IA), Des Moines SC, Gilbert SC, Indianola, Mason City SC — all Iowa cities ✓. 46269=15 clubs: AYSO United Cedar Rapids, Bondurant SC, Des Moines SC — all Iowa ✓."
+    "events": [
+      41677,
+      46269
+    ],
+    "_note": "41677=18 clubs: 515 Soccer/Des Moines area code, Ames SC, DCG SC (Dallas Center-Grimes IA), Des Moines SC, Gilbert SC, Indianola, Mason City SC \u2014 all Iowa cities \u2713. 46269=15 clubs: AYSO United Cedar Rapids, Bondurant SC, Des Moines SC \u2014 all Iowa \u2713."
   },
   "https://www.kansasyouthsoccer.org": {
     "state": "Kansas",
     "type": "gotsport",
-    "events": [50652, 50565, 50564]
+    "events": [
+      50652,
+      50565,
+      50564
+    ]
   },
   "https://www.kysoccer.net": {
     "state": "Kentucky",
     "type": "gotsport",
-    "events": [48452]
+    "events": [
+      48452
+    ]
   },
   "https://www.playlouisianasoccer.org": {
     "state": "Louisiana",
-    "type": "no_source_found",
-    "_note": "No public GotSport event or Google Maps found after deep crawl and sitemap scan."
+    "type": "soccerwire",
+    "_note": "SoccerWire WP REST API \u2014 3 clubs verified: Louisiana TDP Elite (Girls Academy), Louisiana Fire SC, Baton Rouge SC. AYSO Section 6 website DNS-fails; US Club Soccer no public registry. Slug keywords: louisiana, baton-rouge, kenner."
   },
   "https://www.soccermaine.com": {
     "state": "Maine",
     "type": "gotsport",
-    "events": [45825]
+    "events": [
+      45825
+    ]
   },
   "https://www.msysa.org": {
     "state": "Maryland",
     "type": "gotsport",
-    "events": [43226, 48931],
-    "_note": "43226=51 clubs: Abingdon FC, Baltimore Bays, Bethesda SC, Coppermine SC, FC Frederick, Harford FC United, Maryland Rush, Montgomery Soccer MSI, Rockville SC — all Maryland cities ✓. 48931=23 clubs: Arundel SA, Baltimore Celtic, Catonsville Soccer, Central Carroll SC, Cockeysville FC — all Maryland ✓."
+    "events": [
+      43226,
+      48931
+    ],
+    "_note": "43226=51 clubs: Abingdon FC, Baltimore Bays, Bethesda SC, Coppermine SC, FC Frederick, Harford FC United, Maryland Rush, Montgomery Soccer MSI, Rockville SC \u2014 all Maryland cities \u2713. 48931=23 clubs: Arundel SA, Baltimore Celtic, Catonsville Soccer, Central Carroll SC, Cockeysville FC \u2014 all Maryland \u2713."
   },
   "https://www.mayouthsoccer.org": {
     "state": "Massachusetts",
-    "type": "no_source_found",
-    "_note": "No public GotSport event or Google Maps found. Large state on SportsEngine with private data."
+    "type": "soccerwire",
+    "_note": "SoccerWire WP REST API \u2014 3 clubs verified: GPS Massachusetts, FCUSA Massachusetts, Boston Bolts (ECNL Boys, MLS Next). AYSO Section 1 website DNS-fails; US Club Soccer no public registry. Slug keywords: massachusetts, boston, waltham, newton, plymouth."
   },
   "https://www.michiganyouthsoccer.org": {
     "state": "Michigan",
     "type": "gotsport",
-    "events": [50299],
+    "events": [
+      50299
+    ],
     "_note": "50299 active Apr 2026 (70 rows returned)."
   },
   "https://www.mnyouthsoccer.org": {
     "state": "Minnesota",
     "type": "gotsport",
-    "events": [38032],
+    "events": [
+      38032
+    ],
     "multi_state": true,
-    "_note": "54 clubs: Albion SC Southern MN, Arrowhead Youth SA, Bloomington United, Edina SC, Mahtomedi SA, Mankato United SC, Minneapolis United, MN Thunder Academy, Owatonna SA, Prior Lake SC, St Paul Blackhawks, Tonka United SA, Waconia SC — predominantly Minnesota ✓ (~80% MN, ~15% WI border area, 1 IA club). multi_state=true: club states left blank for enrichment due to notable WI/IA cross-border presence (~20% non-MN clubs)."
+    "_note": "54 clubs: Albion SC Southern MN, Arrowhead Youth SA, Bloomington United, Edina SC, Mahtomedi SA, Mankato United SC, Minneapolis United, MN Thunder Academy, Owatonna SA, Prior Lake SC, St Paul Blackhawks, Tonka United SA, Waconia SC \u2014 predominantly Minnesota \u2713 (~80% MN, ~15% WI border area, 1 IA club). multi_state=true: club states left blank for enrichment due to notable WI/IA cross-border presence (~20% non-MN clubs)."
   },
   "https://www.mississippisoccer.org": {
     "state": "Mississippi",
-    "type": "no_source_found",
-    "_note": "No public GotSport event found. Small state association; likely private platform."
+    "type": "soccerwire",
+    "_note": "SoccerWire WP REST API \u2014 3 clubs verified: Tupelo FC, Mississippi Rush United, Mississippi Rush. AYSO Section 6 website DNS-fails; US Club Soccer no public registry. Slug keywords: mississippi, tupelo."
   },
   "https://www.missourisoccer.org": {
     "state": "Missouri",
     "type": "google_maps",
-    "map_ids": ["1XP_u-ZpHdZHHLkIFX3JgTKOB9IlhxsA"]
+    "map_ids": [
+      "1XP_u-ZpHdZHHLkIFX3JgTKOB9IlhxsA"
+    ]
   },
   "https://www.montanayouthsoccer.com": {
     "state": "Montana",
     "type": "gotsport",
-    "events": [40682],
-    "_note": "27 clubs: Bigfork SC (Bigfork MT ✓), Big Sky Futbol Club ✓, Billings Wolves (Billings MT ✓), Black Hills Rapids SC, Clark Fork Soccer Alliance, Flathead Rapids, Flathead Valley United SC — all Montana region ✓."
+    "events": [
+      40682
+    ],
+    "_note": "27 clubs: Bigfork SC (Bigfork MT \u2713), Big Sky Futbol Club \u2713, Billings Wolves (Billings MT \u2713), Black Hills Rapids SC, Clark Fork Soccer Alliance, Flathead Rapids, Flathead Valley United SC \u2014 all Montana region \u2713."
   },
   "https://www.nebraskastatesoccer.org": {
     "state": "Nebraska",
-    "type": "no_source_found",
-    "_note": "No public GotSport event or Google Maps found."
+    "type": "soccerwire",
+    "_note": "SoccerWire WP REST API \u2014 5 clubs verified: Omaha United SC (US Youth Soccer), Villarreal Nebraska Academy, Sporting Nebraska, Omaha FC, Nebraska Select. AYSO Section 5 website DNS-fails; US Club Soccer no public registry. Slug keywords: nebraska, omaha, lincoln, kearney."
   },
   "https://www.nevadayouthsoccer.org": {
     "state": "Nevada",
     "type": "gotsport",
-    "events": [50983],
-    "_note": "23 clubs: 702 Footy Foundation (702=LV area code ✓), ALBION SC Las Vegas ✓, AYSO United - Las Vegas ✓, BVB IA Las Vegas ✓, Downtown Las Vegas SC ✓, Juventus Academy Las Vegas ✓, Lady Rebels SC ✓, Las Vegas Diversity FC ✓, Las Vegas Elite FC ✓, Las Vegas Soccer School ✓, Las Vegas Sports Academy ✓, LV Arsenal ✓, LV Heat Surf SC ✓, Nevada Rush ✓, Rayados LV ✓, Sporting Nevada USA Magnifico ✓, Vegas Strong SC ✓, Vegas United SC ✓, Villarreal LV Academy ✓ — all Las Vegas / Nevada ✓. Event 44159 dropped (10/41 clubs from CA, AZ, ID, AR, UT — regional open tournament, not NV state association)."
+    "events": [
+      50983
+    ],
+    "_note": "23 clubs: 702 Footy Foundation (702=LV area code \u2713), ALBION SC Las Vegas \u2713, AYSO United - Las Vegas \u2713, BVB IA Las Vegas \u2713, Downtown Las Vegas SC \u2713, Juventus Academy Las Vegas \u2713, Lady Rebels SC \u2713, Las Vegas Diversity FC \u2713, Las Vegas Elite FC \u2713, Las Vegas Soccer School \u2713, Las Vegas Sports Academy \u2713, LV Arsenal \u2713, LV Heat Surf SC \u2713, Nevada Rush \u2713, Rayados LV \u2713, Sporting Nevada USA Magnifico \u2713, Vegas Strong SC \u2713, Vegas United SC \u2713, Villarreal LV Academy \u2713 \u2014 all Las Vegas / Nevada \u2713. Event 44159 dropped (10/41 clubs from CA, AZ, ID, AR, UT \u2014 regional open tournament, not NV state association)."
   },
   "https://www.soccernh.com": {
     "state": "New Hampshire",
     "type": "gotsport",
-    "events": [42251],
+    "events": [
+      42251
+    ],
     "_note": "42251 active Apr 2026 (56 rows returned)."
   },
   "https://www.njyouthsoccer.com": {
     "state": "New Jersey",
     "type": "gotsport",
-    "events": [47543],
-    "_note": "47543=50 clubs: Aberdeen Matawan, Beachwood, Berkeley, Bordentown, Cinnaminson, Colts Neck, Egg Harbor Township, Freehold, Haddon Heights, Hamilton, Hammonton, Hazlet, Holmdel, Howell, Manalapan, Marlboro, Middletown, Monroe Township, Neptune, Old Bridge, Ocean Township, Princeton, Rahway, Red Bank, Rumson, Stafford, Toms River, Wall — all New Jersey towns ✓ (1 Bucks County PA club, otherwise 98% NJ). Event 48159 dropped — contains Eastern PA and NY Hudson Valley clubs, not NJ."
+    "events": [
+      47543
+    ],
+    "_note": "47543=50 clubs: Aberdeen Matawan, Beachwood, Berkeley, Bordentown, Cinnaminson, Colts Neck, Egg Harbor Township, Freehold, Haddon Heights, Hamilton, Hammonton, Hazlet, Holmdel, Howell, Manalapan, Marlboro, Middletown, Monroe Township, Neptune, Old Bridge, Ocean Township, Princeton, Rahway, Red Bank, Rumson, Stafford, Toms River, Wall \u2014 all New Jersey towns \u2713 (1 Bucks County PA club, otherwise 98% NJ). Event 48159 dropped \u2014 contains Eastern PA and NY Hudson Valley clubs, not NJ."
   },
   "https://www.nmysa.net": {
     "state": "New Mexico",
     "type": "gotsport",
-    "events": [23574],
+    "events": [
+      23574
+    ],
     "_note": "23574 active Apr 2026 (17 rows returned)."
   },
   "https://www.nyswysa.org": {
     "state": "NY West",
     "type": "gotsport",
-    "events": [49820],
+    "events": [
+      49820
+    ],
     "_note": "49820 active Apr 2026 (35 rows returned)."
   },
   "https://www.ncsoccer.org": {
@@ -202,139 +271,273 @@
     "type": "js_club_list",
     "page_url": "https://www.ncsoccer.org/find-my-club/",
     "js_var": "clubs",
-    "_note": "104 clubs embedded as JS variable 'const clubs=[{n:\"Club Name\",lat:...,lng:...,c:\"City, NC\"}]' in ncsoccer.org/find-my-club/. Spot-checked: '316 Futbol Club' (Indian Trail NC ✓), 'Charlotte Soccer Academy' (Charlotte NC ✓), 'Triangle United Soccer Association' (Triangle area NC ✓), 'Wilmington Hammerheads Youth FC' (Wilmington NC ✓). All 104 clubs show NC cities in their city field. GotSport event 48392 dropped — dominated by Northeast/MA/CT/ME clubs (0% NC)."
+    "_note": "104 clubs embedded as JS variable 'const clubs=[{n:\"Club Name\",lat:...,lng:...,c:\"City, NC\"}]' in ncsoccer.org/find-my-club/. Spot-checked: '316 Futbol Club' (Indian Trail NC \u2713), 'Charlotte Soccer Academy' (Charlotte NC \u2713), 'Triangle United Soccer Association' (Triangle area NC \u2713), 'Wilmington Hammerheads Youth FC' (Wilmington NC \u2713). All 104 clubs show NC cities in their city field. GotSport event 48392 dropped \u2014 dominated by Northeast/MA/CT/ME clubs (0% NC)."
   },
   "https://www.ndsoccer.org": {
     "state": "North Dakota",
     "type": "no_source_found",
-    "_note": "No public GotSport event found. Very small state association."
+    "_note": "SoccerWire WP REST API \u2014 0 clubs found (April 2026). No GotSport events found in scan range 43000\u201351100 for ND. No Google Maps club directory found. AYSO Section 5 website DNS-fails. ND has no publicly discoverable club list as of Task #22."
   },
   "https://www.ntxsoccer.org": {
     "state": "North Texas",
     "type": "gotsport",
-    "events": [39057],
-    "_note": "78 clubs: Alacranes FC, Amarillo Rush SC (TX panhandle ✓), Americas Futbol Club (DFW ✓), Arlington SA (Arlington TX ✓), Mansfield FC, Midlothian Premier, North Fort Worth Alliance, NTX Celtic, NTX United, Revolution FC LBK (Lubbock TX ✓), San Angelo Extreme (TX ✓), Solar SC (DFW ✓), Texas Spurs, WFSC (Wichita Falls TX ✓) — predominantly North Texas ✓. NOTE: event 45141 is a national USYS event (contains all 54 state associations) — do NOT use."
+    "events": [
+      39057
+    ],
+    "_note": "78 clubs: Alacranes FC, Amarillo Rush SC (TX panhandle \u2713), Americas Futbol Club (DFW \u2713), Arlington SA (Arlington TX \u2713), Mansfield FC, Midlothian Premier, North Fort Worth Alliance, NTX Celtic, NTX United, Revolution FC LBK (Lubbock TX \u2713), San Angelo Extreme (TX \u2713), Solar SC (DFW \u2713), Texas Spurs, WFSC (Wichita Falls TX \u2713) \u2014 predominantly North Texas \u2713. NOTE: event 45141 is a national USYS event (contains all 54 state associations) \u2014 do NOT use."
   },
   "https://ohio-soccer.org": {
     "state": "Ohio",
     "type": "gotsport",
-    "events": [44770, 49162],
-    "_note": "49162=88 clubs: Alliance Cincinnati SC, Bellbrook SA, Cincinnati Elite FC, Cincinnati United, Cincinnati West, Club Ohio, Dayton FC, FC Dayton — predominantly SW Ohio ✓ (small KY/IN border overlap). Supplements 44770 (12 clubs)."
+    "events": [
+      44770,
+      49162
+    ],
+    "_note": "49162=88 clubs: Alliance Cincinnati SC, Bellbrook SA, Cincinnati Elite FC, Cincinnati United, Cincinnati West, Club Ohio, Dayton FC, FC Dayton \u2014 predominantly SW Ohio \u2713 (small KY/IN border overlap). Supplements 44770 (12 clubs)."
   },
   "https://www.oksoccer.com": {
     "state": "Oklahoma",
     "type": "gotsport",
-    "events": [45220, 50535],
+    "events": [
+      45220,
+      50535
+    ],
     "_note": "45220 (37 rows) and 50535 (32 rows) both active Apr 2026."
   },
   "https://www.oregonyouthsoccer.org": {
     "state": "Oregon",
     "type": "html_club_list",
     "page_url": "https://www.oregonyouthsoccer.org/find-a-club/",
-    "skip_phrases": ["skip to", "privacy policy", "sportsengine", "member clubs", "find a club",
-                     "español", "resources", "affinity login", "team shop", "usys", "menu",
-                     "about us", "staff", "board of", "annual general", "hall of fame",
-                     "technical", "oysa foundation", "sponsors", "employment", "goal lines",
-                     "contact", "news", "leagues", "seasonal year", "competitive", "fall u1",
-                     "winter (u", "spring – u", "developmental", "valley academy league",
-                     "development league", "sanctioned leagues", "tournaments", "overview",
-                     "state cup", "presidents cup", "founders cup", "league america",
-                     "sanctioned tournaments", "odp", "tryouts", "coaching staff", "faqs",
-                     "odp calendar", "odp liability", "referees", "become a referee",
-                     "laws of the game", "ref talk", "reftown", "referee training", "coaches",
-                     "licensing pathway", "starting out", "upcoming courses", "host a course",
-                     "coaching resources", "no tippy", "positive coaching", "parents",
-                     "soccer parenting", "sideline project", "how to register a parent",
-                     "code of ethics", "parent resources", "programs", "topsoccer",
-                     "college showcase", "away day", "roundglass", "engine – oysa",
-                     "turf tank", "admin", "becoming a member club", "oysa competition rules",
-                     "international clearance", "forms & documents", "background checks",
-                     "safe sport", "risk management", "esports", "benefits", "safety",
-                     "powered by", "2026/27"],
-    "_note": "80+ Oregon-specific clubs scraped from OYSA member club directory at oregonyouthsoccer.org/find-a-club/. Clubs organized by OR region: Central Valley (Capital FC Salem, Eugene Metros), Central/Eastern OR (Bend FC), Columbia (Eastside Timbers Gresham), Portland (Lincoln Youth, Portland City United), South Metro (Lake Oswego SC, Oregon Premier), Southern (Rogue Valley Timbers, Ashland SC), Tualatin Hills (Oregon Surf, Westside Metros), Western (Hillsboro Rush, Bridge City, Santos FC), Willamette (Clackamas United). All Oregon ✓. GotSport event 40173 dropped — entirely Ohio clubs."
+    "skip_phrases": [
+      "skip to",
+      "privacy policy",
+      "sportsengine",
+      "member clubs",
+      "find a club",
+      "espa\u00f1ol",
+      "resources",
+      "affinity login",
+      "team shop",
+      "usys",
+      "menu",
+      "about us",
+      "staff",
+      "board of",
+      "annual general",
+      "hall of fame",
+      "technical",
+      "oysa foundation",
+      "sponsors",
+      "employment",
+      "goal lines",
+      "contact",
+      "news",
+      "leagues",
+      "seasonal year",
+      "competitive",
+      "fall u1",
+      "winter (u",
+      "spring \u2013 u",
+      "developmental",
+      "valley academy league",
+      "development league",
+      "sanctioned leagues",
+      "tournaments",
+      "overview",
+      "state cup",
+      "presidents cup",
+      "founders cup",
+      "league america",
+      "sanctioned tournaments",
+      "odp",
+      "tryouts",
+      "coaching staff",
+      "faqs",
+      "odp calendar",
+      "odp liability",
+      "referees",
+      "become a referee",
+      "laws of the game",
+      "ref talk",
+      "reftown",
+      "referee training",
+      "coaches",
+      "licensing pathway",
+      "starting out",
+      "upcoming courses",
+      "host a course",
+      "coaching resources",
+      "no tippy",
+      "positive coaching",
+      "parents",
+      "soccer parenting",
+      "sideline project",
+      "how to register a parent",
+      "code of ethics",
+      "parent resources",
+      "programs",
+      "topsoccer",
+      "college showcase",
+      "away day",
+      "roundglass",
+      "engine \u2013 oysa",
+      "turf tank",
+      "admin",
+      "becoming a member club",
+      "oysa competition rules",
+      "international clearance",
+      "forms & documents",
+      "background checks",
+      "safe sport",
+      "risk management",
+      "esports",
+      "benefits",
+      "safety",
+      "powered by",
+      "2026/27"
+    ],
+    "_note": "80+ Oregon-specific clubs scraped from OYSA member club directory at oregonyouthsoccer.org/find-a-club/. Clubs organized by OR region: Central Valley (Capital FC Salem, Eugene Metros), Central/Eastern OR (Bend FC), Columbia (Eastside Timbers Gresham), Portland (Lincoln Youth, Portland City United), South Metro (Lake Oswego SC, Oregon Premier), Southern (Rogue Valley Timbers, Ashland SC), Tualatin Hills (Oregon Surf, Westside Metros), Western (Hillsboro Rush, Bridge City, Santos FC), Willamette (Clackamas United). All Oregon \u2713. GotSport event 40173 dropped \u2014 entirely Ohio clubs."
   },
   "https://www.pawest-soccer.org": {
     "state": "PA West",
     "type": "html_club_list",
     "page_url": "https://www.pawest-soccer.org/club-list/",
-    "skip_phrases": ["skip to", "privacy policy", "sportsengine", "club list", "photo gallery",
-                     "about us", "executive board", "youth board", "adult board", "futsal board",
-                     "state staff", "governing documents", "adult rules", "executive board minutes",
-                     "national hall", "youth rules", "how to become", "become a coach",
-                     "scheduled courses", "licenses", "coaching", "risk management",
-                     "talent scout", "want ads", "assignors", "soccer assignment",
-                     "assessments", "become a referee", "referee course", "referee registration",
-                     "youth affidavit", "futsal referees", "how to upload", "referee mentors",
-                     "referee news", "referee pathway", "upgrade to", "referee report",
-                     "how to submit", "respect the call", "resources", "referee dress",
-                     "state referee committee", "young referee", "odp", "forms", "faq",
-                     "usys", "pa west", "menu", "powered by", "jetpack"],
-    "_note": "120+ PA West clubs listed as plain text on pawest-soccer.org/club-list/. Spot-checked: 'Beadling SC' (Beadling PA ✓), 'North Allegheny' (North Allegheny PA ✓), 'Peters Township' (Peters Township PA ✓), 'Riverhounds Development Academy' (Pittsburgh PA ✓), 'Upper St. Clair' (Upper St. Clair PA ✓). All Western PA suburbs/municipalities ✓. GotSport event 49186 dropped — Eastern PA clubs only (0% Pittsburgh/Western PA). PA West uses TeamPass for registration, not GotSport."
+    "skip_phrases": [
+      "skip to",
+      "privacy policy",
+      "sportsengine",
+      "club list",
+      "photo gallery",
+      "about us",
+      "executive board",
+      "youth board",
+      "adult board",
+      "futsal board",
+      "state staff",
+      "governing documents",
+      "adult rules",
+      "executive board minutes",
+      "national hall",
+      "youth rules",
+      "how to become",
+      "become a coach",
+      "scheduled courses",
+      "licenses",
+      "coaching",
+      "risk management",
+      "talent scout",
+      "want ads",
+      "assignors",
+      "soccer assignment",
+      "assessments",
+      "become a referee",
+      "referee course",
+      "referee registration",
+      "youth affidavit",
+      "futsal referees",
+      "how to upload",
+      "referee mentors",
+      "referee news",
+      "referee pathway",
+      "upgrade to",
+      "referee report",
+      "how to submit",
+      "respect the call",
+      "resources",
+      "referee dress",
+      "state referee committee",
+      "young referee",
+      "odp",
+      "forms",
+      "faq",
+      "usys",
+      "pa west",
+      "menu",
+      "powered by",
+      "jetpack"
+    ],
+    "_note": "120+ PA West clubs listed as plain text on pawest-soccer.org/club-list/. Spot-checked: 'Beadling SC' (Beadling PA \u2713), 'North Allegheny' (North Allegheny PA \u2713), 'Peters Township' (Peters Township PA \u2713), 'Riverhounds Development Academy' (Pittsburgh PA \u2713), 'Upper St. Clair' (Upper St. Clair PA \u2713). All Western PA suburbs/municipalities \u2713. GotSport event 49186 dropped \u2014 Eastern PA clubs only (0% Pittsburgh/Western PA). PA West uses TeamPass for registration, not GotSport."
   },
   "https://www.soccer-ri.com": {
     "state": "Rhode Island",
-    "type": "no_source_found",
-    "_note": "No public GotSport event or Google Maps found. Small state."
+    "type": "soccerwire",
+    "_note": "SoccerWire WP REST API \u2014 1 club verified: Rhode Island Surf (Girls Academy). AYSO Section 1 website DNS-fails; US Club Soccer no public registry. Slug keywords: rhode-island, providence."
   },
   "https://www.scyouthsoccer.com": {
     "state": "South Carolina",
-    "type": "no_source_found",
-    "_note": "No public GotSport event or Google Maps found after deep crawl."
+    "type": "soccerwire",
+    "_note": "SoccerWire WP REST API \u2014 2 clubs verified: South Carolina Surf (Girls Academy, ECNL Boys), South Carolina United FC (US Club Soccer, US Youth Soccer). AYSO Section 3 website DNS-fails; US Club Soccer no public registry. Slug keywords: south-carolina, columbia-sc, charleston, palmetto."
   },
   "https://www.southdakotasoccer.com": {
     "state": "South Dakota",
     "type": "no_source_found",
-    "_note": "No public GotSport event found. Very small state association."
+    "_note": "SoccerWire WP REST API \u2014 0 clubs found (April 2026). No GotSport events found in scan range 43000\u201351100 for SD. No Google Maps club directory found. SD has no publicly discoverable club list as of Task #22."
   },
   "https://www.stxsoccer.org": {
     "state": "South Texas",
     "type": "google_maps",
-    "map_ids": ["1WiBWUBnV577NYdbUb7K_apuMA98mOTE"]
+    "map_ids": [
+      "1WiBWUBnV577NYdbUb7K_apuMA98mOTE"
+    ]
   },
   "https://www.tnsoccer.org": {
     "state": "Tennessee",
     "type": "google_maps",
-    "map_ids": ["1Fj_RfEv-z54NBLLPceDlqxr5SZyzqH0"]
+    "map_ids": [
+      "1Fj_RfEv-z54NBLLPceDlqxr5SZyzqH0"
+    ]
   },
   "https://www.utahyouthsoccer.net": {
     "state": "Utah",
     "type": "no_source_found",
-    "_note": "No public GotSport event or Google Maps found. UYSA uses private platform."
+    "_note": "SoccerWire WP REST API \u2014 6 clubs found (Utah Storm SC, Utah Soccer Alliance, Utah Rangers FC, Utah Celtic FC, Utah Avalanche, La Roca FC) but 2+ already covered by ECNL GotSport events (Utah Avalanche, La Roca FC). Adding via SoccerWire risks duplicates before dedup runs. Update type to soccerwire once dedup coverage of ECNL UT clubs is confirmed."
   },
   "https://www.vermontsoccer.org": {
     "state": "Vermont",
     "type": "gotsport",
-    "events": [53253, 46649],
+    "events": [
+      53253,
+      46649
+    ],
     "_note": "53253 (33 rows) and 46649 (32 rows) both active Apr 2026."
   },
   "https://www.vysa.com": {
     "state": "Virginia",
     "type": "gotsport",
-    "events": [50831],
+    "events": [
+      50831
+    ],
     "_note": "50831 active Apr 2026 (34 rows returned)."
   },
   "https://washingtonyouthsoccer.org": {
     "state": "Washington",
     "type": "gotsport",
-    "events": [41134, 39584],
-    "_note": "41134=26 clubs: Basin Sounders, BVBIA WA Seattle, Cascade Premier, Central WA Sounders, Emerald City FC, Everett YSC, FC Edmonds, Highline Premier FC, North Kitsap SC, Puget Sound SC, Seattle Celtic, Seattle Reign Academy, West Sound Soccer Academy — all Washington state ✓. 39584=29 additional WA clubs ✓."
+    "events": [
+      41134,
+      39584
+    ],
+    "_note": "41134=26 clubs: Basin Sounders, BVBIA WA Seattle, Cascade Premier, Central WA Sounders, Emerald City FC, Everett YSC, FC Edmonds, Highline Premier FC, North Kitsap SC, Puget Sound SC, Seattle Celtic, Seattle Reign Academy, West Sound Soccer Academy \u2014 all Washington state \u2713. 39584=29 additional WA clubs \u2713."
   },
   "https://www.wvsoccer.net": {
     "state": "West Virginia",
     "type": "gotsport",
-    "events": [46532],
+    "events": [
+      46532
+    ],
     "multi_state": true,
-    "_note": "13 clubs. Confirmed WV (6/13 = 46%): Barbour County WV, FC Ripley (Ripley WV, Jackson County seat), KVSL-Competitive (Kanawha Valley WV), KVSL-Great Teays SC (Great Teays, Putnam County WV), Ohio Valley Soccer League (Parkersburg WV based), Putnam United FC (Putnam County WV). Confirmed non-WV (2/13): Belpre Soccer Club (Belpre OH, directly across Ohio River from Parkersburg WV — cross-river border participation), Club Ohio (large OH club). Unknown (5/13): FC Alliance, Legacy FC, PK Soccer Academy, River Valley SC, Shawnee Soccer Rec. Best-case estimate: 85% WV if unknowns are WV-based. multi_state=true: club states left blank for enrichment rather than inheriting 'West Virginia' for all clubs."
+    "_note": "13 clubs. Confirmed WV (6/13 = 46%): Barbour County WV, FC Ripley (Ripley WV, Jackson County seat), KVSL-Competitive (Kanawha Valley WV), KVSL-Great Teays SC (Great Teays, Putnam County WV), Ohio Valley Soccer League (Parkersburg WV based), Putnam United FC (Putnam County WV). Confirmed non-WV (2/13): Belpre Soccer Club (Belpre OH, directly across Ohio River from Parkersburg WV \u2014 cross-river border participation), Club Ohio (large OH club). Unknown (5/13): FC Alliance, Legacy FC, PK Soccer Academy, River Valley SC, Shawnee Soccer Rec. Best-case estimate: 85% WV if unknowns are WV-based. multi_state=true: club states left blank for enrichment rather than inheriting 'West Virginia' for all clubs."
   },
   "https://www.wiyouthsoccer.com": {
     "state": "Wisconsin",
-    "type": "no_source_found",
-    "_note": "No public GotSport event or Google Maps found. State uses SportsEngine with private data."
+    "type": "soccerwire",
+    "_note": "SoccerWire WP REST API \u2014 5 clubs verified: Rush Wisconsin, Waukesha SC, Madison 56ers, FC Wisconsin Eclipse, FC Wisconsin (Germantown). AYSO Section 4 website DNS-fails; US Club Soccer no public registry. Slug keywords: wisconsin, rush-wi, waukesha, madison-5, fc-wi."
   },
   "https://www.wyomingsoccer.com": {
     "state": "Wyoming",
     "type": "gotsport",
-    "events": [48304],
-    "_note": "9 clubs: Casper SC (Casper WY ✓), Cheyenne Soccer Club (Cheyenne WY ✓), Gillette Edge SC (Gillette WY ✓) — all Wyoming ✓. 48304 active Apr 2026 (9 rows returned). AUDIT Apr 2026: All GotSport event IDs in this file verified active via HTTP 200 check. No stale IDs found. NE Impact event 21393 (ne_impact.py) is the one retired/404 event — handled by curated seed fallback."
+    "events": [
+      48304
+    ],
+    "_note": "9 clubs: Casper SC (Casper WY \u2713), Cheyenne Soccer Club (Cheyenne WY \u2713), Gillette Edge SC (Gillette WY \u2713) \u2014 all Wyoming \u2713. 48304 active Apr 2026 (9 rows returned). AUDIT Apr 2026: All GotSport event IDs in this file verified active via HTTP 200 check. No stale IDs found. NE Impact event 21393 (ne_impact.py) is the one retired/404 event \u2014 handled by curated seed fallback."
   }
 }

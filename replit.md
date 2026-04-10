@@ -37,7 +37,8 @@ scraper/
 │   ├── mls_next.py            # MLS NEXT (patterns A+B, website extraction)
 │   ├── gotsport.py            # GotSport event roster scraper (shared helper, with retry)
 │   ├── sincsports.py          # SincSports TTTeamList.aspx extractor (static HTML)
-│   ├── state_assoc.py         # All 54 USYS tier-4 state associations (GotSport + Maps KML)
+│   ├── soccerwire.py          # SoccerWire WP REST API + individual club page extractor
+│   ├── state_assoc.py         # All 54 USYS tier-4 state associations (GotSport + Maps KML + SoccerWire)
 │   ├── npl_extra.py           # NPL regional leagues + additional GotSport-backed directories
 │   ├── socal.py               # SOCAL Soccer League via GotSport
 │   ├── mspsp.py               # Michigan State Premier Soccer Program via GotSport
@@ -58,7 +59,8 @@ scraper/
 │   ├── leagues_master.csv              # 127-row league inventory (source of truth)
 │   ├── league_sources_seed.csv         # Official scrape source registry
 │   ├── usys_state_associations_seed.csv # All 54 USYS member associations
-│   ├── state_assoc_config.json         # Maps state URL → {type, events/map_ids, multi_state}
+│   ├── state_assoc_config.json         # Maps state URL → {type, events/map_ids, multi_state}; soccerwire type for HI/LA/MA/MS/NE/RI/SC/WI
+│   ├── soccerwire_slugs_cache.json     # Cached SoccerWire WP REST API slug list (1,067 clubs; auto-refreshed)
 │   └── canonical_schema.sql            # Postgres schema for canonical club graph
 └── output/
     ├── master.csv                       # Deduplicated master dataset
@@ -123,7 +125,13 @@ npx tsx lib/db/src/seed.ts              # seed PostgreSQL from master.csv
 
 **SincSports pattern**: Static HTML at `soccer.sincsports.com/TTTeamList.aspx?tid=TID`. Division selector is client-side only — all teams in a single HTTP response. Filter "NO CLUB" placeholder rows.
 
-**State association strategy**: 54 USYS tier-4 sites configured. GotSport events (32 states), Google My Maps KML (6 states), no-source (16 states). `state_assoc_config.json` has `multi_state: true` for MN, WV where parent event crosses state lines — records tagged `_state_derived=True` to prevent state overwrite.
+**State association strategy**: 54 USYS tier-4 sites configured. GotSport events (34 states), Google My Maps KML (6 states), JS club list (1 state — NC), HTML club list (2 states — OR, PA-West), SoccerWire WP REST API (8 states — HI, LA, MA, MS, NE, RI, SC, WI), no-source (3 states — ND, SD, UT). `state_assoc_config.json` has `multi_state: true` for MN, WV where parent event crosses state lines — records tagged `_state_derived=True` to prevent state overwrite.
+
+**SoccerWire strategy** (Task #22): For 8 previously zero-coverage states, `state_assoc_config.json` entries use `type: soccerwire`. `state_assoc.py` delegates to `extractors/soccerwire.py` which: (1) fetches all 1,067 club slugs from the WP REST API (`/wp-json/wp/v2/clubs?per_page=100`), cached to `data/soccerwire_slugs_cache.json`; (2) filters slugs by state-specific keywords (city names, team name fragments); (3) fetches individual club pages in parallel to extract Location + Membership. Verified counts: HI=6, LA=3, MA=3, MS=3, NE=5, RI=1, SC=2, WI=5 (total 28 new clubs). ND and SD have zero SoccerWire clubs. UT has 6 SoccerWire clubs but 2+ overlap ECNL GotSport coverage — held pending dedup.
+
+**AYSO finding** (Task #22): AYSO section websites (aysos1.org–aysos9.org) all DNS-fail. aysou.org redirects to wiki. Blue Sombrero (registration) is private. No AYSO-specific GotSport events found in scan range 43000–51100. AYSO clubs that appear in SoccerWire are tagged with "U.S. Youth Soccer" membership.
+
+**US Club Soccer finding** (Task #22): No public member club registry. `usclubsoccer.org/members/` requires GotSport login. US Club Soccer–affiliated clubs appear in SoccerWire `Memberships` field (e.g. South Carolina United FC, Omaha United SC). NPL member clubs are covered by individual NPL member-league extractors.
 
 **Retry strategy**: All HTTP calls wrapped in `retry_with_backoff(fn, max_retries=3, base_delay=2s)`. ConnectionError, Timeout, 5xx → `TransientError`. Playwright navigation errors (ERR_NAME_NOT_RESOLVED, net::ERR_*, timeouts) also retried.
 

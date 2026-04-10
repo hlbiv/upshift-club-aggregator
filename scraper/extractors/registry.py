@@ -59,3 +59,4 @@ from extractors import state_assoc     # noqa: E402, F401
 from extractors import elite64         # noqa: E402, F401
 from extractors import no_source       # noqa: E402, F401
 from extractors import sincsports      # noqa: E402, F401
+from extractors import soccerwire      # noqa: E402, F401

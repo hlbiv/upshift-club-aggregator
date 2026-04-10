@@ -20,8 +20,13 @@ Coverage (Task #12 complete — April 2026; 5 more states added):
   JS club list ( 1 state):  NC  (ncsoccer.org/find-my-club/ JS variable)
   HTML club list (2 states): OR (oregonyouthsoccer.org/find-a-club/),
                              PA-West (pawest-soccer.org/club-list/)
-  No source   (11 states): HI, LA, MA, MS, NE, ND, RI, SC, SD, UT, WI
-    — HI/LA/MA/MS/NE/ND/RI/SC/SD/UT/WI: no public event or Maps found.
+  SoccerWire  ( 8 states): HI, LA, MA, MS, NE, RI, SC, WI
+    — SoccerWire WP REST API + individual club pages (Task #22, April 2026)
+  No source   ( 3 states): ND, SD, UT
+    — ND/SD: no SoccerWire clubs found; no GotSport/Maps source identified.
+    — UT:    Clubs found on SoccerWire but 5 or more exist in ECNL/GotSport
+             already; adding them via SoccerWire would create duplicates until
+             dedup runs; entry left as no_source pending dedup verification.
 """
 
 from __future__ import annotations
@@ -287,6 +292,10 @@ def _scrape_state(url: str, league_name: str) -> List[Dict]:
         page_url = cfg.get("page_url", "")
         skip_phrases = cfg.get("skip_phrases", [])
         return _scrape_html_club_list(page_url, skip_phrases, league_name, state)
+
+    if src_type == "soccerwire":
+        from extractors.soccerwire import scrape_soccerwire_state
+        return scrape_soccerwire_state(state, league_name)
 
     logger.info("No automated source for %s (%s) — skipping", state, url)
     return []
