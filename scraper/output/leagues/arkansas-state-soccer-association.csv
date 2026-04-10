@@ -1,29 +1,29 @@
-club_name,canonical_name,league_name,city,state,source_url
-Advantage Academy,Advantage Academy,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Arkadelphia SA,Arkadelphia Sa,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Arkansas Comets FC,Arkansas Comets,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Arkansas Football Club Benton,Arkansas Football Benton,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Arkansas Rising Soccer Club,Arkansas Rising,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-AVSA,Avsa,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Bentonville FC Prodigy,Bentonville Prodigy,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Cabot Parks and Recreation,Cabot Parks And Recreation,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Central Arkansas Soccer Club,Central Arkansas,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-De Queen Soccer Association,De Queen Association,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-FC Arkansas,Arkansas,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-F.C. Horizon,. Horizon,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Greene County Soccer,Greene County,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Hot Springs Soccer,Hot Springs,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Jonesboro CC,Jonesboro Cc,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Little Rock Rangers Academy,Little Rock Rangers Academy,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Mighty Bluebirds,Mighty Bluebirds,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-NEA Soccer Club,Nea,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-NWA Dragons,Nwa Dragons,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-River Valley FC,River Valley,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Searcy YSA,Searcy Ysa,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Siloam Springs Futbol Club,Siloam Springs Futbol,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Specialized Soccer Academy,Specialized Academy,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Sporting Arkansas,Sporting Arkansas,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Texarkana Soccer Club,Texarkana,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Tigres Academy,Tigres Academy,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs
-Tri-City United,Tri-,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/25983/clubs
-Vilonia Soccer Club,Vilonia,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/25983/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+Advantage Academy,Advantage Academy,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Arkadelphia SA,Arkadelphia Sa,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Arkansas Comets FC,Arkansas Comets,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Arkansas Football Club Benton,Arkansas Football Benton,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Arkansas Rising Soccer Club,Arkansas Rising,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+AVSA,Avsa,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Bentonville FC Prodigy,Bentonville Prodigy,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Cabot Parks and Recreation,Cabot Parks And Recreation,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Central Arkansas Soccer Club,Central Arkansas,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+De Queen Soccer Association,De Queen Association,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+FC Arkansas,Arkansas,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+F.C. Horizon,. Horizon,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Greene County Soccer,Greene County,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Hot Springs Soccer,Hot Springs,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Jonesboro CC,Jonesboro Cc,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Little Rock Rangers Academy,Little Rock Rangers Academy,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Mighty Bluebirds,Mighty Bluebirds,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+NEA Soccer Club,Nea,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+NWA Dragons,Nwa Dragons,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+River Valley FC,River Valley,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Searcy YSA,Searcy Ysa,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Siloam Springs Futbol Club,Siloam Springs Futbol,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Specialized Soccer Academy,Specialized Academy,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Sporting Arkansas,Sporting Arkansas,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Texarkana Soccer Club,Texarkana,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Tigres Academy,Tigres Academy,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/40662/clubs,,
+Tri-City United,Tri-,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/25983/clubs,,
+Vilonia Soccer Club,Vilonia,Arkansas State Soccer Association,,Arkansas,https://system.gotsport.com/org_event/events/25983/clubs,,

@@ -1,45 +1,45 @@
-club_name,canonical_name,league_name,city,state,source_url
-Amarillo Rush SC,Amarillo Rush,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Americas Futbol Club,Americas Futbol,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Atletico Dallas Youth,Atletico Dallas,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Aztecas Futbol Club,Aztecas Futbol,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Cabosa Shreveport United,Cabosa Shreveport,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Capital City Soccer OKC,Capital Okc,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Club America (TX),America,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Corinthians FC of San Antonio,Corinthians Of San Antonio,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Coyotes FC Academy,Coyotes Academy,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Cumbre Alta Soccer Bossier City,Cumbre Alta Bossier,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Dallas Hornets,Dallas Hornets,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Dallas Inter Soccer Club,Dallas Inter,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Dallas Texans,Dallas Texans,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Diversity FC,Diversity,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-DKSC,Dksc,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Dutch FC,Dutch,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-East Texas United SC,East Texas,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Elite Premier FC,Elite Premier,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-ETX Elitefc13,Etx Elitefc13,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Falls Town FC,Falls,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-FC Allen,Allen,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-FC Dallas ETX,Dallas Etx,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Fever United,Fever,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Fort Worth All Stars FC,Fort Worth All Stars,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Independent Teams - NTX,Independent Teams - Ntx,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-ISW Academy,Isw Academy,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Juventus Premier Futbol Club,Juventus Premier Futbol,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Kernow Storm FC,Kernow Storm,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Liverpool FC Texas,Liverpool Texas,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Lubbock Knights,Lubbock Knights,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Mind & Power Academy,Mind & Power Academy,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Molano Futbol Academy,Molano Futbol Academy,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-North Dallas FC,North Dallas,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-North Texas Storm Athletic Academy,North Texas Storm Athletic Academy,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-NTX Celtic FC,Ntx Celtic,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Revolution FC,Revolution,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Royal Peak FC,Royal Peak,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Solar SC,Solar,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Steel United Texas,Steel Texas,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Sting Soccer Club,Sting,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Texas Spurs,Texas Spurs,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Tyler FC,Tyler,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-Villarreal NTX,Villarreal Ntx,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
-World Sport FC,World Sport,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+Amarillo Rush SC,Amarillo Rush,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Americas Futbol Club,Americas Futbol,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Atletico Dallas Youth,Atletico Dallas,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Aztecas Futbol Club,Aztecas Futbol,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Cabosa Shreveport United,Cabosa Shreveport,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Capital City Soccer OKC,Capital Okc,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Club America (TX),America,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Corinthians FC of San Antonio,Corinthians Of San Antonio,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Coyotes FC Academy,Coyotes Academy,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Cumbre Alta Soccer Bossier City,Cumbre Alta Bossier,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Dallas Hornets,Dallas Hornets,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Dallas Inter Soccer Club,Dallas Inter,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Dallas Texans,Dallas Texans,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Diversity FC,Diversity,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+DKSC,Dksc,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Dutch FC,Dutch,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+East Texas United SC,East Texas,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Elite Premier FC,Elite Premier,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+ETX Elitefc13,Etx Elitefc13,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Falls Town FC,Falls,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+FC Allen,Allen,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+FC Dallas ETX,Dallas Etx,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Fever United,Fever,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Fort Worth All Stars FC,Fort Worth All Stars,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Independent Teams - NTX,Independent Teams - Ntx,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+ISW Academy,Isw Academy,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Juventus Premier Futbol Club,Juventus Premier Futbol,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Kernow Storm FC,Kernow Storm,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Liverpool FC Texas,Liverpool Texas,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Lubbock Knights,Lubbock Knights,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Mind & Power Academy,Mind & Power Academy,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Molano Futbol Academy,Molano Futbol Academy,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+North Dallas FC,North Dallas,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+North Texas Storm Athletic Academy,North Texas Storm Athletic Academy,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+NTX Celtic FC,Ntx Celtic,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Revolution FC,Revolution,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Royal Peak FC,Royal Peak,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Solar SC,Solar,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Steel United Texas,Steel Texas,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Sting Soccer Club,Sting,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Texas Spurs,Texas Spurs,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Tyler FC,Tyler,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+Villarreal NTX,Villarreal Ntx,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,
+World Sport FC,World Sport,US Club NPL - Red River NPL,,,https://system.gotsport.com/org_event/events/45381/clubs,,

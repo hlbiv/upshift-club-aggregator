@@ -1,33 +1,33 @@
-club_name,canonical_name,league_name,city,state,source_url
-7 Elite Academy,7 Elite Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Black Hills Rapids SC,Black Hills Rapids,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Blue Knights SC,Blue Knights,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Broomfield Soccer Club,Broomfield,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-BVB IA Las Vegas,Bvb Ia Las Vegas,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Cheyenne Soccer Club,Cheyenne,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Chivas Denver Soccer Academy,Chivas Denver Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Club X Academy,X Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-CO Elevation FC,Co Elevation,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Colorado Rapids Youth Soccer Club,Colorado Rapids,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Colorado Rush,Colorado Rush,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Denver Kickers Sport Club,Denver Kickers Sport,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Flatirons Rush,Flatirons Rush,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Grand Junction SC,Grand Junction,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Gremio FC Utah,Gremio Utah,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Idaho Inferno Soccer Club,Idaho Inferno,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Idaho Storm,Idaho Storm,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Idaho Surf SC,Idaho Surf,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Junior Premier League USA,Junior Premier League Usa,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Liverpool FC International Academy Colorado,Liverpool International Academy Colorado,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Missoula Surf,Missoula Surf,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Montana Surf,Montana Surf,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Nevada Rush,Nevada Rush,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Pride SC,Pride,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-PRIME Soccer Club,Prime,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Saratoga Springs FC,Saratoga Springs,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Sporting Nevada USA Magnifico,Sporting Nevada Usa Magnifico,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-SWAT Soccer,Swat,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Utah Athletic Academy,Utah Athletic Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Vail Valley SC,Vail Valley,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Villarreal Idaho Academy,Villarreal Idaho Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
-Villarreal Las Vegas Academy,Villarreal Las Vegas Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+7 Elite Academy,7 Elite Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Black Hills Rapids SC,Black Hills Rapids,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Blue Knights SC,Blue Knights,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Broomfield Soccer Club,Broomfield,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+BVB IA Las Vegas,Bvb Ia Las Vegas,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Cheyenne Soccer Club,Cheyenne,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Chivas Denver Soccer Academy,Chivas Denver Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Club X Academy,X Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+CO Elevation FC,Co Elevation,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Colorado Rapids Youth Soccer Club,Colorado Rapids,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Colorado Rush,Colorado Rush,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Denver Kickers Sport Club,Denver Kickers Sport,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Flatirons Rush,Flatirons Rush,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Grand Junction SC,Grand Junction,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Gremio FC Utah,Gremio Utah,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Idaho Inferno Soccer Club,Idaho Inferno,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Idaho Storm,Idaho Storm,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Idaho Surf SC,Idaho Surf,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Junior Premier League USA,Junior Premier League Usa,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Liverpool FC International Academy Colorado,Liverpool International Academy Colorado,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Missoula Surf,Missoula Surf,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Montana Surf,Montana Surf,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Nevada Rush,Nevada Rush,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Pride SC,Pride,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+PRIME Soccer Club,Prime,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Saratoga Springs FC,Saratoga Springs,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Sporting Nevada USA Magnifico,Sporting Nevada Usa Magnifico,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+SWAT Soccer,Swat,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Utah Athletic Academy,Utah Athletic Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Vail Valley SC,Vail Valley,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Villarreal Idaho Academy,Villarreal Idaho Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,
+Villarreal Las Vegas Academy,Villarreal Las Vegas Academy,US Club NPL - Mountain West NPL,,,https://system.gotsport.com/org_event/events/44839/clubs,,

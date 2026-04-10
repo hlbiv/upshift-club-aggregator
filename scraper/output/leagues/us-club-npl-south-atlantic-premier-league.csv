@@ -1,34 +1,34 @@
-club_name,canonical_name,league_name,city,state,source_url
-All In Futbol Club Tennessee,All In Futbol Tennessee,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Armada Futbol Club,Armada Futbol,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Barca Academy Carolinas,Barca Academy Carolinas,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Carolina Football Club,Carolina Football,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Carolina Velocity FC,Carolina Velocity,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Charlotte Development Academy,Charlotte Development Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Charlotte Eagles Soccer Club,Charlotte Eagles,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Charlotte Independence SC,Charlotte Independence,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Charlotte Metro FC,Charlotte Metro,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Charlotte Soccer Academy,Charlotte Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Clemson Anderson SA,Clemson Anderson Sa,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Clover Elite,Clover Elite,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Fayetteville SC / Villarreal Force Academy,Fayetteville / Villarreal Force Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-FC Alliance TN,Alliance Tn,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-FC ATHLETICO,Athletico,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Fox Soccer Academy of the Carolinas,Fox Academy Of The Carolinas,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Kings Hammer Soccer Club,Kings Hammer,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Liverpool FC International Academy Carolinas,Liverpool International Academy Carolinas,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-NCFC Youth,Ncfc,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Neuse River Futbol Alliance,Neuse River Futbol Alliance,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-North Alabama SC,North Alabama,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-North Georgia Soccer Academy,North Georgia Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-One Knoxville Youth Club,One Knoxville,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Queen City Mutiny,Queen Mutiny,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Rush Union Soccer,Rush Union,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-South Carolina Surf SC,South Carolina Surf,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Southern Soccer Academy,Southern Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Sporting Charlotte Football Club,Sporting Charlotte Football,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Tennessee SC,Tennessee,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-TN Tempo FC Academy,Tn Tempo Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-United Futbol Academy,Futbol Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-United Nations FC,Nations,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
-Wake FC,Wake,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+All In Futbol Club Tennessee,All In Futbol Tennessee,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Armada Futbol Club,Armada Futbol,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Barca Academy Carolinas,Barca Academy Carolinas,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Carolina Football Club,Carolina Football,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Carolina Velocity FC,Carolina Velocity,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Charlotte Development Academy,Charlotte Development Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Charlotte Eagles Soccer Club,Charlotte Eagles,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Charlotte Independence SC,Charlotte Independence,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Charlotte Metro FC,Charlotte Metro,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Charlotte Soccer Academy,Charlotte Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Clemson Anderson SA,Clemson Anderson Sa,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Clover Elite,Clover Elite,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Fayetteville SC / Villarreal Force Academy,Fayetteville / Villarreal Force Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+FC Alliance TN,Alliance Tn,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+FC ATHLETICO,Athletico,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Fox Soccer Academy of the Carolinas,Fox Academy Of The Carolinas,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Kings Hammer Soccer Club,Kings Hammer,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Liverpool FC International Academy Carolinas,Liverpool International Academy Carolinas,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+NCFC Youth,Ncfc,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Neuse River Futbol Alliance,Neuse River Futbol Alliance,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+North Alabama SC,North Alabama,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+North Georgia Soccer Academy,North Georgia Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+One Knoxville Youth Club,One Knoxville,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Queen City Mutiny,Queen Mutiny,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Rush Union Soccer,Rush Union,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+South Carolina Surf SC,South Carolina Surf,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Southern Soccer Academy,Southern Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Sporting Charlotte Football Club,Sporting Charlotte Football,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Tennessee SC,Tennessee,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+TN Tempo FC Academy,Tn Tempo Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+United Futbol Academy,Futbol Academy,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+United Nations FC,Nations,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,
+Wake FC,Wake,US Club NPL - South Atlantic Premier League,,,https://system.gotsport.com/org_event/events/51028/clubs,,

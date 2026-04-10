@@ -1,22 +1,22 @@
-club_name,canonical_name,league_name,city,state,source_url
-Aztec,Aztec,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Bayside FC,Bayside,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Best FC,Best,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-FC Boston Bolts,Boston Bolts,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-FC Juventud New England,Juventud New England,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-FC Stars,Stars,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Harvest Soccer Club,Harvest,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-IFA,Ifa,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Jaguars United FC,Jaguars,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-MACH 1 FC,Mach 1,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-NEFC,Nefc,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-New England Revolution,New England Revolution,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Oakwood Soccer Club,Oakwood,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-OSNK United,Osnk,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Pawtucket YSA,Pawtucket Ysa,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-RAMS FC,Rams,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Rhode Island Surf,Rhode Island Surf,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Seacoast United Massachusetts,Seacoast Massachusetts,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Select,Select,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Vipers FC,Vipers,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
-Western United Pioneers FC,Western Pioneers,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+Aztec,Aztec,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Bayside FC,Bayside,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Best FC,Best,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+FC Boston Bolts,Boston Bolts,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+FC Juventud New England,Juventud New England,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+FC Stars,Stars,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Harvest Soccer Club,Harvest,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+IFA,Ifa,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Jaguars United FC,Jaguars,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+MACH 1 FC,Mach 1,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+NEFC,Nefc,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+New England Revolution,New England Revolution,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Oakwood Soccer Club,Oakwood,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+OSNK United,Osnk,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Pawtucket YSA,Pawtucket Ysa,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+RAMS FC,Rams,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Rhode Island Surf,Rhode Island Surf,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Seacoast United Massachusetts,Seacoast Massachusetts,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Select,Select,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Vipers FC,Vipers,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,
+Western United Pioneers FC,Western Pioneers,US Club NPL - New England Impact NPL,,,https://system.gotsport.com/org_event/events/21393/clubs,,

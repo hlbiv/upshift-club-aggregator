@@ -1,7 +1,7 @@
-club_name,canonical_name,league_name,city,state,source_url
-Alaska Rush,Alaska Rush,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs
-Anchorage Youth Soccer,Anchorage,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs
-Chugiak Soccer Club,Chugiak,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs
-Cook Inlet Soccer Club,Cook Inlet,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs
-Polar Vortex,Polar Vortex,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs
-Valley Revolution,Valley Revolution,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+Alaska Rush,Alaska Rush,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs,,
+Anchorage Youth Soccer,Anchorage,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs,,
+Chugiak Soccer Club,Chugiak,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs,,
+Cook Inlet Soccer Club,Cook Inlet,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs,,
+Polar Vortex,Polar Vortex,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs,,
+Valley Revolution,Valley Revolution,Alaska Youth Soccer Association,,Alaska,https://system.gotsport.com/org_event/events/48529/clubs,,

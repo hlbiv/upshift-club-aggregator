@@ -1,17 +1,17 @@
-club_name,canonical_name,league_name,city,state,source_url
-Angel City FC Academy,Angel Academy,NWSL Academy,Los Angeles,CA,https://www.nwslsoccer.com/nwsl-academy
-Bay FC Academy,Bay Academy,NWSL Academy,San Jose,CA,https://www.nwslsoccer.com/nwsl-academy
-San Diego Wave FC Academy,San Diego Wave Academy,NWSL Academy,San Diego,CA,https://www.nwslsoccer.com/nwsl-academy
-Seattle Reign Academy,Seattle Reign Academy,NWSL Academy,Seattle,WA,https://www.nwslsoccer.com/nwsl-academy
-Utah Royals Academy,Utah Royals Academy,NWSL Academy,Sandy,UT,https://www.nwslsoccer.com/nwsl-academy
-Houston Dash Academy,Houston Dash Academy,NWSL Academy,Houston,TX,https://www.nwslsoccer.com/nwsl-academy
-Kansas City Current Academy,Kansas Current Academy,NWSL Academy,Kansas City,MO,https://www.nwslsoccer.com/nwsl-academy
-Boston Legacy Academy,Boston Legacy Academy,NWSL Academy,Boston,MA,https://www.nwslsoccer.com/nwsl-academy
-Chicago Red Stars Academy,Chicago Red Stars Academy,NWSL Academy,Chicago,IL,https://www.nwslsoccer.com/nwsl-academy
-NJ/NY Gotham FC Academy,Nj/Ny Gotham Academy,NWSL Academy,Harrison,NJ,https://www.nwslsoccer.com/nwsl-academy
-North Carolina Courage Academy,North Carolina Courage Academy,NWSL Academy,Cary,NC,https://www.nwslsoccer.com/nwsl-academy
-Orlando Pride Academy,Orlando Pride Academy,NWSL Academy,Orlando,FL,https://www.nwslsoccer.com/nwsl-academy
-Portland Thorns Academy,Portland Thorns Academy,NWSL Academy,Portland,OR,https://www.nwslsoccer.com/nwsl-academy
-Racing Louisville FC Academy,Racing Louisville Academy,NWSL Academy,Louisville,KY,https://www.nwslsoccer.com/nwsl-academy
-Washington Spirit Academy,Washington Spirit Academy,NWSL Academy,Germantown,MD,https://www.nwslsoccer.com/nwsl-academy
-Denver Aurora FC Academy,Denver Aurora Academy,NWSL Academy,Aurora,CO,https://www.nwslsoccer.com/nwsl-academy
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+Angel City FC Academy,Angel Academy,NWSL Academy,Los Angeles,CA,https://www.nwslsoccer.com/nwsl-academy,,
+Bay FC Academy,Bay Academy,NWSL Academy,San Jose,CA,https://www.nwslsoccer.com/nwsl-academy,,
+San Diego Wave FC Academy,San Diego Wave Academy,NWSL Academy,San Diego,CA,https://www.nwslsoccer.com/nwsl-academy,,
+Seattle Reign Academy,Seattle Reign Academy,NWSL Academy,Seattle,WA,https://www.nwslsoccer.com/nwsl-academy,,
+Utah Royals Academy,Utah Royals Academy,NWSL Academy,Sandy,UT,https://www.nwslsoccer.com/nwsl-academy,,
+Houston Dash Academy,Houston Dash Academy,NWSL Academy,Houston,TX,https://www.nwslsoccer.com/nwsl-academy,,
+Kansas City Current Academy,Kansas Current Academy,NWSL Academy,Kansas City,MO,https://www.nwslsoccer.com/nwsl-academy,,
+Boston Legacy Academy,Boston Legacy Academy,NWSL Academy,Boston,MA,https://www.nwslsoccer.com/nwsl-academy,,
+Chicago Red Stars Academy,Chicago Red Stars Academy,NWSL Academy,Chicago,IL,https://www.nwslsoccer.com/nwsl-academy,,
+NJ/NY Gotham FC Academy,Nj/Ny Gotham Academy,NWSL Academy,Harrison,NJ,https://www.nwslsoccer.com/nwsl-academy,,
+North Carolina Courage Academy,North Carolina Courage Academy,NWSL Academy,Cary,NC,https://www.nwslsoccer.com/nwsl-academy,,
+Orlando Pride Academy,Orlando Pride Academy,NWSL Academy,Orlando,FL,https://www.nwslsoccer.com/nwsl-academy,,
+Portland Thorns Academy,Portland Thorns Academy,NWSL Academy,Portland,OR,https://www.nwslsoccer.com/nwsl-academy,,
+Racing Louisville FC Academy,Racing Louisville Academy,NWSL Academy,Louisville,KY,https://www.nwslsoccer.com/nwsl-academy,,
+Washington Spirit Academy,Washington Spirit Academy,NWSL Academy,Germantown,MD,https://www.nwslsoccer.com/nwsl-academy,,
+Denver Aurora FC Academy,Denver Aurora Academy,NWSL Academy,Aurora,CO,https://www.nwslsoccer.com/nwsl-academy,,

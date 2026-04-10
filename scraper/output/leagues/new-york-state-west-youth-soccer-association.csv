@@ -1,36 +1,36 @@
-club_name,canonical_name,league_name,city,state,source_url
-AFC Rochester,Rochester,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Amherst Soccer Association,Amherst Association,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Buffalo Pro Soccer Academy,Buffalo Pro Academy,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Buffalo Stallions,Buffalo Stallions,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Chili Soccer Association,Chili Association,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Clarence SC,Clarence,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Cobras FC,Cobras,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Corning United SC,Corning,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Delaware Soccer Club,Delaware,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-FC Dynamo ROC,Dynamo Roc,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Fox Soccer Academy,Fox Academy,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Fox Soccer Academy Premier,Fox Academy Premier,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Greater Binghamton Soccer Association,Greater Binghamton Association,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Hilton Heat SC,Hilton Heat,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Invictus FC,Invictus,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Kenmore Soccer Club,Kenmore,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Lackawanna Yemen SC,Lackawanna Yemen,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Lakefront SC,Lakefront,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Lancaster-Depew SC,Lancaster-Depew,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Lockport SC,Lockport,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-New York State West Youth Soccer Assoc,New York State West Assoc,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Niagara Pioneer SC,Niagara Pioneer,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Niagara-Wheatfield Athletic Association,Niagara-Wheatfield Athletic Association,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-North Country Soccer Club,North Country,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-NY Rush,Ny Rush,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Orchard Park Soccer Club,Orchard Park,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Pittsford Mustangs Soccer Club,Pittsford Mustangs,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-RNY FC Youth,Rny,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Soaring Capital Soccer Club,Soaring Capital,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Spencerport SC,Spencerport,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Syracuse Development Academy (SDA),Syracuse Development Academy,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Union City Soccer Club (NJ),Union,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Upstate Elite Soccer Academy,Upstate Elite Academy,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Vestal Youth Soccer Association,Vestal Association,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
-Western New York Flash,Western New York Flash,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+AFC Rochester,Rochester,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Amherst Soccer Association,Amherst Association,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Buffalo Pro Soccer Academy,Buffalo Pro Academy,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Buffalo Stallions,Buffalo Stallions,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Chili Soccer Association,Chili Association,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Clarence SC,Clarence,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Cobras FC,Cobras,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Corning United SC,Corning,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Delaware Soccer Club,Delaware,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+FC Dynamo ROC,Dynamo Roc,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Fox Soccer Academy,Fox Academy,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Fox Soccer Academy Premier,Fox Academy Premier,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Greater Binghamton Soccer Association,Greater Binghamton Association,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Hilton Heat SC,Hilton Heat,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Invictus FC,Invictus,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Kenmore Soccer Club,Kenmore,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Lackawanna Yemen SC,Lackawanna Yemen,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Lakefront SC,Lakefront,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Lancaster-Depew SC,Lancaster-Depew,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Lockport SC,Lockport,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+New York State West Youth Soccer Assoc,New York State West Assoc,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Niagara Pioneer SC,Niagara Pioneer,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Niagara-Wheatfield Athletic Association,Niagara-Wheatfield Athletic Association,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+North Country Soccer Club,North Country,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+NY Rush,Ny Rush,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Orchard Park Soccer Club,Orchard Park,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Pittsford Mustangs Soccer Club,Pittsford Mustangs,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+RNY FC Youth,Rny,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Soaring Capital Soccer Club,Soaring Capital,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Spencerport SC,Spencerport,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Syracuse Development Academy (SDA),Syracuse Development Academy,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Union City Soccer Club (NJ),Union,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Upstate Elite Soccer Academy,Upstate Elite Academy,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Vestal Youth Soccer Association,Vestal Association,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,
+Western New York Flash,Western New York Flash,New York State West Youth Soccer Association,,NY West,https://system.gotsport.com/org_event/events/49820/clubs,,

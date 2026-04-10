@@ -1,30 +1,30 @@
-club_name,canonical_name,league_name,city,state,source_url
-Alabama FC,Alabama,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Alabama Rush,Alabama Rush,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Alexander City Club Soccer,Alexander,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Auburn Soccer Club,Auburn,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-AYSO United (Alabama),Ayso,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Baldwin Rush,Baldwin Rush,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Briarwood SC,Briarwood,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Club Independent,Independent,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Decatur City Fútbol Club,Decatur Fútbol,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Decatur Soccer,Decatur,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Fairhope Soccer Club,Fairhope,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-FC Birmingham,Birmingham,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-FC Montgomery,Montgomery,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Gardendale SC,Gardendale,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Homewood Soccer Club,Homewood,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Hoover Soccer Club,Hoover,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Mobile United Rush FC,Mobile Rush,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-North Star Soccer Club,North Star,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-NOW FC,Now,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Opelika Soccer Asso,Opelika Asso,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Prattville United SC,Prattville,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Revolution Soccer Club,Revolution,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Shoals Soccer Club,Shoals,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Soccer4Life,Soccer4Life,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Tuscaloosa United Soccer Club,Tuscaloosa,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Union 10 FC,Union 10,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-United Soccer Club,,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-VERO FC,Vero,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
-Vestavia Hills Soccer Club,Vestavia Hills,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+Alabama FC,Alabama,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Alabama Rush,Alabama Rush,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Alexander City Club Soccer,Alexander,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Auburn Soccer Club,Auburn,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+AYSO United (Alabama),Ayso,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Baldwin Rush,Baldwin Rush,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Briarwood SC,Briarwood,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Club Independent,Independent,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Decatur City Fútbol Club,Decatur Fútbol,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Decatur Soccer,Decatur,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Fairhope Soccer Club,Fairhope,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+FC Birmingham,Birmingham,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+FC Montgomery,Montgomery,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Gardendale SC,Gardendale,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Homewood Soccer Club,Homewood,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Hoover Soccer Club,Hoover,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Mobile United Rush FC,Mobile Rush,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+North Star Soccer Club,North Star,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+NOW FC,Now,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Opelika Soccer Asso,Opelika Asso,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Prattville United SC,Prattville,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Revolution Soccer Club,Revolution,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Shoals Soccer Club,Shoals,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Soccer4Life,Soccer4Life,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Tuscaloosa United Soccer Club,Tuscaloosa,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Union 10 FC,Union 10,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+United Soccer Club,,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+VERO FC,Vero,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,
+Vestavia Hills Soccer Club,Vestavia Hills,Alabama Soccer Association,,Alabama,https://system.gotsport.com/org_event/events/49334/clubs,,

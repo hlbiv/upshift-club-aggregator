@@ -1,24 +1,24 @@
-club_name,canonical_name,league_name,city,state,source_url
-515 Soccer Academy,515 Academy,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-Ames Soccer Club,Ames,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-DCG Soccer Club,Dcg,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-Des Moines SC,Des Moines,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-FK enVISION,Fk Envision,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-Gilbert Soccer Club,Gilbert,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-Indianola Soccer Tribe,Indianola Tribe,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-Iowa Storm Soccer Club,Iowa Storm,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-ISA Independents,Isa Independents,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-J-Hawk Soccer Club,J-Hawk,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-Mason City Soccer Club,Mason,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-Mineros De Zacatecas,Mineros De Zacatecas,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-Moberly Area SA,Moberly Area Sa,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-North Iowa Soccer Club,North Iowa,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-North Polk United Soccer Club,North Polk,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-Spring Creek FC,Spring Creek,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-United Futbol Academy (UFA),Futbol Academy,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-Vision Soccer Academy,Vision Academy,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs
-AYSO United Cedar Rapids,Ayso Cedar Rapids,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/46269/clubs
-Bondurant Soccer Club,Bondurant,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/46269/clubs
-Marshalltown Area Soccer Club,Marshalltown Area,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/46269/clubs
-OHA-SFA SA,Oha-Sfa Sa,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/46269/clubs
-Rockford Raptors FC,Rockford Raptors,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/46269/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+515 Soccer Academy,515 Academy,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+Ames Soccer Club,Ames,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+DCG Soccer Club,Dcg,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+Des Moines SC,Des Moines,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+FK enVISION,Fk Envision,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+Gilbert Soccer Club,Gilbert,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+Indianola Soccer Tribe,Indianola Tribe,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+Iowa Storm Soccer Club,Iowa Storm,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+ISA Independents,Isa Independents,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+J-Hawk Soccer Club,J-Hawk,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+Mason City Soccer Club,Mason,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+Mineros De Zacatecas,Mineros De Zacatecas,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+Moberly Area SA,Moberly Area Sa,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+North Iowa Soccer Club,North Iowa,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+North Polk United Soccer Club,North Polk,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+Spring Creek FC,Spring Creek,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+United Futbol Academy (UFA),Futbol Academy,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+Vision Soccer Academy,Vision Academy,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/41677/clubs,,
+AYSO United Cedar Rapids,Ayso Cedar Rapids,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/46269/clubs,,
+Bondurant Soccer Club,Bondurant,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/46269/clubs,,
+Marshalltown Area Soccer Club,Marshalltown Area,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/46269/clubs,,
+OHA-SFA SA,Oha-Sfa Sa,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/46269/clubs,,
+Rockford Raptors FC,Rockford Raptors,Iowa Soccer Association,,Iowa,https://system.gotsport.com/org_event/events/46269/clubs,,

@@ -1,20 +1,20 @@
-club_name,canonical_name,league_name,city,state,source_url
-Kansas City Surf,Kansas Surf,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs
-KC Athletics,Kc Athletics,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs
-KC Fusion,Kc Fusion,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs
-KC Legends,Kc Legends,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs
-OP Soccer Club,Op,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs
-Sporting Blue Valley,Sporting Blue Valley,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs
-Sporting City Soccer Club,Sporting,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs
-Sporting Kaw Valley Soccer Club,Sporting Kaw Valley,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs
-Sporting Wichita,Sporting Wichita,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs
-Toca FC,Toca,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs
-FC ATLETICO,Atletico,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs
-Hammers Academy,Hammers Academy,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs
-Jambars Futbol Club,Jambars Futbol,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs
-KC Atletico,Kc Atletico,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs
-Northeast United SC,Northeast,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs
-Topeka SC,Topeka,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs
-Union KC Soccer Club,Union Kc,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs
-WICHITA UNITED FC,Wichita,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs
-Dodge City Toros FC,Dodge Toros,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50564/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+Kansas City Surf,Kansas Surf,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs,,
+KC Athletics,Kc Athletics,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs,,
+KC Fusion,Kc Fusion,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs,,
+KC Legends,Kc Legends,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs,,
+OP Soccer Club,Op,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs,,
+Sporting Blue Valley,Sporting Blue Valley,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs,,
+Sporting City Soccer Club,Sporting,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs,,
+Sporting Kaw Valley Soccer Club,Sporting Kaw Valley,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs,,
+Sporting Wichita,Sporting Wichita,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs,,
+Toca FC,Toca,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50652/clubs,,
+FC ATLETICO,Atletico,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs,,
+Hammers Academy,Hammers Academy,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs,,
+Jambars Futbol Club,Jambars Futbol,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs,,
+KC Atletico,Kc Atletico,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs,,
+Northeast United SC,Northeast,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs,,
+Topeka SC,Topeka,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs,,
+Union KC Soccer Club,Union Kc,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs,,
+WICHITA UNITED FC,Wichita,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50565/clubs,,
+Dodge City Toros FC,Dodge Toros,Kansas State Youth Soccer Association,,Kansas,https://system.gotsport.com/org_event/events/50564/clubs,,

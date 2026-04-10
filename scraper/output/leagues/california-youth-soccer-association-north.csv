@@ -1,28 +1,28 @@
-club_name,canonical_name,league_name,city,state,source_url
-AC United,,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Almaden FC,Almaden,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Calaveras Youth Soccer League,Calaveras League,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Castro Valley Soccer Club,Castro Valley,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Central Coast FC,Central Coast,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Chowchilla Magic Soccer Club,Chowchilla Magic,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-District 6,District 6,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Ebbetts Pass Gold FC,Ebbetts Pass Gold,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Fruitridge Soccer Club,Fruitridge,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Konocti Youth Soccer League,Konocti League,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Milpitas YSL,Milpitas Ysl,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Monterey County Soccer-ECFC Salinas,Monterey County -Ecfc Salinas,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Mother Lode Youth Soccer League,Mother Lode League,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Mustang Soccer,Mustang,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-North Fresno Youth Soccer League,North Fresno League,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Oakley Youth Soccer Club,Oakley,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Pajaro Valley Youth Soccer Club,Pajaro Valley,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Real Atletico Futbol Club,Real Atletico Futbol,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Rohnert Park Soccer Club,Rohnert Park,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-San Joaquin United,San Joaquin,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-San Jose Police Activities League,San Jose Police Activities League,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Sentinels Soccer Club,Sentinels,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Soccer League for East Fresno Boys and Girls,League For East Fresno And,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Stockton Youth Soccer Association,Stockton Association,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Valley United Soccer Club Association,Valley Association,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Walnut Creek Surf Soccer Club,Walnut Creek Surf,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
-Winters AYSO,Winters Ayso,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+AC United,,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Almaden FC,Almaden,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Calaveras Youth Soccer League,Calaveras League,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Castro Valley Soccer Club,Castro Valley,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Central Coast FC,Central Coast,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Chowchilla Magic Soccer Club,Chowchilla Magic,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+District 6,District 6,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Ebbetts Pass Gold FC,Ebbetts Pass Gold,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Fruitridge Soccer Club,Fruitridge,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Konocti Youth Soccer League,Konocti League,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Milpitas YSL,Milpitas Ysl,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Monterey County Soccer-ECFC Salinas,Monterey County -Ecfc Salinas,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Mother Lode Youth Soccer League,Mother Lode League,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Mustang Soccer,Mustang,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+North Fresno Youth Soccer League,North Fresno League,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Oakley Youth Soccer Club,Oakley,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Pajaro Valley Youth Soccer Club,Pajaro Valley,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Real Atletico Futbol Club,Real Atletico Futbol,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Rohnert Park Soccer Club,Rohnert Park,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+San Joaquin United,San Joaquin,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+San Jose Police Activities League,San Jose Police Activities League,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Sentinels Soccer Club,Sentinels,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Soccer League for East Fresno Boys and Girls,League For East Fresno And,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Stockton Youth Soccer Association,Stockton Association,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Valley United Soccer Club Association,Valley Association,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Walnut Creek Surf Soccer Club,Walnut Creek Surf,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,
+Winters AYSO,Winters Ayso,California Youth Soccer Association - North,,Cal North,https://system.gotsport.com/org_event/events/48917/clubs,,

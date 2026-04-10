@@ -1,8 +1,8 @@
-club_name,canonical_name,league_name,city,state,source_url
-Kansas City Fusion SC,Kansas Fusion,Heartland Soccer Association,Leawood,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi
-Kansas Premier Soccer League,Kansas Premier League,Heartland Soccer Association,Overland Park,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi
-Kansas Rush Soccer Club,Kansas Rush,Heartland Soccer Association,Olathe,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi
-Northeast United SC,Northeast,Heartland Soccer Association,Kansas City,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi
-Overland Park Soccer Club,Overland Park,Heartland Soccer Association,Overland Park,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi
-Sporting Blue Valley,Sporting Blue Valley,Heartland Soccer Association,Overland Park,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi
-SLS Soccer Club,Sls,Heartland Soccer Association,Shawnee,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+Kansas City Fusion SC,Kansas Fusion,Heartland Soccer Association,Leawood,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi,,
+Kansas Premier Soccer League,Kansas Premier League,Heartland Soccer Association,Overland Park,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi,,
+Kansas Rush Soccer Club,Kansas Rush,Heartland Soccer Association,Olathe,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi,,
+Northeast United SC,Northeast,Heartland Soccer Association,Kansas City,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi,,
+Overland Park Soccer Club,Overland Park,Heartland Soccer Association,Overland Park,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi,,
+Sporting Blue Valley,Sporting Blue Valley,Heartland Soccer Association,Overland Park,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi,,
+SLS Soccer Club,Sls,Heartland Soccer Association,Shawnee,KS,https://heartlandsoccer.net/reports/cgi-jrb/seedings.cgi,,

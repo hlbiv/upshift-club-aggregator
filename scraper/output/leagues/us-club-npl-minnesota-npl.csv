@@ -1,35 +1,35 @@
-club_name,canonical_name,league_name,city,state,source_url
-Boreal FC,Boreal,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-BV UNITED,Bv,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-CC United Soccer Club,Cc,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Centennial Soccer Club,Centennial,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-East Ridge Soccer Club,East Ridge,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Edina Soccer Club,Edina,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-EPSC,Epsc,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Fusion Soccer Club,Fusion,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Joy of the People,Joy Of The People,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Keliix-Intra Soccer Club,Keliix-Intra,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Kickers FC,Kickers,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Lakeville Soccer Club,Lakeville,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Legacy FC,Legacy,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-MapleBrook SC,Maplebrook,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Minneapolis United,Minneapolis,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Minnesota Rush,Minnesota Rush,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-MN Thunder Academy,Mn Thunder Academy,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-North Star FC,North Star,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-North Suburban SA,North Suburban Sa,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-North United SC,North,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Orono Westonka Soccer Club,Orono Westonka,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Park Valley United FC,Park Valley,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Prior Lake SC,Prior Lake,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Salvo SC,Salvo,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Shakopee SA,Shakopee Sa,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Southeast Soccer Club,Southeast,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-St. Croix,St. Croix,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-St. Paul Blackhawks,St. Paul Blackhawks,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Tonka United SA,Tonka Sa,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Tri-City United,Tri-,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Twin Cities Fire Soccer Club,Twin Cities Fire,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-United FC Rush,Rush,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Wave SC,Wave,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
-Western Wisconsin Soccer,Western Wisconsin,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+Boreal FC,Boreal,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+BV UNITED,Bv,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+CC United Soccer Club,Cc,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Centennial Soccer Club,Centennial,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+East Ridge Soccer Club,East Ridge,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Edina Soccer Club,Edina,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+EPSC,Epsc,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Fusion Soccer Club,Fusion,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Joy of the People,Joy Of The People,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Keliix-Intra Soccer Club,Keliix-Intra,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Kickers FC,Kickers,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Lakeville Soccer Club,Lakeville,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Legacy FC,Legacy,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+MapleBrook SC,Maplebrook,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Minneapolis United,Minneapolis,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Minnesota Rush,Minnesota Rush,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+MN Thunder Academy,Mn Thunder Academy,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+North Star FC,North Star,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+North Suburban SA,North Suburban Sa,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+North United SC,North,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Orono Westonka Soccer Club,Orono Westonka,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Park Valley United FC,Park Valley,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Prior Lake SC,Prior Lake,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Salvo SC,Salvo,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Shakopee SA,Shakopee Sa,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Southeast Soccer Club,Southeast,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+St. Croix,St. Croix,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+St. Paul Blackhawks,St. Paul Blackhawks,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Tonka United SA,Tonka Sa,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Tri-City United,Tri-,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Twin Cities Fire Soccer Club,Twin Cities Fire,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+United FC Rush,Rush,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Wave SC,Wave,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,
+Western Wisconsin Soccer,Western Wisconsin,US Club NPL - Minnesota NPL,,MN,https://system.gotsport.com/org_event/events/47013/clubs,,

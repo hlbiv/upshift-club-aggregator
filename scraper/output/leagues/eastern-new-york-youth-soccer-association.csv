@@ -1,32 +1,32 @@
-club_name,canonical_name,league_name,city,state,source_url
-Albertson Soccer Club,Albertson,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-ALBION SC Brooklyn,Albion Brooklyn,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-All Faith Soccer League,All Faith League,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Asphalt Green,Asphalt Green,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Atlantic United SB/LGN SC,Atlantic Sb/Lgn,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Auburndale SC,Auburndale,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Baymen (LIJSL),Baymen,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Bellport,Bellport,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-BW Gottschee Academy,Bw Gottschee Academy,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Commack Soccer,Commack,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Connetquot United Soccer Club (LIJSL),Connetquot,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Copiague Youth League,Copiague League,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Dix Hills SC,Dix Hills,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-East Coast Surf,East Coast Surf,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-East Meadow Soccer Club,East Meadow,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Franklin Square Raiders Soccer Club,Franklin Square Raiders,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Glen Cove (LIJSL),Glen Cove,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Hauppauge (LIJSL),Hauppauge,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Long Island SC,Long Island,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Merrick/South Merrick PAL,Merrick/South Merrick Pal,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Munay,Munay,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-New Hyde Park Wildcats Soccer Club,New Hyde Park Wildcats,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-New Rochelle,New Rochelle,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Northport Cow Harbor United Soccer Club,Northport Cow Harbor,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Patchogue-Medford Youth Soccer League,Patchogue-Medford League,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Sachem Slammers,Sachem Slammers,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Smithtown Kickers SC (LIJSL),Smithtown Kickers,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Sound Beach,Sound Beach,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-SUSA FC,Susa,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-Torpedoes SC,Torpedoes,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
-US Academy of Soccer,Us Academy Of,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs
+club_name,canonical_name,league_name,city,state,source_url,source_type,website
+Albertson Soccer Club,Albertson,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+ALBION SC Brooklyn,Albion Brooklyn,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+All Faith Soccer League,All Faith League,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Asphalt Green,Asphalt Green,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Atlantic United SB/LGN SC,Atlantic Sb/Lgn,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Auburndale SC,Auburndale,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Baymen (LIJSL),Baymen,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Bellport,Bellport,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+BW Gottschee Academy,Bw Gottschee Academy,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Commack Soccer,Commack,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Connetquot United Soccer Club (LIJSL),Connetquot,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Copiague Youth League,Copiague League,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Dix Hills SC,Dix Hills,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+East Coast Surf,East Coast Surf,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+East Meadow Soccer Club,East Meadow,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Franklin Square Raiders Soccer Club,Franklin Square Raiders,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Glen Cove (LIJSL),Glen Cove,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Hauppauge (LIJSL),Hauppauge,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Long Island SC,Long Island,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Merrick/South Merrick PAL,Merrick/South Merrick Pal,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Munay,Munay,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+New Hyde Park Wildcats Soccer Club,New Hyde Park Wildcats,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+New Rochelle,New Rochelle,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Northport Cow Harbor United Soccer Club,Northport Cow Harbor,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Patchogue-Medford Youth Soccer League,Patchogue-Medford League,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Sachem Slammers,Sachem Slammers,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Smithtown Kickers SC (LIJSL),Smithtown Kickers,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Sound Beach,Sound Beach,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+SUSA FC,Susa,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+Torpedoes SC,Torpedoes,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
+US Academy of Soccer,Us Academy Of,Eastern New York Youth Soccer Association,,Eastern NY,https://system.gotsport.com/org_event/events/52052/clubs,,
