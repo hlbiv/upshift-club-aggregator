@@ -4,18 +4,20 @@ State Association extractor for all 54 USYS tier-4 state associations.
 Strategy (in priority order):
 1. GotSport event clubs endpoint   — system.gotsport.com/org_event/events/{id}/clubs
 2. Google My Maps KML feed         — google.com/maps/d/kml?forcekml=1&mid={id}
-3. unknown / no data               — returns [] with a warning
+3. no_source_found / unknown       — returns [] with a warning
 
 All data sources are declared in data/state_assoc_config.json, keyed by the
 canonical URL listed in leagues_master.csv (no trailing slash).
 
-Coverage (as of research pass):
-  GotSport    (19 states): AL, CA-North, DE, FL, GA, ID, KS, KY, ME, MI, NH,
-                           NM, NY-West, OH, OK, VT, VA, KY, KS
+Coverage (Task #6 complete — April 2026):
+  GotSport    (37 states): AL, AK, AZ, AR, CA-North, CA-South, CO, DE, E-NY,
+                           FL, GA, ID, IL, IA, KS, KY, ME, MD, MI, MN, MT,
+                           NV, NH, NJ, NM, NC, NT, NY-West, OH, OK, OR,
+                           PA-West, VT, VA, WA, WV, WY
   Google Maps ( 6 states): CT, Eastern PA, IN, MO, TN, TX-South
-  Unknown     (29 states): AK, AZ, AR, CA-South, CO, E-NY, HI, IL, IA, LA,
-                           MD, MA, MN, MS, MT, NE, NV, NJ, NC, ND, NT, OR,
-                           PA-West, RI, SC, SD, UT, WA, WV, WI, WY
+  No source   (11 states): HI, LA, MA, MS, NE, ND, RI, SC, SD, UT, WI
+    — HI/LA/MA/MS/NE/ND/RI/SC/SD/UT/WI: no public GotSport event or Google
+      Maps found; state associations use SportsEngine or private platforms.
 """
 
 from __future__ import annotations
