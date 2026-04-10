@@ -4,21 +4,23 @@ State Association extractor for all 54 USYS tier-4 state associations.
 Strategy (in priority order):
 1. GotSport event clubs endpoint   — system.gotsport.com/org_event/events/{id}/clubs
 2. Google My Maps KML feed         — google.com/maps/d/kml?forcekml=1&mid={id}
-3. no_source_found / unknown       — returns [] with a warning
+3. js_club_list                    — JS variable `const clubs=[{n:'...'}]` on assoc page
+4. html_club_list                  — plain-text club list scraped from assoc page HTML
+5. no_source_found / unknown       — returns [] with a warning
 
 All data sources are declared in data/state_assoc_config.json, keyed by the
 canonical URL listed in leagues_master.csv (no trailing slash).
 
-Coverage (Task #6 complete — April 2026; 16 new states added):
-  GotSport    (32 states): AL, AK, AZ, CA-North, CA-South, DE, E-NY,
+Coverage (Task #12 complete — April 2026; 5 more states added):
+  GotSport    (34 states): AL, AK, AR, AZ, CA-North, CA-South, CO, DE, E-NY,
                            FL, GA, ID, IL, IA, KS, KY, ME, MD, MI, MN, MT,
                            NV, NH, NJ, NM, NT, NY-West, OH, OK, VT, VA,
                            WA, WV, WY
   Google Maps ( 6 states): CT, Eastern PA, IN, MO, TN, TX-South
-  No source   (16 states): AR, CO, HI, LA, MA, MS, NE, NC, ND, OR, PA-West,
-                           RI, SC, SD, UT, WI
-    — AR/CO/NC/OR/PA-West: GotSport events found but verified wrong-state
-      (multi-state league events). No correct state-specific event found.
+  JS club list ( 1 state):  NC  (ncsoccer.org/find-my-club/ JS variable)
+  HTML club list (2 states): OR (oregonyouthsoccer.org/find-a-club/),
+                             PA-West (pawest-soccer.org/club-list/)
+  No source   (11 states): HI, LA, MA, MS, NE, ND, RI, SC, SD, UT, WI
     — HI/LA/MA/MS/NE/ND/RI/SC/SD/UT/WI: no public event or Maps found.
 """
 
@@ -125,6 +127,133 @@ def _scrape_google_maps(map_ids: List[str], league_name: str, state: str) -> Lis
     return _multi_event_dedup(raw)
 
 
+def _scrape_js_club_list(page_url: str, js_var: str, league_name: str, state: str) -> List[Dict]:
+    """Extract club names from a JavaScript array variable embedded in a webpage.
+
+    Handles the pattern used by NCYSA's find-my-club page:
+        const clubs=[{n:'Club Name', lat:..., ...}, ...]
+
+    Args:
+        page_url: Full URL of the page containing the JS variable.
+        js_var:   Name of the JavaScript variable (e.g. "clubs").
+        league_name: League name to tag on each record.
+        state:    State name to tag on each record.
+    """
+    try:
+        r = requests.get(page_url, headers=HEADERS, timeout=20)
+        if r.status_code != 200:
+            logger.warning("JS club list page %s returned %s", page_url, r.status_code)
+            return []
+    except Exception as exc:
+        logger.warning("JS club list page %s error: %s", page_url, exc)
+        return []
+
+    pattern = rf"const\s+{re.escape(js_var)}\s*=\s*\[(.*?)\];"
+    m = re.search(pattern, r.text, re.DOTALL)
+    if not m:
+        logger.warning("JS variable '%s' not found on %s", js_var, page_url)
+        return []
+
+    clubs_js = m.group(0)
+    names = re.findall(r"\{n:'([^']+)'", clubs_js)
+    if not names:
+        logger.warning("No club names found in JS variable '%s' on %s", js_var, page_url)
+        return []
+
+    records = []
+    for name in names:
+        name = name.strip()
+        if not name or len(name) < 2:
+            continue
+        records.append({
+            "club_name": name,
+            "league_name": league_name,
+            "city": "",
+            "state": state,
+            "source_url": page_url,
+        })
+    logger.info("  JS club list %s ('%s'): %d clubs", page_url, js_var, len(records))
+    return _multi_event_dedup(records)
+
+
+def _scrape_html_club_list(
+    page_url: str,
+    skip_phrases: List[str],
+    league_name: str,
+    state: str,
+) -> List[Dict]:
+    """Extract club names from plain-text paragraphs/lines in a static HTML page.
+
+    Handles the pattern used by OYSA's find-a-club page and PA West's club-list
+    page, where club names appear as plain text within the page's content area.
+    Lines that are all-uppercase section headers, very short, or match skip
+    phrases are filtered out.
+
+    Args:
+        page_url:     Full URL of the HTML page.
+        skip_phrases: Lower-cased substrings that disqualify a line as a club name.
+        league_name:  League name to tag on each record.
+        state:        State name to tag on each record.
+    """
+    try:
+        r = requests.get(page_url, headers=HEADERS, timeout=20)
+        if r.status_code != 200:
+            logger.warning("HTML club list page %s returned %s", page_url, r.status_code)
+            return []
+    except Exception as exc:
+        logger.warning("HTML club list page %s error: %s", page_url, exc)
+        return []
+
+    soup = BeautifulSoup(r.text, "lxml")
+    content = (
+        soup.find("div", class_="entry-content")
+        or soup.find("main")
+        or soup.find("article")
+        or soup.body
+    )
+    if not content:
+        logger.warning("No content area found on %s", page_url)
+        return []
+
+    raw_lines = [
+        line.strip()
+        for line in content.get_text(separator="\n").splitlines()
+        if line.strip()
+    ]
+
+    _CLUB_KEYWORDS = {
+        "fc", "sc", "soccer", "club", "united", "academy", "futbol", "athletic",
+        "youth", "sports", "association", "assoc", "football", "warriors", "force",
+        "rush", "storm", "elite", "premier", "lightning", "select", "heat", "fire",
+        "rangers", "eagles", "hawks", "stars", "united", "knights", "tigers",
+        "wolves", "falcons", "thunder", "impact", "fusion", "cosmos", "dynamo",
+    }
+
+    records = []
+    for line in raw_lines:
+        if len(line) < 3 or len(line) > 120:
+            continue
+        lower = line.lower()
+        if any(phrase in lower for phrase in skip_phrases):
+            continue
+        if line.startswith("–") or line.startswith("-"):
+            continue
+        if line.isupper():
+            lower_line = line.lower()
+            if not any(kw in lower_line for kw in _CLUB_KEYWORDS):
+                continue
+        records.append({
+            "club_name": line,
+            "league_name": league_name,
+            "city": "",
+            "state": state,
+            "source_url": page_url,
+        })
+
+    logger.info("  HTML club list %s: %d raw lines, %d kept", page_url, len(raw_lines), len(records))
+    return _multi_event_dedup(records)
+
+
 def _scrape_state(url: str, league_name: str) -> List[Dict]:
     cfg = _lookup_config(url)
     if not cfg:
@@ -142,6 +271,16 @@ def _scrape_state(url: str, league_name: str) -> List[Dict]:
     if src_type == "google_maps":
         map_ids = cfg.get("map_ids", [])
         return _scrape_google_maps(map_ids, league_name, state)
+
+    if src_type == "js_club_list":
+        page_url = cfg.get("page_url", "")
+        js_var = cfg.get("js_var", "clubs")
+        return _scrape_js_club_list(page_url, js_var, league_name, state)
+
+    if src_type == "html_club_list":
+        page_url = cfg.get("page_url", "")
+        skip_phrases = cfg.get("skip_phrases", [])
+        return _scrape_html_club_list(page_url, skip_phrases, league_name, state)
 
     logger.info("No automated source for %s (%s) — skipping", state, url)
     return []

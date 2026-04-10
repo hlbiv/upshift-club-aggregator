@@ -18,8 +18,9 @@
   },
   "https://www.arkansassoccer.org": {
     "state": "Arkansas",
-    "type": "no_source_found",
-    "_note": "GotSport event 45826 checked but is a Midwest multi-state event — only 2-3 AR clubs among 45 (from IL, TN, MO, IN, TX). No verified AR-specific event found."
+    "type": "gotsport",
+    "events": [40662, 25983],
+    "_note": "40662=26 clubs (Advantage Academy, Arkadelphia SA, Arkansas Comets FC, Arkansas Football Club Benton, Arkansas Rising, AVSA, Bentonville FC Prodigy, Central AR SC, De Queen SA, FC Arkansas, FC Horizon, Greene County Soccer, Hot Springs Soccer, Jonesboro CC, Little Rock Rangers, Mighty Bluebirds, NEA Soccer Club, NWA Dragons, River Valley FC, Searcy YSA, Siloam Springs Futbol, Specialized Soccer, Sporting Arkansas, Texarkana SC, Tigres Academy — all AR cities/abbreviations ✓). 25983=25 additional clubs, same core AR roster. Spot-checked: 'Arkadelphia SA' (Arkadelphia AR ✓), 'NWA Dragons' (Northwest Arkansas ✓), 'Jonesboro CC' (Jonesboro AR ✓). Event 45826 dropped — Midwest multi-state (IL/TN/MO/IN/TX)."
   },
   "https://www.calnorth.org": {
     "state": "Cal North",
@@ -34,8 +35,9 @@
   },
   "https://www.coloradosoccer.org": {
     "state": "Colorado",
-    "type": "no_source_found",
-    "_note": "GotSport event 46302 checked but contains Texas/Houston clubs (Houston Comets, HTX Oilers, Tomball Cougars — 0% CO). No Colorado-specific GotSport event found."
+    "type": "gotsport",
+    "events": [5829],
+    "_note": "5829=28 clubs (ALBION SC Colorado, ALBION SC Denver, Arsenal Colorado, Avalanche SC, B-Elite Soccer Academy of Denver, Broomfield SC, Club America of Colorado, CO Elevation FC, Colorado EDGE, Colorado Ice, Colorado International SA, Colorado Rapids Youth Soccer Club, Colorado Rush, Colorado Rush COS, Colorado Soccer Association, Colorado United, Denver Kickers Sport Club, Indios Denver SC, North Denver Rush, Northern Colorado Rush, Pikes Peak FC, Pride SC, Real Colorado, Riverside SC, Rocky Mountain Soccer Academy, United Soccer Club CO, Vail Valley SC, Westy Soccer — all Colorado cities ✓). Event 46302 dropped — Texas/Houston clubs only (0% CO)."
   },
   "https://www.cjsa.org": {
     "state": "Connecticut",
@@ -187,8 +189,10 @@
   },
   "https://www.ncsoccer.org": {
     "state": "North Carolina",
-    "type": "no_source_found",
-    "_note": "GotSport event 48392 checked but dominated by Northeast/NY/CT/MA/ME/Quebec clubs — 0% NC content. No verified NC-specific GotSport event found."
+    "type": "js_club_list",
+    "page_url": "https://www.ncsoccer.org/find-my-club/",
+    "js_var": "clubs",
+    "_note": "104 clubs embedded as JS variable 'const clubs=[{n:\"Club Name\",lat:...,lng:...,c:\"City, NC\"}]' in ncsoccer.org/find-my-club/. Spot-checked: '316 Futbol Club' (Indian Trail NC ✓), 'Charlotte Soccer Academy' (Charlotte NC ✓), 'Triangle United Soccer Association' (Triangle area NC ✓), 'Wilmington Hammerheads Youth FC' (Wilmington NC ✓). All 104 clubs show NC cities in their city field. GotSport event 48392 dropped — dominated by Northeast/MA/CT/ME clubs (0% NC)."
   },
   "https://www.ndsoccer.org": {
     "state": "North Dakota",
@@ -214,13 +218,47 @@
   },
   "https://www.oregonyouthsoccer.org": {
     "state": "Oregon",
-    "type": "no_source_found",
-    "_note": "GotSport event 40173 checked but is entirely Ohio clubs (Canal Winchester, Central Ohio Elite, Club Ohio, Columbus United — 0% Oregon). No verified Oregon-specific GotSport event found."
+    "type": "html_club_list",
+    "page_url": "https://www.oregonyouthsoccer.org/find-a-club/",
+    "skip_phrases": ["skip to", "privacy policy", "sportsengine", "member clubs", "find a club",
+                     "español", "resources", "affinity login", "team shop", "usys", "menu",
+                     "about us", "staff", "board of", "annual general", "hall of fame",
+                     "technical", "oysa foundation", "sponsors", "employment", "goal lines",
+                     "contact", "news", "leagues", "seasonal year", "competitive", "fall u1",
+                     "winter (u", "spring – u", "developmental", "valley academy league",
+                     "development league", "sanctioned leagues", "tournaments", "overview",
+                     "state cup", "presidents cup", "founders cup", "league america",
+                     "sanctioned tournaments", "odp", "tryouts", "coaching staff", "faqs",
+                     "odp calendar", "odp liability", "referees", "become a referee",
+                     "laws of the game", "ref talk", "reftown", "referee training", "coaches",
+                     "licensing pathway", "starting out", "upcoming courses", "host a course",
+                     "coaching resources", "no tippy", "positive coaching", "parents",
+                     "soccer parenting", "sideline project", "how to register a parent",
+                     "code of ethics", "parent resources", "programs", "topsoccer",
+                     "college showcase", "away day", "roundglass", "engine – oysa",
+                     "turf tank", "admin", "becoming a member club", "oysa competition rules",
+                     "international clearance", "forms & documents", "background checks",
+                     "safe sport", "risk management", "esports", "benefits", "safety",
+                     "powered by", "2026/27"],
+    "_note": "80+ Oregon-specific clubs scraped from OYSA member club directory at oregonyouthsoccer.org/find-a-club/. Clubs organized by OR region: Central Valley (Capital FC Salem, Eugene Metros), Central/Eastern OR (Bend FC), Columbia (Eastside Timbers Gresham), Portland (Lincoln Youth, Portland City United), South Metro (Lake Oswego SC, Oregon Premier), Southern (Rogue Valley Timbers, Ashland SC), Tualatin Hills (Oregon Surf, Westside Metros), Western (Hillsboro Rush, Bridge City, Santos FC), Willamette (Clackamas United). All Oregon ✓. GotSport event 40173 dropped — entirely Ohio clubs."
   },
   "https://www.pawest-soccer.org": {
     "state": "PA West",
-    "type": "no_source_found",
-    "_note": "GotSport event 49186 checked but contains Eastern PA clubs (Philadelphia, Allentown/Lehigh Valley, Bucks County, Montgomery County — 0% Pittsburgh/Western PA). No verified PA West-specific GotSport event found."
+    "type": "html_club_list",
+    "page_url": "https://www.pawest-soccer.org/club-list/",
+    "skip_phrases": ["skip to", "privacy policy", "sportsengine", "club list", "photo gallery",
+                     "about us", "executive board", "youth board", "adult board", "futsal board",
+                     "state staff", "governing documents", "adult rules", "executive board minutes",
+                     "national hall", "youth rules", "how to become", "become a coach",
+                     "scheduled courses", "licenses", "coaching", "risk management",
+                     "talent scout", "want ads", "assignors", "soccer assignment",
+                     "assessments", "become a referee", "referee course", "referee registration",
+                     "youth affidavit", "futsal referees", "how to upload", "referee mentors",
+                     "referee news", "referee pathway", "upgrade to", "referee report",
+                     "how to submit", "respect the call", "resources", "referee dress",
+                     "state referee committee", "young referee", "odp", "forms", "faq",
+                     "usys", "pa west", "menu", "powered by", "jetpack"],
+    "_note": "120+ PA West clubs listed as plain text on pawest-soccer.org/club-list/. Spot-checked: 'Beadling SC' (Beadling PA ✓), 'North Allegheny' (North Allegheny PA ✓), 'Peters Township' (Peters Township PA ✓), 'Riverhounds Development Academy' (Pittsburgh PA ✓), 'Upper St. Clair' (Upper St. Clair PA ✓). All Western PA suburbs/municipalities ✓. GotSport event 49186 dropped — Eastern PA clubs only (0% Pittsburgh/Western PA). PA West uses TeamPass for registration, not GotSport."
   },
   "https://www.soccer-ri.com": {
     "state": "Rhode Island",
