@@ -2,60 +2,86 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Includes a standalone Python scraper for the Upshift Club Aggregator project.
+pnpm workspace monorepo with TypeScript and a standalone Python scraper toolkit. Builds the **Upshift Club Aggregator** — a data pipeline and REST API for US youth soccer clubs across 127 league directories, deduplicating into a PostgreSQL graph database and serving data via a typed REST API at port 8080.
 
 ---
 
 ## Python Scraper — Upshift Club Aggregator
 
-Located in `scraper/`. Extracts youth soccer club data from 83 league directories across all tiers of US youth soccer, normalizes club names, deduplicates with fuzzy matching, and outputs structured CSVs.
+Located in `scraper/`. Extracts youth soccer club data from league directories, normalizes club names, deduplicates with fuzzy matching (FUZZY_THRESHOLD=88), and outputs structured CSVs. Also provides club website enrichment (directory extraction + Brave Search API) and a staff page scraper for coach discovery.
 
 ### Directory Layout
 
 ```
 scraper/
-├── config.py             # Loads leagues dynamically from seed CSVs; scraping settings
-├── scraper_static.py     # BeautifulSoup scraper for plain HTML pages
-├── scraper_js.py         # Playwright (headless Chromium) for JS-rendered pages
-├── normalizer.py         # Club name normalization + RapidFuzz deduplication
-├── storage.py            # Per-league CSV and master CSV writer
-├── run.py                # CLI entry point
-├── requirements.txt      # Python package list
-├── extractors/           # Per-site custom extractors (checked before generic scrapers)
-│   ├── registry.py       # URL-pattern → extractor function mapping
-│   ├── playwright_helper.py  # Shared Playwright render helper
-│   ├── girls_academy.py  # Girls Academy + GA Aspire (<article><li> structure)
-│   ├── norcal.py         # NorCal Premier Soccer (/clubs/ table)
-│   ├── ecnl.py           # ECNL (AthleteOne API + Playwright fallback)
-│   ├── dpl.py            # DPL (WordPress pages + Playwright bracket pages)
-│   ├── edp.py            # EDP Soccer (Wix static crawl)
-│   └── state_assoc.py    # All 54 USYS tier-4 state associations (GotSport + Maps KML)
+├── config.py              # League inventory loader; MAX_RETRIES=3, RETRY_BASE_DELAY=2s
+├── scraper_static.py      # BeautifulSoup scraper for plain HTML pages (with retry)
+├── scraper_js.py          # Playwright (headless Chromium) for JS-rendered pages
+├── normalizer.py          # Club name normalization + RapidFuzz deduplication (threshold=88)
+├── storage.py             # Per-league CSV and master CSV writer; COLUMNS includes website, source_type
+├── run.py                 # CLI entry point; FailureKind enum + structured failure reporting
+├── enrich_clubs.py        # Extracts website URLs from scraped league directory pages
+├── enrich_websites.py     # Brave Search API enrichment for clubs missing a website
+├── scrape_staff.py        # Staff page scraper (SportsEngine, LeagueApps, WordPress, generic)
+├── requirements.txt       # Python package list
+├── utils/
+│   └── retry.py          # retry_with_backoff() + TransientError sentinel; exp. backoff cap 60s
+├── extractors/            # Per-site custom extractors (URL-pattern matched before generic scrapers)
+│   ├── registry.py            # URL-pattern → extractor function mapping via @register decorator
+│   ├── playwright_helper.py   # Shared Playwright render helper (with retry on nav errors)
+│   ├── girls_academy.py       # Girls Academy + GA Aspire (<article><li> structure)
+│   ├── norcal.py              # NorCal Premier Soccer (/clubs/ table)
+│   ├── ecnl.py                # ECNL + ECNL RL (AthleteOne API + Playwright fallback)
+│   ├── dpl.py                 # DPL (WordPress pages)
+│   ├── edp.py                 # EDP Soccer (Wix static crawl)
+│   ├── mls_next.py            # MLS NEXT (patterns A+B, website extraction)
+│   ├── gotsport.py            # GotSport event roster scraper (shared helper, with retry)
+│   ├── sincsports.py          # SincSports TTTeamList.aspx extractor (static HTML)
+│   ├── state_assoc.py         # All 54 USYS tier-4 state associations (GotSport + Maps KML)
+│   ├── npl_extra.py           # NPL regional leagues + additional GotSport-backed directories
+│   ├── socal.py               # SOCAL Soccer League via GotSport
+│   ├── mspsp.py               # Michigan State Premier Soccer Program via GotSport
+│   ├── ne_impact.py           # New England Impact / Impact Soccer via GotSport
+│   ├── supery.py              # Super Y League
+│   ├── usl_academy.py         # USL Academy League
+│   ├── nwsl_academy.py        # NWSL Academy
+│   ├── elite64.py             # Elite 64
+│   ├── heartland.py           # Heartland Soccer Association
+│   ├── frontier.py            # Frontier Soccer League
+│   ├── az_soccer.py           # Arizona Soccer Club League
+│   ├── central_states.py      # Central States Soccer League
+│   ├── mountain_west.py       # Mountain West Soccer League
+│   ├── mapl.py                # Mid-Atlantic Premier League
+│   ├── tcsl.py                # Texas Club Soccer League
+│   └── sssl.py                # Sunshine State Soccer League
 ├── data/
-│   ├── leagues_master.csv              # 98-row league inventory (source of truth)
+│   ├── leagues_master.csv              # 127-row league inventory (source of truth)
 │   ├── league_sources_seed.csv         # Official scrape source registry
 │   ├── usys_state_associations_seed.csv # All 54 USYS member associations
-│   ├── state_assoc_config.json         # Maps state URL → {type, events/map_ids}
+│   ├── state_assoc_config.json         # Maps state URL → {type, events/map_ids, multi_state}
 │   └── canonical_schema.sql            # Postgres schema for canonical club graph
 └── output/
     ├── master.csv                       # Deduplicated master dataset
+    ├── website_coverage.txt             # Per-extractor website extraction summary
+    ├── website_enrichment_progress.json # Brave Search enrichment checkpoint
     └── leagues/<league-slug>.csv        # One CSV per scraped league
 ```
 
-### League Coverage (83 total, all with has_public_clubs=True)
+### League Coverage (127 entries, 115 scrapeable)
 
-| Tier | Count | Examples |
+| Tier | Scrapeable | Examples |
 |---|---|---|
-| 1 — National Elite | 5 | MLS NEXT, ECNL, Girls Academy, NWSL Academy, USL Academy |
-| 2 — High Performance | 7 | ECNL RL, GA Aspire, DPL, NPL, USYS National League, US Club iD |
-| 3 — Regional Power | 17 | EDP, SCCL, CCL, NorCal, SOCAL, 6 NPL member leagues, Super Y, more |
+| 1 — National Elite | 7 | MLS NEXT, ECNL, Girls Academy, NWSL Academy, USL Academy, Elite 64, ECNL Boys |
+| 2 — High Performance | 13 | ECNL RL (B+G), GA Aspire, DPL, NPL, USYS NL, US Club iD, Pre-ECNL |
+| 3 — Regional Power | 41 | EDP, NorCal, SOCAL, SincSports events (14), 6 NPL regions, Super Y, state leagues |
 | 4 — USYS State Hubs | 54 | All 54 state/regional youth soccer associations |
 
-69 are high-priority, 14 medium-priority.
+Source types: `state_association_hub` (54), `homepage` (39), `sincsports` (14), `program` (6), `league_page` (4), `athleteone_api` (4), `directory` (2), plus `no_source` (1).
 
 ### CSV Output Schema
 
 ```
-club_name, canonical_name, league_name, city, state, source_url
+club_name, canonical_name, league_name, city, state, source_url, website, source_type
 ```
 
 ### Key CLI Commands
@@ -63,55 +89,104 @@ club_name, canonical_name, league_name, city, state, source_url
 ```bash
 cd scraper
 
-python3 run.py                          # scrape all 83 leagues
-python3 run.py --tier 1                 # Tier 1 national elite only (5 leagues)
-python3 run.py --priority high          # 69 high-priority leagues
+# Scraping
+python3 run.py                          # scrape all 115 scrapeable leagues
+python3 run.py --tier 1                 # Tier 1 national elite only (7 leagues)
+python3 run.py --priority high          # high-priority leagues
 python3 run.py --gender girls           # girls programs only
 python3 run.py --scope state            # all 54 USYS state associations
-python3 run.py --league "ECNL"         # single league by name (partial match)
-python3 run.py --dry-run               # run without writing files
-python3 run.py --list                  # print full league inventory and exit
+python3 run.py --league "ECNL"          # single league by name (partial match)
+python3 run.py --dry-run                # run without writing files
+python3 run.py --list                   # print full league inventory and exit
+
+# Website enrichment
+python3 enrich_clubs.py                 # extract websites from scraped directory pages
+python3 enrich_websites.py --limit 100  # Brave Search API for clubs missing websites
+python3 enrich_websites.py --dry-run    # preview only (no API calls, no writes)
+
+# Coach/staff discovery
+python3 scrape_staff.py --limit 50      # scrape staff pages for clubs with websites
+python3 scrape_staff.py --tier 1        # staff for Tier 1 clubs only
+python3 scrape_staff.py --dry-run       # dry run (no DB writes)
+
+# Database seeding
+cd ..
+pnpm --filter @workspace/db run push    # push schema changes
+npx tsx lib/db/src/seed.ts              # seed PostgreSQL from master.csv
 ```
 
-### Custom Extractor Results (live)
+### Custom Extractor Notes
 
-| League | Extractor | Clubs | Notes |
-|---|---|---|---|
-| Girls Academy | `girls_academy.py` | 126 | with city, state, conference |
-| GA Aspire | `girls_academy.py` | 100 | with city, state |
-| NorCal Premier Soccer | `norcal.py` | 286 | with city, region |
-| ECNL (Boys + Girls) | `ecnl.py` via AthleteOne API | 200 | 26 national conferences |
-| ECNL RL Boys | `ecnl.py` | 286 | 26 national conferences |
-| ECNL RL Girls | `ecnl.py` | 281 | 24 national conferences |
-| SOCAL Soccer League | `socal.py` via GotSport | 172 | state=CA |
-| MSPSP (Michigan) | `mspsp.py` via GotSport | 88 | state=MI |
-| DPL | `dpl.py` | 0 | Wix/JS bracket pages, no static directory |
-| EDP Soccer | `edp.py` | 0 | Wix site, static fallback finds noise |
+**ECNL AthleteOne API**: URL format `/{event_id}/{org_id}/{org_season_id}/0/0`. Calling with event_id=0 returns default conference data plus a `<select id="event-select">` listing all conference event_ids. org_season maps: 70=Boys ECNL, 69=Girls ECNL, 72=Boys RL, 71=Girls RL.
 
-**ECNL AthleteOne API discovery**: The correct URL format is `/{event_id}/{org_id}/{org_season_id}/0/0`. Calling with event_id=0 returns the default conference data PLUS a full `<select id="event-select">` dropdown listing all conference event_ids. Each org_season maps to: 70=Boys ECNL, 69=Girls ECNL, 72=Boys RL, 71=Girls RL. The extractor auto-discovers all conference event_ids on each run.
+**GotSport pattern**: Rosters at `system.gotsport.com/org_event/events/{event_id}/clubs`. Shared helper in `extractors/gotsport.py`. Filter ZZ- rows (admin placeholders). Retry logic wraps all HTTP calls.
 
-**GotSport pattern**: Several leagues (SOCAL, MSPSP, state associations) host their club rosters at `system.gotsport.com/org_event/events/{event_id}/clubs`. Use `extractors/gotsport.py` shared helper. Filter ZZ- rows (admin placeholders).
+**SincSports pattern**: Static HTML at `soccer.sincsports.com/TTTeamList.aspx?tid=TID`. Division selector is client-side only — all teams in a single HTTP response. Filter "NO CLUB" placeholder rows.
 
-**State association strategy (Task #6 complete — April 2026)**: 54 USYS tier-4 sites crawled and configured. GotSport event links (32 states), Google My Maps KML (6 states), no-source (16 states). Config in `data/state_assoc_config.json`. 3,509 total unique clubs in master.csv (up from 2,351; +1,158 from Task #6). 16 new states verified ≥80% in-state accuracy: AK, AZ, CA-South, E-NY, IL, IA, MD, MN, MT, NV, NJ, NTX, OH, WA, WV, WY. States without automated source (16): AR, CO, HI, LA, MA, MS, NE, NC, ND, OR, PA-West, RI, SC, SD, UT, WI — first 5 had GotSport events found but verified as wrong-state (multi-state/regional tournaments). To add more states: add a `"type": "gotsport"` or `"type": "google_maps"` entry after finding event IDs on the state's website.
+**State association strategy**: 54 USYS tier-4 sites configured. GotSport events (32 states), Google My Maps KML (6 states), no-source (16 states). `state_assoc_config.json` has `multi_state: true` for MN, WV where parent event crosses state lines — records tagged `_state_derived=True` to prevent state overwrite.
 
-### Adding a League
+**Retry strategy**: All HTTP calls wrapped in `retry_with_backoff(fn, max_retries=3, base_delay=2s)`. ConnectionError, Timeout, 5xx → `TransientError`. Playwright navigation errors (ERR_NAME_NOT_RESOLVED, net::ERR_*, timeouts) also retried.
 
-Add a row to `scraper/data/leagues_master.csv` with `has_public_clubs=True`. The config auto-loads on next run. Key fields:
-
-| Field | Values |
-|---|---|
-| `tier_numeric` | 1–4 |
-| `scrape_priority` | high / medium / low |
-| `source_type` | `homepage`, `club_directory`, `state_association_hub`, etc. |
-| `js_required` | inferred from `source_type`; static = `state_association_hub` / `news` |
+**Failure reporting**: `run.py` tracks failures with `FailureKind` enum (timeout, network, parse_error, zero_results, unknown). End-of-run summary shows leagues succeeded/failed + per-type breakdown.
 
 ### Python Dependencies
 
 ```
-playwright, beautifulsoup4, requests, pandas, rapidfuzz, lxml, html5lib
+playwright, beautifulsoup4, requests, pandas, rapidfuzz, lxml, html5lib, psycopg2-binary
 ```
 
 Install: `pip install -r scraper/requirements.txt && python3 -m playwright install chromium`
+
+---
+
+## PostgreSQL Graph Database
+
+Schema in `lib/db/src/schema/index.ts`. Push with `pnpm --filter @workspace/db run push`.
+
+### Tables
+
+| Table | Description |
+|---|---|
+| `canonical_clubs` | Deduplicated master club records; includes `website`, `website_status`, `website_discovered_at` |
+| `club_aliases` | All raw scraped name variants pointing to a canonical club |
+| `club_affiliations` | League/source associations per club (unique on `club_id + source_name`) |
+| `club_events` | Scraped event/bracket participation records with age group, gender, dates |
+| `club_coaches` | Scraped coach records from league directories |
+| `coach_discoveries` | Staff page coach discoveries (platform_family, confidence score 0–1) |
+| `leagues_master` | League/directory inventory |
+| `league_sources` | Official scrape source registry |
+
+---
+
+## REST API — Express on Port 8080
+
+All routes under `/api`. Source in `artifacts/api-server/src/routes/`.
+
+### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/healthz` | Health check |
+| GET | `/api/clubs` | Paginated club list; filter by state, tier, gender_program |
+| GET | `/api/clubs/search` | Advanced search: name, state, league (affiliation), has_website |
+| GET | `/api/clubs/:id` | Single club with affiliations and aliases |
+| GET | `/api/clubs/:id/related` | Related clubs by shared affiliations |
+| GET | `/api/clubs/:id/staff` | Coach discoveries from staff scraper |
+| GET | `/api/events/search` | Event search: club_id, league, age_group, gender, season, source, date range |
+| GET | `/api/coaches/search` | Coach search: club_id, name, title, min_confidence |
+| GET | `/api/leagues` | All leagues in master directory |
+| GET | `/api/leagues/:id/clubs` | All clubs for a league |
+| GET | `/api/search` | Fuzzy club name search |
+| GET | `/api/analytics/duplicates` | Near-duplicate clusters by normalized name + state, with source labels |
+| GET | `/api/analytics/coverage` | Per-state and per-league club counts; threshold flagging |
+| GET | `/api/analytics/overlap` | Clubs with 2+ league affiliations |
+
+All search/analytics endpoints are paginated: `?page=1&page_size=20` (max 100).
+
+### API Shared Libraries
+
+- `lib/pagination.ts` — `parsePagination()` + `buildWhere()` filter helper used by all search routes
+- `lib/analytics.ts` — `normalizeClubName()` (JS) + `PG_NORMALIZE_EXPR` (Postgres regex) for dedup analytics
 
 ---
 
@@ -124,15 +199,42 @@ Install: `pip install -r scraper/requirements.txt && python3 -m playwright insta
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
 - **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
+- **Database**: PostgreSQL + Drizzle ORM (`drizzle-orm/node-postgres`)
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+- **API spec**: OpenAPI 3.1 (`lib/api-spec/openapi.yaml`)
+- **API codegen**: Orval (Zod schemas + types from OpenAPI spec)
+- **Build**: esbuild (single ESM bundle)
+
+### Packages
+
+| Package | Purpose |
+|---|---|
+| `@workspace/db` | Drizzle schema, seed script, DB client |
+| `@workspace/api-spec` | OpenAPI YAML + Orval codegen config |
+| `@workspace/api-zod` | Generated Zod validators and TypeScript types |
+| `@workspace/api-server` | Express API server (port 8080) |
+| `@workspace/mockup-sandbox` | Vite component preview server (port 8081) |
 
 ### Key Commands
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+```bash
+pnpm run typecheck                               # full typecheck across all packages
+pnpm run build                                   # typecheck + build all packages
+pnpm --filter @workspace/api-spec run codegen    # regenerate Zod schemas from OpenAPI
+pnpm --filter @workspace/db run push             # push DB schema changes (dev only)
+pnpm --filter @workspace/api-server run dev      # run API server locally (port 8080)
+```
+
+### Adding a New API Endpoint
+
+1. Add path + response schema to `lib/api-spec/openapi.yaml`
+2. Run `pnpm --filter @workspace/api-spec run codegen` to regenerate Zod types
+3. Add route handler in `artifacts/api-server/src/routes/`
+4. Register in `artifacts/api-server/src/routes/index.ts`
+
+### Adding a New League
+
+1. Add a row to `scraper/data/leagues_master.csv` with `has_public_clubs=True`
+2. If a custom extractor is needed, add it to `scraper/extractors/` and register in `registry.py`
+3. For GotSport events, find the event ID and use the shared `gotsport.py` helper
+4. For SincSports tournaments, find the `tid=` parameter and use `source_type=sincsports`
