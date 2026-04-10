@@ -163,6 +163,105 @@ export const SearchClubsResponse = zod.object({
 });
 
 /**
+ * Advanced club search with combinable filters (name, state, league, has_website).
+ * @summary Advanced club search
+ */
+export const SearchClubsAdvancedQueryParams = zod.object({
+  name: zod.coerce.string().optional().describe("Substring match on club_name_canonical (ILIKE)"),
+  state: zod.coerce.string().optional().describe("US state abbreviation or full name (ILIKE match)"),
+  league: zod.coerce.string().optional().describe("League name substring to filter by affiliation (ILIKE)"),
+  has_website: zod.coerce.boolean().optional().describe("When true, only clubs with a known website are returned"),
+  page: zod.coerce.number().default(1),
+  page_size: zod.coerce.number().max(100).default(20),
+});
+
+export const ClubSearchResponse = zod.object({
+  clubs: zod.array(
+    zod.object({
+      id: zod.number(),
+      club_name_canonical: zod.string(),
+      club_slug: zod.string(),
+      city: zod.string(),
+      state: zod.string(),
+      country: zod.string(),
+      status: zod.string(),
+      website: zod.string().nullable().optional(),
+      website_status: zod.string().nullable().optional(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
+ * @summary Search league events
+ */
+export const SearchEventsQueryParams = zod.object({
+  club_id: zod.coerce.number().optional().describe("Filter events by canonical club ID"),
+  league: zod.coerce.string().optional().describe("League name substring (ILIKE)"),
+  age_group: zod.coerce.string().optional().describe("Age group (e.g. U14, U15)"),
+  gender: zod.coerce.string().optional().describe("Gender filter (boys, girls)"),
+  season: zod.coerce.string().optional().describe("Season identifier (e.g. 2024-2025)"),
+  source: zod.coerce.string().optional().describe("Source URL substring (ILIKE)"),
+  page: zod.coerce.number().default(1),
+  page_size: zod.coerce.number().max(100).default(20),
+});
+
+export const EventSearchResponse = zod.object({
+  events: zod.array(
+    zod.object({
+      id: zod.number(),
+      club_id: zod.number().nullable().optional(),
+      league_name: zod.string().nullable().optional(),
+      event_id: zod.string().nullable().optional(),
+      org_season_id: zod.string().nullable().optional(),
+      age_group: zod.string().nullable().optional(),
+      gender: zod.string().nullable().optional(),
+      division: zod.string().nullable().optional(),
+      conference: zod.string().nullable().optional(),
+      season: zod.string().nullable().optional(),
+      start_date: zod.string().nullable().optional(),
+      end_date: zod.string().nullable().optional(),
+      source_url: zod.string().nullable().optional(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
+ * @summary Search coaches
+ */
+export const SearchCoachesQueryParams = zod.object({
+  club_id: zod.coerce.number().optional().describe("Filter coaches by canonical club ID"),
+  name: zod.coerce.string().optional().describe("Coach name substring (ILIKE)"),
+  title: zod.coerce.string().optional().describe("Title keyword substring (ILIKE)"),
+  min_confidence: zod.coerce.number().min(0).max(1).optional().describe("Minimum confidence score (0–1)"),
+  page: zod.coerce.number().default(1),
+  page_size: zod.coerce.number().max(100).default(20),
+});
+
+export const CoachSearchResponse = zod.object({
+  coaches: zod.array(
+    zod.object({
+      id: zod.number(),
+      club_id: zod.number().nullable().optional(),
+      name: zod.string(),
+      title: zod.string().nullable().optional(),
+      email: zod.string().nullable().optional(),
+      phone: zod.string().nullable().optional(),
+      confidence_score: zod.number().nullable().optional(),
+      source_url: zod.string().nullable().optional(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
  * @summary List all leagues in the master directory
  */
 export const ListLeaguesResponse = zod.object({

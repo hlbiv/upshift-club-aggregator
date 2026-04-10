@@ -5,12 +5,14 @@ import {
   clubAliases,
   clubAffiliations,
 } from "@workspace/db/schema";
-import { eq, ilike, and, inArray, sql, asc } from "drizzle-orm";
+import { eq, ilike, and, inArray, isNotNull, ne, sql, asc } from "drizzle-orm";
 import {
   ListClubsResponse,
   GetClubResponse,
   GetRelatedClubsResponse,
+  ClubSearchResponse,
 } from "@workspace/api-zod";
+import { parsePagination } from "../lib/pagination";
 
 const router: IRouter = Router();
 
@@ -77,6 +79,98 @@ router.get("/clubs", async (req, res, next): Promise<void> => {
 
     res.json(
       ListClubsResponse.parse({
+        clubs: rows.map((r) => ({
+          id: r.id,
+          club_name_canonical: r.clubNameCanonical,
+          club_slug: r.clubSlug ?? "",
+          city: r.city ?? "",
+          state: r.state ?? "",
+          country: r.country ?? "USA",
+          status: r.status ?? "active",
+          website: r.website ?? null,
+          website_status: r.websiteStatus ?? null,
+        })),
+        total,
+        page,
+        page_size: pageSize,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/clubs/search", async (req, res, next): Promise<void> => {
+  try {
+    const name = req.query.name as string | undefined;
+    const state = req.query.state as string | undefined;
+    const league = req.query.league as string | undefined;
+    const hasWebsiteRaw = req.query.has_website as string | undefined;
+    const hasWebsite =
+      hasWebsiteRaw === "true"
+        ? true
+        : hasWebsiteRaw === "false"
+          ? false
+          : undefined;
+
+    const { page, pageSize, offset } = parsePagination(
+      req.query.page,
+      req.query.page_size,
+    );
+
+    let clubIds: number[] | null = null;
+
+    if (league) {
+      const affRows = await db
+        .select({ clubId: clubAffiliations.clubId })
+        .from(clubAffiliations)
+        .where(ilike(clubAffiliations.sourceName, `%${league}%`));
+      clubIds = [...new Set(affRows.map((r) => r.clubId!).filter(Boolean))];
+      if (clubIds.length === 0) {
+        res.json(
+          ClubSearchResponse.parse({
+            clubs: [],
+            total: 0,
+            page,
+            page_size: pageSize,
+          }),
+        );
+        return;
+      }
+    }
+
+    const conditions = [];
+    if (name) conditions.push(ilike(canonicalClubs.clubNameCanonical, `%${name}%`));
+    if (state) conditions.push(ilike(canonicalClubs.state, `%${state}%`));
+    if (clubIds) conditions.push(inArray(canonicalClubs.id, clubIds));
+    if (hasWebsite === true) {
+      conditions.push(isNotNull(canonicalClubs.website));
+      conditions.push(ne(canonicalClubs.website, ""));
+    } else if (hasWebsite === false) {
+      conditions.push(
+        sql`(${canonicalClubs.website} IS NULL OR ${canonicalClubs.website} = '')`,
+      );
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(canonicalClubs)
+      .where(where);
+
+    const total = countRow?.count ?? 0;
+
+    const rows = await db
+      .select()
+      .from(canonicalClubs)
+      .where(where)
+      .orderBy(asc(canonicalClubs.clubNameCanonical))
+      .limit(pageSize)
+      .offset(offset);
+
+    res.json(
+      ClubSearchResponse.parse({
         clubs: rows.map((r) => ({
           id: r.id,
           club_name_canonical: r.clubNameCanonical,

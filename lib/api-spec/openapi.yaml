@@ -189,6 +189,157 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /clubs/search:
+    get:
+      operationId: searchClubsAdvanced
+      tags: [clubs]
+      summary: Advanced club search with combinable filters
+      description: >
+        Search clubs by name keyword, state, league affiliation, and/or website
+        presence. All filters are combinable. Returns paginated results ordered
+        alphabetically by canonical name.
+      parameters:
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: Substring match on club_name_canonical (ILIKE)
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: US state abbreviation or full name (ILIKE match)
+        - name: league
+          in: query
+          schema:
+            type: string
+          description: League name substring to filter by affiliation (ILIKE)
+        - name: has_website
+          in: query
+          schema:
+            type: boolean
+          description: When true, only clubs with a known website are returned
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated advanced club search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubSearchResponse"
+
+  /events/search:
+    get:
+      operationId: searchEvents
+      tags: [search]
+      summary: Search league events by club, league, season, and source
+      parameters:
+        - name: club_id
+          in: query
+          schema:
+            type: integer
+          description: Filter events by canonical club ID
+        - name: league
+          in: query
+          schema:
+            type: string
+          description: League name substring (ILIKE)
+        - name: age_group
+          in: query
+          schema:
+            type: string
+          description: Age group (e.g. U14, U15)
+        - name: gender
+          in: query
+          schema:
+            type: string
+          description: Gender filter (boys, girls)
+        - name: season
+          in: query
+          schema:
+            type: string
+          description: Season identifier (e.g. 2024-2025)
+        - name: source
+          in: query
+          schema:
+            type: string
+          description: Source URL substring (ILIKE)
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated event search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventSearchResponse"
+
+  /coaches/search:
+    get:
+      operationId: searchCoaches
+      tags: [search]
+      summary: Search coaches by club, title, and minimum confidence score
+      parameters:
+        - name: club_id
+          in: query
+          schema:
+            type: integer
+          description: Filter coaches by canonical club ID
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: Coach name substring (ILIKE)
+        - name: title
+          in: query
+          schema:
+            type: string
+          description: Title keyword substring (ILIKE)
+        - name: min_confidence
+          in: query
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+          description: Minimum confidence score (0–1)
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated coach search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachSearchResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -422,3 +573,133 @@ components:
       required:
         - league_id
         - clubs
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: integer
+        club_id:
+          type: integer
+          nullable: true
+        league_name:
+          type: string
+          nullable: true
+        event_id:
+          type: string
+          nullable: true
+        org_season_id:
+          type: string
+          nullable: true
+        age_group:
+          type: string
+          nullable: true
+        gender:
+          type: string
+          nullable: true
+        division:
+          type: string
+          nullable: true
+        conference:
+          type: string
+          nullable: true
+        season:
+          type: string
+          nullable: true
+        start_date:
+          type: string
+          nullable: true
+        end_date:
+          type: string
+          nullable: true
+        source_url:
+          type: string
+          nullable: true
+      required:
+        - id
+
+    Coach:
+      type: object
+      properties:
+        id:
+          type: integer
+        club_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+        title:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        confidence_score:
+          type: number
+          nullable: true
+        source_url:
+          type: string
+          nullable: true
+      required:
+        - id
+        - name
+
+    ClubSearchResponse:
+      type: object
+      properties:
+        clubs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Club"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+      required:
+        - clubs
+        - total
+        - page
+        - page_size
+
+    EventSearchResponse:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/Event"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+      required:
+        - events
+        - total
+        - page
+        - page_size
+
+    CoachSearchResponse:
+      type: object
+      properties:
+        coaches:
+          type: array
+          items:
+            $ref: "#/components/schemas/Coach"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+      required:
+        - coaches
+        - total
+        - page
+        - page_size

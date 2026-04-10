@@ -6,6 +6,7 @@ import {
   integer,
   unique,
   timestamp,
+  real,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -87,11 +88,46 @@ export const clubAffiliations = pgTable(
   ],
 );
 
+export const clubEvents = pgTable("club_events", {
+  id: serial("id").primaryKey(),
+  clubId: integer("club_id").references(() => canonicalClubs.id, {
+    onDelete: "cascade",
+  }),
+  leagueName: text("league_name"),
+  eventId: text("event_id"),
+  orgSeasonId: text("org_season_id"),
+  ageGroup: text("age_group"),
+  gender: text("gender"),
+  division: text("division"),
+  conference: text("conference"),
+  season: text("season"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  sourceUrl: text("source_url"),
+  scrapedAt: timestamp("scraped_at").defaultNow(),
+});
+
+export const clubCoaches = pgTable("club_coaches", {
+  id: serial("id").primaryKey(),
+  clubId: integer("club_id").references(() => canonicalClubs.id, {
+    onDelete: "cascade",
+  }),
+  name: text("name").notNull(),
+  title: text("title"),
+  email: text("email"),
+  phone: text("phone"),
+  confidenceScore: real("confidence_score").default(1.0),
+  sourceUrl: text("source_url"),
+  scrapedAt: timestamp("scraped_at").defaultNow(),
+});
+
 export const canonicalClubsRelations = relations(
   canonicalClubs,
   ({ many }) => ({
     aliases: many(clubAliases),
     affiliations: many(clubAffiliations),
+    events: many(clubEvents),
+    coaches: many(clubCoaches),
   }),
 );
 
@@ -112,6 +148,20 @@ export const clubAffiliationsRelations = relations(
   }),
 );
 
+export const clubEventsRelations = relations(clubEvents, ({ one }) => ({
+  club: one(canonicalClubs, {
+    fields: [clubEvents.clubId],
+    references: [canonicalClubs.id],
+  }),
+}));
+
+export const clubCoachesRelations = relations(clubCoaches, ({ one }) => ({
+  club: one(canonicalClubs, {
+    fields: [clubCoaches.clubId],
+    references: [canonicalClubs.id],
+  }),
+}));
+
 export const insertLeagueMasterSchema = createInsertSchema(leaguesMaster).omit(
   { id: true },
 );
@@ -124,14 +174,24 @@ export const insertClubAliasSchema = createInsertSchema(clubAliases).omit({
 export const insertClubAffiliationSchema = createInsertSchema(
   clubAffiliations,
 ).omit({ id: true });
+export const insertClubEventSchema = createInsertSchema(clubEvents).omit({
+  id: true,
+});
+export const insertClubCoachSchema = createInsertSchema(clubCoaches).omit({
+  id: true,
+});
 
 export type League = typeof leaguesMaster.$inferSelect;
 export type CanonicalClub = typeof canonicalClubs.$inferSelect;
 export type ClubAlias = typeof clubAliases.$inferSelect;
 export type ClubAffiliation = typeof clubAffiliations.$inferSelect;
 export type LeagueSource = typeof leagueSources.$inferSelect;
+export type ClubEvent = typeof clubEvents.$inferSelect;
+export type ClubCoach = typeof clubCoaches.$inferSelect;
 
 export type InsertLeague = typeof leaguesMaster.$inferInsert;
 export type InsertCanonicalClub = typeof canonicalClubs.$inferInsert;
 export type InsertClubAlias = typeof clubAliases.$inferInsert;
 export type InsertClubAffiliation = typeof clubAffiliations.$inferInsert;
+export type InsertClubEvent = typeof clubEvents.$inferInsert;
+export type InsertClubCoach = typeof clubCoaches.$inferInsert;
