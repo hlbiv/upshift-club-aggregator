@@ -262,6 +262,30 @@ export const CoachSearchResponse = zod.object({
 });
 
 /**
+ * @summary Get discovered coaches and staff for a club
+ */
+export const GetClubStaffParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CoachDiscovery = zod.object({
+  id: zod.number(),
+  club_id: zod.number().nullable().optional(),
+  name: zod.string(),
+  title: zod.string().nullable().optional(),
+  email: zod.string().nullable().optional(),
+  source_url: zod.string().nullable().optional(),
+  scraped_at: zod.string().nullable().optional(),
+  confidence: zod.number().nullable().optional(),
+  platform_family: zod.string().nullable().optional(),
+});
+
+export const ClubStaffResponse = zod.object({
+  club_id: zod.number(),
+  staff: zod.array(CoachDiscovery),
+});
+
+/**
  * @summary List all leagues in the master directory
  */
 export const ListLeaguesResponse = zod.object({

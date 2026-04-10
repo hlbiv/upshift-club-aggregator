@@ -293,6 +293,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/EventSearchResponse"
 
+  /clubs/{id}/staff:
+    get:
+      operationId: getClubStaff
+      tags: [clubs]
+      summary: Get discovered coaches and staff for a club
+      description: >
+        Returns all coach and staff records discovered by the staff page
+        scraper for the given club. Records are ordered by confidence
+        descending, then by name ascending.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Discovered staff for the club
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubStaffResponse"
+        "404":
+          description: Club not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /coaches/search:
     get:
       operationId: searchCoaches
@@ -646,6 +675,51 @@ components:
       required:
         - id
         - name
+
+    CoachDiscovery:
+      type: object
+      properties:
+        id:
+          type: integer
+        club_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+        title:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        source_url:
+          type: string
+          nullable: true
+        scraped_at:
+          type: string
+          nullable: true
+        confidence:
+          type: number
+          nullable: true
+        platform_family:
+          type: string
+          nullable: true
+      required:
+        - id
+        - name
+
+    ClubStaffResponse:
+      type: object
+      properties:
+        club_id:
+          type: integer
+        staff:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoachDiscovery"
+      required:
+        - club_id
+        - staff
 
     ClubSearchResponse:
       type: object

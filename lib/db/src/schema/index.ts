@@ -7,8 +7,9 @@ import {
   unique,
   timestamp,
   real,
+  check,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { sql, relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 
 export const leaguesMaster = pgTable("leagues_master", {
@@ -121,6 +122,38 @@ export const clubCoaches = pgTable("club_coaches", {
   scrapedAt: timestamp("scraped_at").defaultNow(),
 });
 
+export const coachDiscoveries = pgTable(
+  "coach_discoveries",
+  {
+    id: serial("id").primaryKey(),
+    clubId: integer("club_id").references(() => canonicalClubs.id, {
+      onDelete: "cascade",
+    }),
+    name: text("name").notNull(),
+    title: text("title").default("").notNull(),
+    email: text("email"),
+    sourceUrl: text("source_url"),
+    scrapedAt: timestamp("scraped_at").defaultNow(),
+    confidence: real("confidence").default(1.0),
+    platformFamily: text("platform_family").default("unknown").notNull(),
+  },
+  (t) => [
+    unique("coach_discoveries_club_name_title_uq").on(
+      t.clubId,
+      t.name,
+      t.title,
+    ),
+    check(
+      "coach_discoveries_confidence_range",
+      sql`${t.confidence} >= 0.0 AND ${t.confidence} <= 1.0`,
+    ),
+    check(
+      "coach_discoveries_platform_family_enum",
+      sql`${t.platformFamily} IN ('sportsengine', 'leagueapps', 'wordpress', 'unknown')`,
+    ),
+  ],
+);
+
 export const canonicalClubsRelations = relations(
   canonicalClubs,
   ({ many }) => ({
@@ -128,6 +161,7 @@ export const canonicalClubsRelations = relations(
     affiliations: many(clubAffiliations),
     events: many(clubEvents),
     coaches: many(clubCoaches),
+    coachDiscoveries: many(coachDiscoveries),
   }),
 );
 
@@ -162,6 +196,16 @@ export const clubCoachesRelations = relations(clubCoaches, ({ one }) => ({
   }),
 }));
 
+export const coachDiscoveriesRelations = relations(
+  coachDiscoveries,
+  ({ one }) => ({
+    club: one(canonicalClubs, {
+      fields: [coachDiscoveries.clubId],
+      references: [canonicalClubs.id],
+    }),
+  }),
+);
+
 export const insertLeagueMasterSchema = createInsertSchema(leaguesMaster).omit(
   { id: true },
 );
@@ -180,6 +224,9 @@ export const insertClubEventSchema = createInsertSchema(clubEvents).omit({
 export const insertClubCoachSchema = createInsertSchema(clubCoaches).omit({
   id: true,
 });
+export const insertCoachDiscoverySchema = createInsertSchema(
+  coachDiscoveries,
+).omit({ id: true });
 
 export type League = typeof leaguesMaster.$inferSelect;
 export type CanonicalClub = typeof canonicalClubs.$inferSelect;
@@ -188,6 +235,7 @@ export type ClubAffiliation = typeof clubAffiliations.$inferSelect;
 export type LeagueSource = typeof leagueSources.$inferSelect;
 export type ClubEvent = typeof clubEvents.$inferSelect;
 export type ClubCoach = typeof clubCoaches.$inferSelect;
+export type CoachDiscovery = typeof coachDiscoveries.$inferSelect;
 
 export type InsertLeague = typeof leaguesMaster.$inferInsert;
 export type InsertCanonicalClub = typeof canonicalClubs.$inferInsert;
@@ -195,3 +243,4 @@ export type InsertClubAlias = typeof clubAliases.$inferInsert;
 export type InsertClubAffiliation = typeof clubAffiliations.$inferInsert;
 export type InsertClubEvent = typeof clubEvents.$inferInsert;
 export type InsertClubCoach = typeof clubCoaches.$inferInsert;
+export type InsertCoachDiscovery = typeof coachDiscoveries.$inferInsert;

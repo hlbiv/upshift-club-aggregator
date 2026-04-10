@@ -4,13 +4,15 @@ import {
   canonicalClubs,
   clubAliases,
   clubAffiliations,
+  coachDiscoveries,
 } from "@workspace/db/schema";
-import { eq, ilike, and, inArray, isNotNull, ne, sql, asc } from "drizzle-orm";
+import { eq, ilike, and, inArray, isNotNull, ne, sql, asc, desc } from "drizzle-orm";
 import {
   ListClubsResponse,
   GetClubResponse,
   GetRelatedClubsResponse,
   ClubSearchResponse,
+  ClubStaffResponse,
 } from "@workspace/api-zod";
 import { parsePagination } from "../lib/pagination";
 
@@ -322,6 +324,54 @@ router.get("/clubs/:id/related", async (req, res, next): Promise<void> => {
           status: r.status ?? "active",
           website: r.website ?? null,
           website_status: r.websiteStatus ?? null,
+        })),
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/clubs/:id/staff", async (req, res, next): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+
+    const [club] = await db
+      .select()
+      .from(canonicalClubs)
+      .where(eq(canonicalClubs.id, id));
+
+    if (!club) {
+      res.status(404).json({ error: "Club not found" });
+      return;
+    }
+
+    const staff = await db
+      .select()
+      .from(coachDiscoveries)
+      .where(eq(coachDiscoveries.clubId, id))
+      .orderBy(
+        desc(coachDiscoveries.confidence),
+        asc(coachDiscoveries.name),
+      );
+
+    res.json(
+      ClubStaffResponse.parse({
+        club_id: id,
+        staff: staff.map((s) => ({
+          id: s.id,
+          club_id: s.clubId ?? null,
+          name: s.name,
+          title: s.title ?? null,
+          email: s.email ?? null,
+          source_url: s.sourceUrl ?? null,
+          scraped_at: s.scrapedAt ? s.scrapedAt.toISOString() : null,
+          confidence: s.confidence ?? null,
+          platform_family: s.platformFamily ?? null,
         })),
       }),
     );
