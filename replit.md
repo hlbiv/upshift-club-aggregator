@@ -92,7 +92,7 @@ python3 run.py --list                  # print full league inventory and exit
 
 **GotSport pattern**: Several leagues (SOCAL, MSPSP, state associations) host their club rosters at `system.gotsport.com/org_event/events/{event_id}/clubs`. Use `extractors/gotsport.py` shared helper. Filter ZZ- rows (admin placeholders).
 
-**State association strategy (Task #6 complete — April 2026)**: 54 USYS tier-4 sites crawled and configured. GotSport event links (37 states), Google My Maps KML (6 states), no-source (11 states). Config in `data/state_assoc_config.json`. 2,982 total unique clubs in master.csv (up from 2,351; +631 from Task #6). States still without automated source: HI, LA, MA, MS, NE, ND, RI, SC, SD, UT, WI. To add more states: add a `"type": "gotsport"` or `"type": "google_maps"` entry after finding event IDs on the state's website.
+**State association strategy (Task #6 complete — April 2026)**: 54 USYS tier-4 sites crawled and configured. GotSport event links (32 states), Google My Maps KML (6 states), no-source (16 states). Config in `data/state_assoc_config.json`. 3,509 total unique clubs in master.csv (up from 2,351; +1,158 from Task #6). 16 new states verified ≥80% in-state accuracy: AK, AZ, CA-South, E-NY, IL, IA, MD, MN, MT, NV, NJ, NTX, OH, WA, WV, WY. States without automated source (16): AR, CO, HI, LA, MA, MS, NE, NC, ND, OR, PA-West, RI, SC, SD, UT, WI — first 5 had GotSport events found but verified as wrong-state (multi-state/regional tournaments). To add more states: add a `"type": "gotsport"` or `"type": "google_maps"` entry after finding event IDs on the state's website.
 
 ### Adding a League
 

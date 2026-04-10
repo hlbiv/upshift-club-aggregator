@@ -161,8 +161,8 @@
   "https://www.nevadayouthsoccer.org": {
     "state": "Nevada",
     "type": "gotsport",
-    "events": [44159],
-    "_note": "41 clubs: ALBION SC Las Vegas, Alliance Youth Soccer League, AYSO United Las Vegas — all Nevada ✓."
+    "events": [50983],
+    "_note": "23 clubs: 702 Footy Foundation (702=LV area code ✓), ALBION SC Las Vegas ✓, AYSO United - Las Vegas ✓, BVB IA Las Vegas ✓, Downtown Las Vegas SC ✓, Juventus Academy Las Vegas ✓, Lady Rebels SC ✓, Las Vegas Diversity FC ✓, Las Vegas Elite FC ✓, Las Vegas Soccer School ✓, Las Vegas Sports Academy ✓, LV Arsenal ✓, LV Heat Surf SC ✓, Nevada Rush ✓, Rayados LV ✓, Sporting Nevada USA Magnifico ✓, Vegas Strong SC ✓, Vegas United SC ✓, Villarreal LV Academy ✓ — all Las Vegas / Nevada ✓. Event 44159 dropped (10/41 clubs from CA, AZ, ID, AR, UT — regional open tournament, not NV state association)."
   },
   "https://www.soccernh.com": {
     "state": "New Hampshire",
@@ -272,7 +272,7 @@
     "state": "West Virginia",
     "type": "gotsport",
     "events": [46532],
-    "_note": "13 clubs: Barbour County (WV ✓), Belpre SC (border OH/WV, Belpre is OH but KVSL area), Club Ohio (border), FC Ripley, KVSL (Kanawha Valley WV ✓), Putnam United FC (WV ✓), River Valley SC — predominantly WV border region ✓ with minor OH overlap."
+    "_note": "13 clubs. Confirmed WV (6/13 = 46%): Barbour County WV, FC Ripley (Ripley WV, Jackson County seat), KVSL-Competitive (Kanawha Valley WV), KVSL-Great Teays SC (Great Teays, Putnam County WV), Ohio Valley Soccer League (Parkersburg WV based), Putnam United FC (Putnam County WV). Confirmed non-WV (2/13): Belpre Soccer Club (Belpre OH, directly across Ohio River from Parkersburg WV — cross-river border participation), Club Ohio (large OH club). Unknown (5/13): FC Alliance, Legacy FC, PK Soccer Academy, River Valley SC, Shawnee Soccer Rec. Best-case estimate: 85% WV if unknowns are WV-based."
   },
   "https://www.wiyouthsoccer.com": {
     "state": "Wisconsin",
