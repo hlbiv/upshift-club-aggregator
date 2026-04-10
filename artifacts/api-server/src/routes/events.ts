@@ -16,8 +16,25 @@ router.get("/events/search", async (req, res, next): Promise<void> => {
     const gender = req.query.gender as string | undefined;
     const season = req.query.season as string | undefined;
     const source = req.query.source as string | undefined;
-    const startDateFrom = req.query.start_date_from as string | undefined;
-    const startDateTo = req.query.start_date_to as string | undefined;
+    const startDateFromRaw = req.query.start_date_from as string | undefined;
+    const startDateToRaw = req.query.start_date_to as string | undefined;
+
+    const parseDate = (raw: string | undefined): Date | undefined | null => {
+      if (!raw) return undefined;
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return null;
+      return d;
+    };
+
+    const startDateFrom = parseDate(startDateFromRaw);
+    const startDateTo = parseDate(startDateToRaw);
+
+    if (startDateFrom === null || startDateTo === null) {
+      res.status(400).json({
+        error: "Invalid date format. Use ISO 8601 (e.g. 2024-08-01).",
+      });
+      return;
+    }
 
     const { page, pageSize, offset } = parsePagination(
       req.query.page,
