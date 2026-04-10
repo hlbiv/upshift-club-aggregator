@@ -42,7 +42,7 @@ router.get("/analytics/duplicates", async (req, res, next): Promise<void> => {
       clusters AS (
         SELECT normalized_name, state, COUNT(*) AS club_count
         FROM normalized
-        WHERE normalized_name <> ''
+        WHERE length(normalized_name) >= 2
         ${stateCondition}
         GROUP BY normalized_name, state
         HAVING COUNT(*) >= ${minClubs}
@@ -70,7 +70,7 @@ router.get("/analytics/duplicates", async (req, res, next): Promise<void> => {
           array_agg(id ORDER BY id) AS club_ids,
           array_agg(club_name_canonical ORDER BY id) AS club_names
         FROM normalized
-        WHERE normalized_name <> ''
+        WHERE length(normalized_name) >= 2
         ${stateCondition}
         GROUP BY normalized_name, state
         HAVING COUNT(*) >= ${minClubs}
@@ -88,16 +88,14 @@ router.get("/analytics/duplicates", async (req, res, next): Promise<void> => {
     `);
 
     res.json({
-      duplicates: dataRows
-        .filter((r) => normalizeClubName(String(r.normalized_name ?? "")).length >= 2)
-        .map((r) => ({
-          normalized_name: r.normalized_name,
-          state: r.state ?? null,
-          club_count: Number(r.club_count),
-          club_ids: r.club_ids,
-          club_names: r.club_names,
-          sources: (r.sources as string[] | null) ?? [],
-        })),
+      duplicates: dataRows.map((r) => ({
+        normalized_name: r.normalized_name,
+        state: r.state ?? null,
+        club_count: Number(r.club_count),
+        club_ids: r.club_ids,
+        club_names: r.club_names,
+        sources: (r.sources as string[] | null) ?? [],
+      })),
       total,
       page,
       page_size: pageSize,
@@ -223,6 +221,7 @@ router.get("/analytics/overlap", async (req, res, next): Promise<void> => {
         SELECT
           cc.id,
           cc.club_name_canonical,
+          ${sql.raw(PG_NORMALIZE_EXPR)} AS normalized_name,
           cc.city,
           cc.state,
           ml.league_count,
@@ -242,6 +241,7 @@ router.get("/analytics/overlap", async (req, res, next): Promise<void> => {
       clubs: dataRows.map((r) => ({
         id: Number(r.id),
         club_name_canonical: r.club_name_canonical as string,
+        normalized_name: r.normalized_name as string,
         city: r.city ?? null,
         state: r.state ?? null,
         league_count: Number(r.league_count),

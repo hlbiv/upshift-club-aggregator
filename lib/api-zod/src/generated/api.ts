@@ -409,6 +409,7 @@ export const OverlapResponse = zod.object({
     zod.object({
       id: zod.number(),
       club_name_canonical: zod.string(),
+      normalized_name: zod.string().describe("Club name after stripping common suffixes"),
       city: zod.string().nullable().optional(),
       state: zod.string().nullable().optional(),
       league_count: zod.number(),

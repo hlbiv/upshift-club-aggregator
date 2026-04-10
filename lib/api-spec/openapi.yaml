@@ -1016,6 +1016,9 @@ components:
           type: integer
         club_name_canonical:
           type: string
+        normalized_name:
+          type: string
+          description: Club name after stripping common suffixes (for dedup cross-referencing)
         city:
           type: string
           nullable: true
@@ -1035,6 +1038,7 @@ components:
       required:
         - id
         - club_name_canonical
+        - normalized_name
         - league_count
         - leagues
         - gender_programs
