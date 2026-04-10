@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { clubEvents } from "@workspace/db/schema";
-import { eq, ilike, and, sql, asc } from "drizzle-orm";
+import { eq, ilike, gte, lte, sql, asc } from "drizzle-orm";
 import { EventSearchResponse } from "@workspace/api-zod";
-import { parsePagination } from "../lib/pagination";
+import { parsePagination, buildWhere } from "../lib/pagination";
 
 const router: IRouter = Router();
 
@@ -16,33 +16,30 @@ router.get("/events/search", async (req, res, next): Promise<void> => {
     const gender = req.query.gender as string | undefined;
     const season = req.query.season as string | undefined;
     const source = req.query.source as string | undefined;
+    const startDateFrom = req.query.start_date_from as string | undefined;
+    const startDateTo = req.query.start_date_to as string | undefined;
 
     const { page, pageSize, offset } = parsePagination(
       req.query.page,
       req.query.page_size,
     );
 
-    const conditions = [];
-    if (clubId !== undefined && !isNaN(clubId)) {
-      conditions.push(eq(clubEvents.clubId, clubId));
-    }
-    if (league) {
-      conditions.push(ilike(clubEvents.leagueName, `%${league}%`));
-    }
-    if (ageGroup) {
-      conditions.push(ilike(clubEvents.ageGroup, `%${ageGroup}%`));
-    }
-    if (gender) {
-      conditions.push(ilike(clubEvents.gender, `%${gender}%`));
-    }
-    if (season) {
-      conditions.push(ilike(clubEvents.season, `%${season}%`));
-    }
-    if (source) {
-      conditions.push(ilike(clubEvents.sourceUrl, `%${source}%`));
-    }
-
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere([
+      clubId !== undefined && !isNaN(clubId)
+        ? eq(clubEvents.clubId, clubId)
+        : undefined,
+      league ? ilike(clubEvents.leagueName, `%${league}%`) : undefined,
+      ageGroup ? ilike(clubEvents.ageGroup, `%${ageGroup}%`) : undefined,
+      gender ? ilike(clubEvents.gender, `%${gender}%`) : undefined,
+      season ? ilike(clubEvents.season, `%${season}%`) : undefined,
+      source ? ilike(clubEvents.sourceUrl, `%${source}%`) : undefined,
+      startDateFrom
+        ? gte(clubEvents.startDate, new Date(startDateFrom))
+        : undefined,
+      startDateTo
+        ? lte(clubEvents.startDate, new Date(startDateTo))
+        : undefined,
+    ]);
 
     const [countRow] = await db
       .select({ count: sql<number>`count(*)::int` })
@@ -55,7 +52,7 @@ router.get("/events/search", async (req, res, next): Promise<void> => {
       .select()
       .from(clubEvents)
       .where(where)
-      .orderBy(asc(clubEvents.id))
+      .orderBy(asc(clubEvents.startDate), asc(clubEvents.id))
       .limit(pageSize)
       .offset(offset);
 

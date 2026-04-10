@@ -1,3 +1,5 @@
+import { and, type SQL } from "drizzle-orm";
+
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
@@ -23,4 +25,9 @@ export interface PaginatedMeta {
   total: number;
   page: number;
   page_size: number;
+}
+
+export function buildWhere(conditions: (SQL | undefined)[]): SQL | undefined {
+  const valid = conditions.filter((c): c is SQL => c !== undefined);
+  return valid.length > 0 ? and(...valid) : undefined;
 }

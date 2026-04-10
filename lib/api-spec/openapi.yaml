@@ -274,6 +274,18 @@ paths:
           schema:
             type: string
           description: Source URL substring (ILIKE)
+        - name: start_date_from
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Filter events with start_date >= this date (ISO 8601, e.g. 2024-08-01)"
+        - name: start_date_to
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Filter events with start_date <= this date (ISO 8601, e.g. 2025-06-30)"
         - name: page
           in: query
           schema:

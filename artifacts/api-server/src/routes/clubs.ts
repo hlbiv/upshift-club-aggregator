@@ -14,7 +14,7 @@ import {
   ClubSearchResponse,
   ClubStaffResponse,
 } from "@workspace/api-zod";
-import { parsePagination } from "../lib/pagination";
+import { parsePagination, buildWhere } from "../lib/pagination";
 
 const router: IRouter = Router();
 
@@ -141,20 +141,18 @@ router.get("/clubs/search", async (req, res, next): Promise<void> => {
       }
     }
 
-    const conditions = [];
-    if (name) conditions.push(ilike(canonicalClubs.clubNameCanonical, `%${name}%`));
-    if (state) conditions.push(ilike(canonicalClubs.state, `%${state}%`));
-    if (clubIds) conditions.push(inArray(canonicalClubs.id, clubIds));
-    if (hasWebsite === true) {
-      conditions.push(isNotNull(canonicalClubs.website));
-      conditions.push(ne(canonicalClubs.website, ""));
-    } else if (hasWebsite === false) {
-      conditions.push(
-        sql`(${canonicalClubs.website} IS NULL OR ${canonicalClubs.website} = '')`,
-      );
-    }
-
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere([
+      name
+        ? ilike(canonicalClubs.clubNameCanonical, `%${name}%`)
+        : undefined,
+      state ? ilike(canonicalClubs.state, `%${state}%`) : undefined,
+      clubIds ? inArray(canonicalClubs.id, clubIds) : undefined,
+      hasWebsite === true ? isNotNull(canonicalClubs.website) : undefined,
+      hasWebsite === true ? ne(canonicalClubs.website, "") : undefined,
+      hasWebsite === false
+        ? sql`(${canonicalClubs.website} IS NULL OR ${canonicalClubs.website} = '')`
+        : undefined,
+    ]);
 
     const [countRow] = await db
       .select({ count: sql<number>`count(*)::int` })

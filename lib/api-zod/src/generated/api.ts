@@ -204,6 +204,8 @@ export const SearchEventsQueryParams = zod.object({
   gender: zod.coerce.string().optional().describe("Gender filter (boys, girls)"),
   season: zod.coerce.string().optional().describe("Season identifier (e.g. 2024-2025)"),
   source: zod.coerce.string().optional().describe("Source URL substring (ILIKE)"),
+  start_date_from: zod.coerce.string().optional().describe("Filter events with start_date >= this date (ISO 8601)"),
+  start_date_to: zod.coerce.string().optional().describe("Filter events with start_date <= this date (ISO 8601)"),
   page: zod.coerce.number().default(1),
   page_size: zod.coerce.number().max(100).default(20),
 });

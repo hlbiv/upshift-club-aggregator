@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { clubCoaches } from "@workspace/db/schema";
-import { eq, ilike, gte, and, sql, asc } from "drizzle-orm";
+import { eq, ilike, gte, sql, asc } from "drizzle-orm";
 import { CoachSearchResponse } from "@workspace/api-zod";
-import { parsePagination } from "../lib/pagination";
+import { parsePagination, buildWhere } from "../lib/pagination";
 
 const router: IRouter = Router();
 
@@ -22,21 +22,16 @@ router.get("/coaches/search", async (req, res, next): Promise<void> => {
       req.query.page_size,
     );
 
-    const conditions = [];
-    if (clubId !== undefined && !isNaN(clubId)) {
-      conditions.push(eq(clubCoaches.clubId, clubId));
-    }
-    if (name) {
-      conditions.push(ilike(clubCoaches.name, `%${name}%`));
-    }
-    if (title) {
-      conditions.push(ilike(clubCoaches.title, `%${title}%`));
-    }
-    if (minConfidence !== undefined && !isNaN(minConfidence)) {
-      conditions.push(gte(clubCoaches.confidenceScore, minConfidence));
-    }
-
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const where = buildWhere([
+      clubId !== undefined && !isNaN(clubId)
+        ? eq(clubCoaches.clubId, clubId)
+        : undefined,
+      name ? ilike(clubCoaches.name, `%${name}%`) : undefined,
+      title ? ilike(clubCoaches.title, `%${title}%`) : undefined,
+      minConfidence !== undefined && !isNaN(minConfidence)
+        ? gte(clubCoaches.confidenceScore, minConfidence)
+        : undefined,
+    ]);
 
     const [countRow] = await db
       .select({ count: sql<number>`count(*)::int` })
