@@ -1,0 +1,4 @@
+soccerwire_name,canonical_name,best_match_in_master,best_match_score,classification,city,soccerwire_url
+Baton Rouge SC,Baton Rouge,Baton Rouge,100.0,DUPLICATE,,https://www.soccerwire.com/club/baton-rouge-sc/
+Louisiana Fire SC,Louisiana Fire,Louisiana Elite,82.75862068965517,NEAR_MATCH,Kenner,https://www.soccerwire.com/club/louisiana-fire/
+Louisiana TDP Elite,Louisiana Tdp Elite,Louisiana Elite,88.23529411764706,DUPLICATE,,https://www.soccerwire.com/club/louisiana-tdp-elite/
