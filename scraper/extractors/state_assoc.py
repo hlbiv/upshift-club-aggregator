@@ -22,11 +22,9 @@ Coverage (Task #12 complete — April 2026; 5 more states added):
                              PA-West (pawest-soccer.org/club-list/)
   SoccerWire  ( 8 states): HI, LA, MA, MS, NE, RI, SC, WI
     — SoccerWire WP REST API + individual club pages (Task #22, April 2026)
-  No source   ( 3 states): ND, SD, UT
-    — ND/SD: no SoccerWire clubs found; no GotSport/Maps source identified.
-    — UT:    Clubs found on SoccerWire but 5 or more exist in ECNL/GotSport
-             already; adding them via SoccerWire would create duplicates until
-             dedup runs; entry left as no_source pending dedup verification.
+  HTML club page (2 states): UT (utahyouthsoccer.net/youth-members/ — 71 clubs),
+                             ND (northdakotasoccer.org/club-info/ — 8 clubs)
+  Curated seed ( 1 state):  SD (no public directory; 28 clubs from third-party sources)
 """
 
 from __future__ import annotations
@@ -296,6 +294,28 @@ def _scrape_state(url: str, league_name: str) -> List[Dict]:
     if src_type == "soccerwire":
         from extractors.soccerwire import scrape_soccerwire_state
         return scrape_soccerwire_state(state, league_name)
+
+    if src_type == "html_club_page":
+        page_url = cfg.get("page_url", "")
+        handler = cfg.get("handler", "")
+        if handler == "utah":
+            from extractors.utah_clubs import scrape_utah_clubs
+            return scrape_utah_clubs(league_name)
+        elif handler == "north_dakota":
+            from extractors.north_dakota_clubs import scrape_nd_clubs
+            return scrape_nd_clubs(league_name)
+        else:
+            logger.warning("Unknown html_club_page handler '%s' for %s", handler, state)
+            return []
+
+    if src_type == "curated_seed":
+        handler = cfg.get("handler", "")
+        if handler == "south_dakota":
+            from extractors.south_dakota_clubs import scrape_sd_clubs
+            return scrape_sd_clubs(league_name)
+        else:
+            logger.warning("Unknown curated_seed handler '%s' for %s", handler, state)
+            return []
 
     logger.info("No automated source for %s (%s) — skipping", state, url)
     return []
