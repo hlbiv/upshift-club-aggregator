@@ -275,8 +275,10 @@
   },
   "https://www.ndsoccer.org": {
     "state": "North Dakota",
-    "type": "no_source_found",
-    "_note": "SoccerWire WP REST API \u2014 0 clubs found (April 2026). No GotSport events found in scan range 43000\u201351100 for ND. No Google Maps club directory found. AYSO Section 5 website DNS-fails. ND has no publicly discoverable club list as of Task #22."
+    "type": "html_club_page",
+    "handler": "north_dakota",
+    "page_url": "https://www.northdakotasoccer.org/club-info/",
+    "_note": "Primary site (ndsoccer.org/find-a-club/) is a SportsEngine JS widget. Secondary site (northdakotasoccer.org/club-info/) has static HTML with 8 clubs in <p><strong> blocks. April 2026."
   },
   "https://www.ntxsoccer.org": {
     "state": "North Texas",
@@ -470,8 +472,9 @@
   },
   "https://www.southdakotasoccer.com": {
     "state": "South Dakota",
-    "type": "no_source_found",
-    "_note": "SoccerWire WP REST API \u2014 0 clubs found (April 2026). No GotSport events found in scan range 43000\u201351100 for SD. No Google Maps club directory found. SD has no publicly discoverable club list as of Task #22."
+    "type": "curated_seed",
+    "handler": "south_dakota",
+    "_note": "No public club directory on southdakotasoccer.com. Curated seed list of 28 clubs from third-party directories (youthsoccersports.com, Cause IQ), USYS Midwest Conference brackets, and state tournament registrations. April 2026."
   },
   "https://www.stxsoccer.org": {
     "state": "South Texas",
@@ -489,8 +492,10 @@
   },
   "https://www.utahyouthsoccer.net": {
     "state": "Utah",
-    "type": "no_source_found",
-    "_note": "SoccerWire WP REST API \u2014 6 clubs found (Utah Storm SC, Utah Soccer Alliance, Utah Rangers FC, Utah Celtic FC, Utah Avalanche, La Roca FC) but 2+ already covered by ECNL GotSport events (Utah Avalanche, La Roca FC). Adding via SoccerWire risks duplicates before dedup runs. Update type to soccerwire once dedup coverage of ECNL UT clubs is confirmed."
+    "type": "html_club_page",
+    "handler": "utah",
+    "page_url": "https://www.utahyouthsoccer.net/youth-members/",
+    "_note": "71 clubs organized by 6 geographic regions at utahyouthsoccer.net/youth-members/. HTML table with columns: Logo, Name, Location, Website, Programs. Dedup against ECNL GotSport entries (Utah Avalanche, La Roca FC) handled by normalizer. April 2026."
   },
   "https://www.vermontsoccer.org": {
     "state": "Vermont",
