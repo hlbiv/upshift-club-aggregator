@@ -3,17 +3,17 @@
 Comparison of SoccerWire-sourced clubs against canonical clubs in `master.csv`.
 Fuzzy-match threshold: DUPLICATE ≥ 88, NEAR_MATCH 75–87, NET_NEW < 75.
 
-| State | SoccerWire Total | NET_NEW | NEAR_MATCH | DUPLICATE | NEAR_MATCH clubs (review) |
-|-------|-----------------|---------|------------|-----------|--------------------------|
-| HI | 6 | 6 | 0 | 0 | — |
-| LA | 3 | 0 | 1 | 2 | Louisiana Fire SC ≈ 'Louisiana Elite' (82.75862068965517) |
-| MA | 3 | 3 | 0 | 0 | — |
-| MS | 3 | 1 | 2 | 0 | Mississippi Rush ≈ 'South Mississippi' (84.84848484848484); Mississippi Rush United ≈ 'South Mississippi' (84.84848484848484) |
-| NE | 5 | 5 | 0 | 0 | — |
-| RI | 1 | 1 | 0 | 0 | — |
-| SC | 2 | 2 | 0 | 0 | — |
-| WI | 5 | 5 | 0 | 0 | — |
-| **TOTAL** | **28** | **23** | **3** | **2** | |
+| State | SoccerWire Total | NET_NEW | NEAR_MATCH | DUPLICATE | NEAR_MATCH clubs (review) | DUPLICATE clubs (best canonical match) |
+|-------|-----------------|---------|------------|-----------|--------------------------|----------------------------------------|
+| HI | 6 | 6 | 0 | 0 | — | — |
+| LA | 3 | 0 | 1 | 2 | Louisiana Fire SC ≈ 'Louisiana Elite' (83) | Baton Rouge SC → 'Baton Rouge' (100); Louisiana TDP Elite → 'Louisiana Elite' (88) |
+| MA | 3 | 3 | 0 | 0 | — | — |
+| MS | 3 | 1 | 2 | 0 | Mississippi Rush ≈ 'South Mississippi' (85); Mississippi Rush United ≈ 'South Mississippi' (85) | — |
+| NE | 5 | 5 | 0 | 0 | — | — |
+| RI | 1 | 1 | 0 | 0 | — | — |
+| SC | 2 | 2 | 0 | 0 | — | — |
+| WI | 5 | 5 | 0 | 0 | — | — |
+| **TOTAL** | **28** | **23** | **3** | **2** | | |
 
 ## NET_NEW clubs by state
 
@@ -60,6 +60,24 @@ Fuzzy-match threshold: DUPLICATE ≥ 88, NEAR_MATCH 75–87, NET_NEW < 75.
 - **Madison 56ers** (Madison) — https://www.soccerwire.com/club/madison-56ers/
 - **Waukesha SC** (Waukesha) — https://www.soccerwire.com/club/waukesha-sc/
 - **Rush Wisconsin** — https://www.soccerwire.com/club/rush-wisconsin/
+
+## NEAR_MATCH clubs by state (needs human review)
+
+### LA
+
+- **Louisiana Fire SC** (Kenner) ≈ `Louisiana Elite` (score 83) — https://www.soccerwire.com/club/louisiana-fire/
+
+### MS
+
+- **Mississippi Rush** (Madison) ≈ `South Mississippi` (score 85) — https://www.soccerwire.com/club/mississippi-rush/
+- **Mississippi Rush United** (Jackson) ≈ `South Mississippi` (score 85) — https://www.soccerwire.com/club/mississippi-rush-united/
+
+## DUPLICATE clubs by state (already in master.csv)
+
+### LA
+
+- **Baton Rouge SC** → `Baton Rouge` (score 100) — https://www.soccerwire.com/club/baton-rouge-sc/
+- **Louisiana TDP Elite** → `Louisiana Elite` (score 88) — https://www.soccerwire.com/club/louisiana-tdp-elite/
 
 ## Notes
 

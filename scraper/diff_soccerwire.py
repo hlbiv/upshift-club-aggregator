@@ -238,8 +238,8 @@ def _write_summary_md(path: str, state_results: Dict[str, List[Dict]], run_date:
         f"Fuzzy-match threshold: DUPLICATE ≥ {_DUPLICATE_LOW}, "
         f"NEAR_MATCH {_NEAR_MATCH_LOW}–{_DUPLICATE_LOW - 1}, NET_NEW < {_NEAR_MATCH_LOW}.",
         "",
-        "| State | SoccerWire Total | NET_NEW | NEAR_MATCH | DUPLICATE | NEAR_MATCH clubs (review) |",
-        "|-------|-----------------|---------|------------|-----------|--------------------------|",
+        "| State | SoccerWire Total | NET_NEW | NEAR_MATCH | DUPLICATE | NEAR_MATCH clubs (review) | DUPLICATE clubs (best canonical match) |",
+        "|-------|-----------------|---------|------------|-----------|--------------------------|----------------------------------------|",
     ]
 
     totals = {"total": 0, "NET_NEW": 0, "NEAR_MATCH": 0, "DUPLICATE": 0}
@@ -253,12 +253,18 @@ def _write_summary_md(path: str, state_results: Dict[str, List[Dict]], run_date:
 
         # List NEAR_MATCH clubs with their best master match for human review
         near_clubs = "; ".join(
-            f"{r['soccerwire_name']} ≈ '{r['best_match_in_master']}' ({r['best_match_score']})"
+            f"{r['soccerwire_name']} ≈ '{r['best_match_in_master']}' ({r['best_match_score']:.0f})"
             for r in rows if r["classification"] == "NEAR_MATCH"
         ) or "—"
 
+        # List DUPLICATE clubs with their matching canonical name in master
+        dupe_clubs = "; ".join(
+            f"{r['soccerwire_name']} → '{r['best_match_in_master']}' ({r['best_match_score']:.0f})"
+            for r in rows if r["classification"] == "DUPLICATE"
+        ) or "—"
+
         lines.append(
-            f"| {abbr} | {total} | {net_new} | {near} | {dupes} | {near_clubs} |"
+            f"| {abbr} | {total} | {net_new} | {near} | {dupes} | {near_clubs} | {dupe_clubs} |"
         )
         totals["total"]      += total
         totals["NET_NEW"]    += net_new
@@ -267,7 +273,7 @@ def _write_summary_md(path: str, state_results: Dict[str, List[Dict]], run_date:
 
     lines += [
         f"| **TOTAL** | **{totals['total']}** | **{totals['NET_NEW']}** "
-        f"| **{totals['NEAR_MATCH']}** | **{totals['DUPLICATE']}** | |",
+        f"| **{totals['NEAR_MATCH']}** | **{totals['DUPLICATE']}** | | |",
         "",
         "## NET_NEW clubs by state",
         "",
@@ -282,6 +288,44 @@ def _write_summary_md(path: str, state_results: Dict[str, List[Dict]], run_date:
         for r in net_new_rows:
             city_str = f" ({r['city']})" if r["city"] else ""
             lines.append(f"- **{r['soccerwire_name']}**{city_str} — {r['soccerwire_url']}")
+        lines.append("")
+
+    lines += [
+        "## NEAR_MATCH clubs by state (needs human review)",
+        "",
+    ]
+
+    for abbr in sorted(state_results.keys()):
+        near_rows = [r for r in state_results[abbr] if r["classification"] == "NEAR_MATCH"]
+        if not near_rows:
+            continue
+        lines.append(f"### {abbr}")
+        lines.append("")
+        for r in near_rows:
+            city_str = f" ({r['city']})" if r["city"] else ""
+            lines.append(
+                f"- **{r['soccerwire_name']}**{city_str} ≈ `{r['best_match_in_master']}` "
+                f"(score {r['best_match_score']:.0f}) — {r['soccerwire_url']}"
+            )
+        lines.append("")
+
+    lines += [
+        "## DUPLICATE clubs by state (already in master.csv)",
+        "",
+    ]
+
+    for abbr in sorted(state_results.keys()):
+        dupe_rows = [r for r in state_results[abbr] if r["classification"] == "DUPLICATE"]
+        if not dupe_rows:
+            continue
+        lines.append(f"### {abbr}")
+        lines.append("")
+        for r in dupe_rows:
+            city_str = f" ({r['city']})" if r["city"] else ""
+            lines.append(
+                f"- **{r['soccerwire_name']}**{city_str} → `{r['best_match_in_master']}` "
+                f"(score {r['best_match_score']:.0f}) — {r['soccerwire_url']}"
+            )
         lines.append("")
 
     lines += [
