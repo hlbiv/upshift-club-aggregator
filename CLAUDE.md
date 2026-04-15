@@ -131,7 +131,19 @@ python3 run.py --scope state     # 54 USYS state associations
 python3 run.py --league "ECNL"   # name filter
 python3 run.py --dry-run         # no writes
 python3 run.py --list            # inventory dump
+
+# Non-league scrapers (--source) and rollups (--rollup)
+python3 run.py --source gotsport-matches --event-id 12345 \
+    --season 2025-26 --league-name "ECNL Boys National"
+python3 run.py --rollup club-results
 ```
+
+### Matches + club_results pipeline (Domain 5)
+
+Two-stage pipeline to populate Path A's `matches` and `club_results`:
+
+1. **Scrape matches** — `python3 run.py --source gotsport-matches --event-id N` fetches a GotSport schedules page and upserts rows into `matches`. `home_club_id` / `away_club_id` stay NULL at scrape time; a linker job resolves them later. Writes through `scraper/ingest/matches_writer.py`, which targets the two partial unique indexes on `matches` via explicit `ON CONFLICT (cols) WHERE predicate` — Drizzle's `onConflictDoUpdate` API cannot emit the predicate, so the writer is intentionally hand-rolled SQL in psycopg2.
+2. **Rollup** — `python3 run.py --rollup club-results` recomputes `club_results` from scratch inside a transaction (`DELETE` + `INSERT ... SELECT`). Full-recompute is idempotent and safe to re-run. Matches with NULL `home_club_id` or `away_club_id` are skipped — `club_results` will stay empty until the linker runs.
 
 ---
 

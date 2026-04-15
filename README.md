@@ -33,7 +33,21 @@ python3 run.py --scope state         # All 54 USYS state associations
 python3 run.py --league "ECNL"       # Single league by name
 python3 run.py --dry-run             # Preview without writing
 python3 run.py --list                # Print league inventory
+
+# Non-league scrapers
+python3 run.py --source gotsport-matches --event-id 12345 \
+    --season 2025-26 --league-name "ECNL Boys National"
+
+# Derived-data rollups
+python3 run.py --rollup club-results
 ```
+
+The `gotsport-matches` scraper populates the `matches` table (Domain 5).
+`home_club_id` / `away_club_id` stay NULL at scrape time — a separate
+linker job resolves raw team names to canonical club FKs. The
+`club-results` rollup reads linker-resolved matches and writes aggregate
+W/L/D + GF/GA counts per `(club, season, league, division, age, gender)`.
+Full-recompute, idempotent, safe to re-run.
 
 ### Website & Staff Enrichment
 
