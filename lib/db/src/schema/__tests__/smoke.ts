@@ -99,13 +99,16 @@ assertTable(schema.coachDiscoveries, "coach_discoveries", {
 assertTable(schema.clubRosterSnapshots, "club_roster_snapshots", {
   cols: [
     "club_id",
+    "club_name_raw",
+    "source_url",
+    "snapshot_date",
     "season",
     "age_group",
     "gender",
     "player_name",
     "event_id",
   ],
-  uniques: ["club_roster_snapshots_unique"],
+  uniques: ["club_roster_snapshots_name_season_age_gender_player_uq"],
   indexes: ["club_roster_snapshots_club_season_idx"],
 });
 
@@ -254,18 +257,26 @@ assertTable(schema.clubResults, "club_results", {
 assertTable(schema.rosterDiffs, "roster_diffs", {
   cols: [
     "club_id",
-    "season_from",
-    "season_to",
-    "players_joined",
-    "players_departed",
-    "players_retained",
+    "club_name_raw",
+    "season",
+    "age_group",
+    "gender",
+    "player_name",
+    "diff_type",
+    "from_jersey_number",
+    "to_jersey_number",
+    "from_position",
+    "to_position",
+    "detected_at",
   ],
-  uniques: ["roster_diffs_unique"],
+  uniques: ["roster_diffs_name_season_age_gender_player_type_uq"],
+  checks: ["roster_diffs_diff_type_enum"],
 });
 
 assertTable(schema.tryouts, "tryouts", {
   cols: [
     "club_id",
+    "club_name_raw",
     "tryout_date",
     "age_group",
     "gender",
@@ -273,7 +284,7 @@ assertTable(schema.tryouts, "tryouts", {
     "status",
     "site_change_id",
   ],
-  uniques: ["tryouts_club_date_bracket_uq"],
+  uniques: ["tryouts_name_date_bracket_uq"],
   checks: ["tryouts_source_enum", "tryouts_status_enum"],
 });
 

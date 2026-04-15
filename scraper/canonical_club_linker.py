@@ -4,9 +4,12 @@ event + match scrapers to `canonical_clubs.id`, populating the nullable
 FK columns those scrapers deliberately leave blank.
 
 Populates:
-  - event_teams.canonical_club_id  (from event_teams.team_name_raw)
-  - matches.home_club_id           (from matches.home_team_name)
-  - matches.away_club_id           (from matches.away_team_name)
+  - event_teams.canonical_club_id       (from event_teams.team_name_raw)
+  - matches.home_club_id                (from matches.home_team_name)
+  - matches.away_club_id                (from matches.away_team_name)
+  - club_roster_snapshots.club_id       (from club_roster_snapshots.club_name_raw)
+  - roster_diffs.club_id                (from roster_diffs.club_name_raw)
+  - tryouts.club_id                     (from tryouts.club_name_raw)
 
 Resolution strategy (4 passes, each optimistic, short-circuits on first hit):
   1. Exact alias match          SELECT club_id FROM club_aliases WHERE alias_name = ?
@@ -275,6 +278,71 @@ def _update_match_side(cur, row_id: int, side: str, club_id: int) -> None:
     )
 
 
+def _fetch_null_roster_snapshots(
+    cur, limit: Optional[int]
+) -> List[Tuple[int, str]]:
+    sql = (
+        "SELECT id, club_name_raw FROM club_roster_snapshots "
+        "WHERE club_id IS NULL "
+        "AND club_name_raw IS NOT NULL AND club_name_raw <> '' "
+        "ORDER BY id"
+    )
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    cur.execute(sql)
+    return list(cur.fetchall())
+
+
+def _update_roster_snapshot(cur, row_id: int, club_id: int) -> None:
+    cur.execute(
+        "UPDATE club_roster_snapshots SET club_id = %s "
+        "WHERE id = %s AND club_id IS NULL",
+        (club_id, row_id),
+    )
+
+
+def _fetch_null_roster_diffs(cur, limit: Optional[int]) -> List[Tuple[int, str]]:
+    sql = (
+        "SELECT id, club_name_raw FROM roster_diffs "
+        "WHERE club_id IS NULL "
+        "AND club_name_raw IS NOT NULL AND club_name_raw <> '' "
+        "ORDER BY id"
+    )
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    cur.execute(sql)
+    return list(cur.fetchall())
+
+
+def _update_roster_diff(cur, row_id: int, club_id: int) -> None:
+    cur.execute(
+        "UPDATE roster_diffs SET club_id = %s "
+        "WHERE id = %s AND club_id IS NULL",
+        (club_id, row_id),
+    )
+
+
+def _fetch_null_tryouts(cur, limit: Optional[int]) -> List[Tuple[int, str]]:
+    sql = (
+        "SELECT id, club_name_raw FROM tryouts "
+        "WHERE club_id IS NULL "
+        "AND club_name_raw IS NOT NULL AND club_name_raw <> '' "
+        "ORDER BY id"
+    )
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    cur.execute(sql)
+    return list(cur.fetchall())
+
+
+def _update_tryout(cur, row_id: int, club_id: int) -> None:
+    cur.execute(
+        "UPDATE tryouts SET club_id = %s "
+        "WHERE id = %s AND club_id IS NULL",
+        (club_id, row_id),
+    )
+
+
 def _insert_alias(cur, club_id: int, alias_name: str) -> None:
     """
     Cache a fuzzy-hit alias so future runs short-circuit at pass #1.
@@ -297,6 +365,9 @@ class LinkerStats:
     event_teams_linked: int = 0
     matches_home_linked: int = 0
     matches_away_linked: int = 0
+    roster_snapshots_linked: int = 0
+    roster_diffs_linked: int = 0
+    tryouts_linked: int = 0
     unmatched_names: Counter = field(default_factory=Counter)
     pass_hits: Counter = field(default_factory=Counter)
     aliases_written: int = 0
@@ -306,6 +377,9 @@ class LinkerStats:
             self.event_teams_linked
             + self.matches_home_linked
             + self.matches_away_linked
+            + self.roster_snapshots_linked
+            + self.roster_diffs_linked
+            + self.tryouts_linked
         )
 
     def unmatched_sample(self, n: int = 20) -> List[str]:
@@ -316,6 +390,9 @@ class LinkerStats:
             "event_teams_linked": self.event_teams_linked,
             "matches_home_linked": self.matches_home_linked,
             "matches_away_linked": self.matches_away_linked,
+            "roster_snapshots_linked": self.roster_snapshots_linked,
+            "roster_diffs_linked": self.roster_diffs_linked,
+            "tryouts_linked": self.tryouts_linked,
             "pass_1_alias_hits": self.pass_hits.get(1, 0),
             "pass_2_canonical_hits": self.pass_hits.get(2, 0),
             "pass_3_fuzzy_hits": self.pass_hits.get(3, 0),
@@ -357,11 +434,18 @@ def link_all(
         event_team_rows = _fetch_null_event_teams(cur, limit)
         matches_home = _fetch_null_matches(cur, "home", limit)
         matches_away = _fetch_null_matches(cur, "away", limit)
+        roster_snapshot_rows = _fetch_null_roster_snapshots(cur, limit)
+        roster_diff_rows = _fetch_null_roster_diffs(cur, limit)
+        tryout_rows = _fetch_null_tryouts(cur, limit)
         log.info(
-            "Candidates: %d event_teams, %d matches.home, %d matches.away",
+            "Candidates: %d event_teams, %d matches.home, %d matches.away, "
+            "%d roster_snapshots, %d roster_diffs, %d tryouts",
             len(event_team_rows),
             len(matches_home),
             len(matches_away),
+            len(roster_snapshot_rows),
+            len(roster_diff_rows),
+            len(tryout_rows),
         )
 
         def _handle(raw: str) -> ResolveResult:
@@ -413,6 +497,33 @@ def link_all(
             if not dry_run:
                 _update_match_side(cur, row_id, "away", res.club_id)
 
+        # club_roster_snapshots
+        for row_id, raw in roster_snapshot_rows:
+            res = _handle(raw)
+            if res.club_id is None:
+                continue
+            stats.roster_snapshots_linked += 1
+            if not dry_run:
+                _update_roster_snapshot(cur, row_id, res.club_id)
+
+        # roster_diffs
+        for row_id, raw in roster_diff_rows:
+            res = _handle(raw)
+            if res.club_id is None:
+                continue
+            stats.roster_diffs_linked += 1
+            if not dry_run:
+                _update_roster_diff(cur, row_id, res.club_id)
+
+        # tryouts
+        for row_id, raw in tryout_rows:
+            res = _handle(raw)
+            if res.club_id is None:
+                continue
+            stats.tryouts_linked += 1
+            if not dry_run:
+                _update_tryout(cur, row_id, res.club_id)
+
         if dry_run:
             conn.rollback()
         else:
@@ -462,6 +573,9 @@ def run_cli(dry_run: bool = False, limit: Optional[int] = None) -> int:
     print(
         f"Linked {stats.event_teams_linked} event_teams, "
         f"{stats.matches_home_linked + stats.matches_away_linked} match sides, "
+        f"{stats.roster_snapshots_linked} roster_snapshots, "
+        f"{stats.roster_diffs_linked} roster_diffs, "
+        f"{stats.tryouts_linked} tryouts, "
         f"{len(stats.unmatched_names)} unmatched unique raw names."
     )
     if stats.unmatched_names:
