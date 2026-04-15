@@ -50,6 +50,7 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 │   ├── scraper_static.py        # BeautifulSoup
 │   ├── scraper_js.py            # Playwright
 │   ├── normalizer.py            # RapidFuzz dedup (threshold 88)
+│   ├── canonical_club_linker.py # 4-pass raw-team-name → canonical_clubs.id resolver
 │   ├── extractors/              # Per-site custom extractors (URL-pattern matched)
 │   └── tests/                   # Pytest suite
 ├── lib/
@@ -165,6 +166,22 @@ pnpm --filter @workspace/api-server run dev            # start API on 8080
 
 Base: `/api` on port 8080. Pagination: `?page=1&page_size=20` (max 100).
 
+### Authentication (M2M)
+
+Every `/api/*` route except `/api/healthz` requires a valid API key in either `X-API-Key: <key>` or `Authorization: Bearer <key>` — **when the `API_KEY_AUTH_ENABLED=true` env var is set**. Without the flag the middleware is skipped entirely and the server logs `[api-key-auth] DISABLED` on boot. This lets a fresh deploy mint a key before enforcement turns on (otherwise merging this PR would 401 every call until someone ran the create-key script). Middleware lives at `artifacts/api-server/src/middlewares/apiKeyAuth.ts` and is conditionally mounted in `app.ts` before the router. The `api_keys` table stores only sha256 hashes — plaintext is shown once at creation time via `scripts/src/create-api-key.ts`. Revoke via `scripts/src/revoke-api-key.ts --prefix <8-char>`. `last_used_at` is updated on every successful lookup inside `findApiKeyByHash` (revoked rows are filtered in SQL via `AND revoked_at IS NULL`, so a revoked key never gets its timestamp bumped). 401 bodies are a generic `{error: "unauthorized"}` for every failure mode; the specific reason (`missing` / `notfound`) is logged server-side via `console.warn` with ip + path + key prefix.
+
+**Bootstrap (Replit, first deploy):**
+1. Pull + `pnpm install` + `pnpm --filter @workspace/db run push` (creates `api_keys`).
+2. Mint the first key:
+   ```bash
+   pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-player-platform prod"
+   ```
+3. Copy the plaintext into the caller's `UPSHIFT_DATA_API_KEY` env var.
+4. Set `API_KEY_AUTH_ENABLED=true` in Replit Secrets.
+5. Restart the API server — boot log prints `[api-key-auth] enabled`.
+
+Rotating = create new → update env → revoke old. Helpers (`hashApiKey`, `generateApiKey`, `findApiKeyByHash`) are exported from `@workspace/db`.
+
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/healthz` | Health |
@@ -225,15 +242,26 @@ Empty counts + `total: 0` are expected until a scraper-wiring PR populates the n
 - ✅ `/api/events/search` rewired to `events` + `event_teams`; `club_events` dropped in the same PR
 - ⏳ **Next:** wire scrapers to populate Path A tables (`events`, `event_teams`, `matches`, rosters, etc.)
 
-### `/api/events/search?club_id=N` empty until linker runs
+### Canonical-Club Linker
 
-The SincSports events scraper (PR #11) writes `event_teams.canonical_club_id = NULL`
-on every row by design — the linker job on branch `claude/canonical-club-linker`
-owns that column and resolves it by matching `team_name_canonical` against
-`canonical_clubs`. Until that PR merges and the linker runs, filtering
-`/api/events/search` by `club_id` will return an empty list even when teams
-from that club are present in `event_teams`. Filtering by league/age/gender/
-date range works today without the linker.
+Event + match scrapers write `team_name_raw` / `home_team_name` / `away_team_name` and leave the `canonical_club_id` / `home_club_id` / `away_club_id` FKs NULL on purpose (keeps scraper code simple and surfaces parsing bugs instead of hiding them behind fuzzy matching). A separate linker job resolves those FKs.
+
+**Run after every scrape** on Replit:
+
+```bash
+cd scraper && python3 run.py --source link-canonical-clubs
+# optional smoke: --dry-run, --limit 100
+```
+
+4-pass resolver, each pass short-circuits on hit:
+1. Exact alias match (`club_aliases.alias_name`)
+2. Exact canonical match (`canonical_clubs.club_name_canonical`)
+3. Fuzzy match via `rapidfuzz.fuzz.token_set_ratio >= 88`; on hit, writes a new `club_aliases` row so future runs hit pass #1
+4. No match — leaves FK NULL, reports the top unmatched raw names
+
+Idempotent — only touches rows where the FK is currently NULL.
+
+**Downstream consumers depend on this running:** `/api/events/search?club_id=N` (SincSports events scraper in PR #11 writes NULL FKs by design), `matches` → `club_results` rollup. Neither works end-to-end without at least one linker pass.
 
 See `docs/path-a-data-model.md` for the full domain-by-domain spec + changelog.
 
