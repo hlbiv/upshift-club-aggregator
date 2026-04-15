@@ -34,6 +34,11 @@ from scraper_js import scrape_js
 from normalizer import normalize, deduplicate
 from storage import save_league_csv, append_to_master
 import extractors.registry as _extractor_registry
+from scrape_run_logger import (
+    ScrapeRunLogger,
+    FailureKind as DbFailureKind,
+    classify_exception as _db_classify_exception,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,7 +68,10 @@ class LeagueFailure:
     detail: str = ""
 
 
-_TIMEOUT_MARKERS = ("timeout", "timed out", "TimeoutError")
+# NOTE: markers compared against `.lower()`-ed message and exc_type, so
+# every entry must be lowercase to match. "TimeoutError".lower() is
+# "timeouterror".
+_TIMEOUT_MARKERS = ("timeout", "timed out", "timeouterror")
 _NETWORK_MARKERS = (
     "connectionerror", "connection", "network", "dns",
     "err_name_not_resolved", "err_connection", "err_internet",
@@ -98,6 +106,12 @@ def _classify_exception(exc: Exception) -> FailureKind:
 # Core scraping logic
 # ---------------------------------------------------------------------------
 
+def _scraper_key_for(league: dict) -> str:
+    """Stable key per league-scraper pair for scrape_run_logs rollups."""
+    base = league.get("scraper_key") or league["name"].lower().replace(" ", "-")
+    return base
+
+
 def scrape_league(
     league: dict,
     dry_run: bool = False,
@@ -108,6 +122,10 @@ def scrape_league(
       - df            is the resulting DataFrame (may be empty on failure)
       - extractor_name identifies which code path produced the data
       - failure       is a LeagueFailure if something went wrong, else None
+
+    Also persists a row to `scrape_run_logs` for every invocation — the
+    row starts as status='running' and transitions to ok|failed|partial
+    at the end. Dry-run invocations skip the log write entirely.
     """
     name = league["name"]
     url = league["url"]
@@ -121,6 +139,21 @@ def scrape_league(
     )
 
     failure: Optional[LeagueFailure] = None
+    # Persistent run log — no-ops if DATABASE_URL unset or dry-run.
+    run_log: Optional[ScrapeRunLogger] = None
+    if not dry_run:
+        run_log = ScrapeRunLogger(
+            scraper_key=_scraper_key_for(league),
+            league_name=name,
+        )
+        run_log.start(source_url=url)
+
+    def _fail(kind: FailureKind, exc_or_msg) -> None:
+        if run_log is not None:
+            run_log.finish_failed(
+                DbFailureKind(kind.value),
+                error_message=str(exc_or_msg),
+            )
 
     # Check for a custom extractor first
     custom = _extractor_registry.get_extractor(url)
@@ -135,6 +168,7 @@ def scrape_league(
             logger.error("Custom extractor %s failed for %s: %s", custom.__name__, name, exc)
             if not dry_run:
                 save_league_csv(pd.DataFrame(), name)
+            _fail(kind, exc)
             return pd.DataFrame(), extractor_name, failure
     elif league.get("js_required"):
         extractor_name = "scraper_js"
@@ -146,6 +180,7 @@ def scrape_league(
             logger.error("JS scrape failed for %s: %s", name, exc)
             if not dry_run:
                 save_league_csv(pd.DataFrame(), name)
+            _fail(kind, exc)
             return pd.DataFrame(), extractor_name, failure
     else:
         extractor_name = "scraper_static"
@@ -157,6 +192,7 @@ def scrape_league(
             logger.error("Static scrape failed for %s: %s", name, exc)
             if not dry_run:
                 save_league_csv(pd.DataFrame(), name)
+            _fail(kind, exc)
             return pd.DataFrame(), extractor_name, failure
 
     if not raw:
@@ -168,6 +204,7 @@ def scrape_league(
         failure = LeagueFailure(name, url, FailureKind.ZERO_RESULTS, "scraper returned empty list")
         if not dry_run:
             save_league_csv(pd.DataFrame(), name)
+        _fail(FailureKind.ZERO_RESULTS, "scraper returned empty list")
         return pd.DataFrame(), extractor_name, failure
 
     df = pd.DataFrame(raw)
@@ -209,6 +246,19 @@ def scrape_league(
         logger.info("Saved: %s", path)
     elif dry_run:
         logger.info("[dry-run] Would save %d clubs for '%s'", len(df), name)
+
+    # Persist run outcome. CSV output is the aggregator's current
+    # "record" — the number of clubs written is reported as
+    # records_created. When the scraper gets a DB-resident upsert path
+    # (separate PR), this should split into created vs updated.
+    if run_log is not None:
+        if club_count == 0:
+            run_log.finish_partial(
+                records_failed=0,
+                error_message="scraped records collapsed to 0 after normalize/dedup",
+            )
+        else:
+            run_log.finish_ok(records_created=club_count)
 
     return df, extractor_name, None
 
@@ -431,4 +481,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        # Release the module-level scrape_run_logger connection so the
+        # process exits cleanly even if main() raised.
+        try:
+            from scrape_run_logger import close_connection as _close_conn
+            _close_conn()
+        except Exception:
+            pass
