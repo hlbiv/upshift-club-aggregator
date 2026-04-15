@@ -193,6 +193,21 @@ psql "$DATABASE_URL" -c "SELECT count(*) FROM coach_discoveries WHERE coach_id I
 
 Do NOT paste shell comments (lines starting with `#`) or em-dashes as CLI args — the shell will treat them as arguments and `drizzle-kit push` will reject them.
 
+### Events-route rewire (PR #8) — post-merge steps
+
+```bash
+pnpm install
+pnpm --filter @workspace/db run push
+# drizzle-kit will prompt: "Is club_events table created or renamed from another table?"
+#   → answer No. Then: "about to drop table club_events"
+#   → answer Yes (the table is empty per the April 2026 backfill verification).
+psql "$DATABASE_URL" -c "\dt club_events"          # should return "Did not find any relation"
+psql "$DATABASE_URL" -c "SELECT count(*) FROM events; SELECT count(*) FROM event_teams;"
+curl -s 'http://localhost:8080/api/events/search?page=1&page_size=5' | jq '.total'
+```
+
+Empty counts + `total: 0` are expected until a scraper-wiring PR populates the new tables. The route returning 200 with an empty list is the success criterion for this PR.
+
 ---
 
 ## Path A Status (as of April 2026)

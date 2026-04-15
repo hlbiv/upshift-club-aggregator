@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { events, eventTeams } from "@workspace/db/schema";
-import { eq, ilike, gte, lte, sql, asc, or } from "drizzle-orm";
+import { eq, ilike, gte, lte, sql, asc } from "drizzle-orm";
 import { EventSearchResponse } from "@workspace/api-zod";
 import { parsePagination, buildWhere } from "../lib/pagination";
 
@@ -63,29 +63,29 @@ router.get("/events/search", async (req, res, next): Promise<void> => {
       req.query.page_size,
     );
 
-    // Age / gender filters hit the per-team value first, falling back to
-    // the event-level value. This preserves the original single-column
-    // filter semantics while taking advantage of the richer two-table
-    // model where it's populated.
+    // Age / gender / source filters use COALESCE(team_value, event_value)
+    // so the per-team column wins when populated and the event-level column
+    // is consulted only as a fallback. Plain `OR` across both tables is too
+    // broad: in a single-bracket event where `events.age_group='U15'`, an
+    // `age_group=U15` query would pull in every team row even if a specific
+    // team has `event_teams.age_group='U14'` (scrape drift or mixed
+    // bracket). COALESCE preserves the original single-column semantics.
     const ageGroupMatch = ageGroup
-      ? or(
-          ilike(eventTeams.ageGroup, `%${escapeLike(ageGroup)}%`),
-          ilike(events.ageGroup, `%${escapeLike(ageGroup)}%`),
-        )
+      ? sql`COALESCE(${eventTeams.ageGroup}, ${events.ageGroup}) ILIKE ${
+          `%${escapeLike(ageGroup)}%`
+        }`
       : undefined;
 
     const genderMatch = gender
-      ? or(
-          ilike(eventTeams.gender, `%${escapeLike(gender)}%`),
-          ilike(events.gender, `%${escapeLike(gender)}%`),
-        )
+      ? sql`COALESCE(${eventTeams.gender}, ${events.gender}) ILIKE ${
+          `%${escapeLike(gender)}%`
+        }`
       : undefined;
 
     const sourceMatch = source
-      ? or(
-          ilike(eventTeams.sourceUrl, `%${escapeLike(source)}%`),
-          ilike(events.sourceUrl, `%${escapeLike(source)}%`),
-        )
+      ? sql`COALESCE(${eventTeams.sourceUrl}, ${events.sourceUrl}) ILIKE ${
+          `%${escapeLike(source)}%`
+        }`
       : undefined;
 
     const where = buildWhere([
