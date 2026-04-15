@@ -391,7 +391,25 @@ def main() -> None:
     parser.add_argument("--teams", action="store_true",
                         help="Also scrape team-level data (age groups, contacts) where available. "
                              "For GotSport leagues this makes one additional HTTP request per club.")
+    parser.add_argument("--source", metavar="KEY",
+                        help="Run a dedicated Path-A-aware scraper instead of the "
+                             "legacy club-listing pipeline. Supported: "
+                             "'sincsports-events' (populates events + event_teams).")
+    parser.add_argument("--tid", metavar="TID",
+                        help="When --source=sincsports-events, scrape a single tid instead "
+                             "of iterating the full seed list.")
     args = parser.parse_args()
+
+    # Path-A sources short-circuit the legacy club-listing pipeline.
+    if args.source:
+        key = args.source.lower().strip()
+        if key in ("sincsports-events", "sincsports_events"):
+            from events_runner import run_sincsports_events, print_summary
+            outcomes = run_sincsports_events(dry_run=args.dry_run, only_tid=args.tid)
+            print_summary(outcomes)
+            return
+        logger.error("Unknown --source: %s", args.source)
+        sys.exit(2)
 
     if args.teams:
         os.environ["UPSHIFT_SCRAPE_TEAMS"] = "1"

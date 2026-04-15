@@ -131,6 +131,11 @@ python3 run.py --scope state     # 54 USYS state associations
 python3 run.py --league "ECNL"   # name filter
 python3 run.py --dry-run         # no writes
 python3 run.py --list            # inventory dump
+
+# Path-A-aware scrapers (write to events + event_teams, not CSVs)
+python3 run.py --source sincsports-events                # all 14 SincSports seeds
+python3 run.py --source sincsports-events --dry-run      # preview without DB writes
+python3 run.py --source sincsports-events --tid GULFC    # single event
 ```
 
 ---

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<!--
+  Minimal synthetic fixture mirroring the TTTeamList.aspx?tid=GULFC HTML
+  shape as scraped in April 2026. Structure confirmed live:
+    - <title>Team List - <Event Name></title>
+    - Each division has an <h2> header followed by a <table> with
+      headers: Team | Club | State | Division | Points
+    - Several non-team tables interleave (menus, alerts) — our parser
+      filters on the header-cell signature.
+-->
+<html>
+<head><title>Team List - Coastal Soccer Invitational</title></head>
+<body>
+  <table><tr><td>SincSports Alert</td><td>Some banner</td></tr></table>
+
+  <h2>2017 (U9) Girls Gold 7v7</h2>
+  <table>
+    <tr><th>Team</th><th>Club</th><th>State</th><th>Division</th><th>Points</th></tr>
+    <tr><td>Foley FC 2017 Girls</td><td>Foley FC</td><td>AL</td><td>Gold</td><td>0</td></tr>
+    <tr><td>Mobile United G17</td><td>Mobile United</td><td>AL</td><td>Gold</td><td>0</td></tr>
+    <tr><td>Pensacola FC 17G Red</td><td>Pensacola FC</td><td>FL</td><td>Gold</td><td>0</td></tr>
+  </table>
+
+  <h2>2014 (U12) Boys Silver</h2>
+  <table>
+    <tr><th>Team</th><th>Club</th><th>State</th><th>Division</th><th>Points</th></tr>
+    <tr><td>Foley FC 14B</td><td>Foley FC</td><td>AL</td><td>Silver</td><td>0</td></tr>
+    <tr><td>NOLA Lightning 14B</td><td>NOLA Lightning</td><td>LA</td><td>Silver</td><td>0</td></tr>
+    <tr><td>TBD</td><td></td><td></td><td></td><td></td></tr>
+  </table>
+
+  <h2>2009 (U17) Girls Premier 11v11</h2>
+  <table>
+    <tr><th>Team</th><th>Club</th><th>State</th><th>Division</th><th>Points</th></tr>
+    <tr><td>Mississippi Rush 09G</td><td>Mississippi Rush</td><td>MS</td><td>Premier</td><td>0</td></tr>
+    <tr><td>Foley FC 09G</td><td>Foley FC</td><td>AL</td><td>Premier</td><td>0</td></tr>
+  </table>
+
+  <h2>Schedules are final.</h2>
+  <table><tr><td>Display Settings</td><td>xyz</td></tr></table>
+</body>
+</html>
