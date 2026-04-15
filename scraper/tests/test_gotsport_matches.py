@@ -49,6 +49,45 @@ def test_parse_score_invalid_returns_none():
     assert _parse_score("TBD") == (None, None)
 
 
+def test_parse_score_with_result_prefix():
+    # "W 3-2", "L 1-3", "D 2-2", "T 1-1"
+    assert _parse_score("W 3-2") == (3, 2)
+    assert _parse_score("L 1-3") == (1, 3)
+    assert _parse_score("D 2-2") == (2, 2)
+    assert _parse_score("T 1-1") == (1, 1)
+
+
+def test_parse_score_with_forfeit_marker():
+    # Forfeit markers: "F 1-0" (leading), "0-0 FF" (trailing).
+    assert _parse_score("F 1-0") == (1, 0)
+    assert _parse_score("0-0 FF") == (0, 0)
+
+
+def test_parse_score_with_shootout():
+    # "2-2 (4-3)" — main score goes to DB, PK score is discarded.
+    assert _parse_score("2-2 (4-3)") == (2, 2)
+    assert _parse_score("1-1 (5-4)") == (1, 1)
+
+
+def test_parse_score_with_prefix_and_shootout():
+    assert _parse_score("W 2-2 (4-3)") == (2, 2)
+
+
+def test_normalize_status_forfeit_from_score_cell():
+    # "0-0 FF" should classify as forfeit even with no explicit status col.
+    from extractors.gotsport_matches import _normalize_status as ns
+    assert ns(None, 0, 0, "0-0 FF") == "forfeit"
+    assert ns(None, 1, 0, "F 1-0") == "forfeit"
+
+
+def test_bye_cell_detection():
+    from extractors.gotsport_matches import _is_bye_cell
+    assert _is_bye_cell("BYE") is True
+    assert _is_bye_cell("bye") is True
+    assert _is_bye_cell("3-2") is False
+    assert _is_bye_cell("") is False
+
+
 def test_parse_age_gender_boys():
     assert _parse_age_gender("B15 Premier") == ("U15", "M")
 
@@ -147,6 +186,45 @@ def test_extract_matches_scheduled_row_has_none_scores():
     assert s["home_score"] is None
     assert s["away_score"] is None
     assert s["status"] == "scheduled"
+
+
+def test_extract_matches_score_variants_fixture():
+    """BYE is skipped; W-prefix, F/FF forfeit, shootout, and empty-score
+    (future match) rows all parse correctly.
+    """
+    html = _read_fixture("schedules_score_variants.html")
+    rows = _extract_matches_from_html(
+        html,
+        event_id=88888,
+        source_url="https://example.test",
+        default_season="2025-26",
+    )
+    by_id = {r["platform_match_id"]: r for r in rows}
+
+    # SV-5 is a BYE and must NOT appear.
+    assert "SV-5" not in by_id
+    # The other four all should.
+    assert set(by_id.keys()) == {"SV-1", "SV-2", "SV-3", "SV-4"}
+
+    # SV-1: "W 3-2" → scores 3/2, final
+    assert by_id["SV-1"]["home_score"] == 3
+    assert by_id["SV-1"]["away_score"] == 2
+    assert by_id["SV-1"]["status"] == "final"
+
+    # SV-2: "F 1-0" → scores 1/0, status = forfeit
+    assert by_id["SV-2"]["home_score"] == 1
+    assert by_id["SV-2"]["away_score"] == 0
+    assert by_id["SV-2"]["status"] == "forfeit"
+
+    # SV-3: "2-2 (4-3)" → main score 2/2, status = final, PK score discarded
+    assert by_id["SV-3"]["home_score"] == 2
+    assert by_id["SV-3"]["away_score"] == 2
+    assert by_id["SV-3"]["status"] == "final"
+
+    # SV-4: empty score cell, future match → scheduled with null scores
+    assert by_id["SV-4"]["home_score"] is None
+    assert by_id["SV-4"]["away_score"] is None
+    assert by_id["SV-4"]["status"] == "scheduled"
 
 
 def test_extract_matches_idempotent_within_single_scrape():

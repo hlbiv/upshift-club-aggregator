@@ -15,11 +15,32 @@ Two unique indexes on ``matches`` that we must target explicitly:
             COALESCE(gender, '')
         ) WHERE platform_match_id IS NULL
 
-Postgres' ``ON CONFLICT`` clause accepts the column list + the partial
-index predicate, so we can target either one from psycopg2. We choose
-at insert time based on whether ``platform_match_id`` is set — rows
-with a platform id always use the first index; rows without always use
-the second.
+Postgres' ``ON CONFLICT`` inference does **text-exact matching** against
+``pg_index.indexprs``. Drizzle's generated index expressions can differ in
+parenthesization / whitespace / casts from what a handwritten
+``ON CONFLICT (col, (COALESCE(x, '')), ...)`` statement emits, which
+makes inference brittle and produces the dreaded
+``no unique or exclusion constraint matching the ON CONFLICT`` error
+at runtime even though the index exists.
+
+To bypass the text-match rule entirely, we use
+``ON CONFLICT ON CONSTRAINT <index_name>`` and reference the Drizzle
+index names directly (they're stable: see
+``lib/db/src/schema/matches.ts``). This is resilient to Drizzle
+reformatting the stored expression text.
+
+Split-brain guard
+-----------------
+A match can be ingested first via the natural key (no ``platform_match_id``)
+and later re-ingested with an id. The natural-key ON CONFLICT won't see
+the new id, and the (source, platform_match_id) ON CONFLICT won't see
+the natural-key row — net result: duplicate row.
+
+Before every INSERT that carries a ``platform_match_id`` we run a
+pre-sweep UPDATE that stamps the id onto any existing natural-key row
+that matches. After the sweep the row is reachable by the
+(source, platform_match_id) partial unique index, so the INSERT ... ON
+CONFLICT always resolves to the right row.
 
 Sibling repos use the Drizzle ``onConflictDoUpdate`` API which cannot
 emit the ``WHERE ...`` predicate — psycopg2 can. If you're ever
@@ -56,8 +77,7 @@ INSERT INTO matches (
     %(match_date)s, %(age_group)s, %(gender)s, %(division)s, %(season)s, %(league)s,
     %(status)s, %(source)s, %(source_url)s, %(platform_match_id)s
 )
-ON CONFLICT (source, platform_match_id)
-WHERE platform_match_id IS NOT NULL
+ON CONFLICT ON CONSTRAINT matches_source_platform_id_uq
 DO UPDATE SET
     home_team_name = EXCLUDED.home_team_name,
     away_team_name = EXCLUDED.away_team_name,
@@ -94,14 +114,7 @@ INSERT INTO matches (
     %(match_date)s, %(age_group)s, %(gender)s, %(division)s, %(season)s, %(league)s,
     %(status)s, %(source)s, %(source_url)s, %(platform_match_id)s
 )
-ON CONFLICT (
-    home_team_name,
-    away_team_name,
-    (COALESCE(match_date, 'epoch'::timestamp)),
-    (COALESCE(age_group, '')),
-    (COALESCE(gender, ''))
-)
-WHERE platform_match_id IS NULL
+ON CONFLICT ON CONSTRAINT matches_natural_key_uq
 DO UPDATE SET
     home_score = EXCLUDED.home_score,
     away_score = EXCLUDED.away_score,
@@ -114,6 +127,23 @@ DO UPDATE SET
     event_id = COALESCE(EXCLUDED.event_id, matches.event_id),
     scraped_at = NOW()
 RETURNING id, (xmax = 0) AS inserted
+"""
+
+
+# Split-brain pre-sweep: stamp the incoming platform_match_id onto any
+# pre-existing natural-key row that matches. Returns the number of rows
+# upgraded (so the caller can log the count per run).
+_PRESWEEP_PLATFORM_ID = """
+UPDATE matches
+SET platform_match_id = %(platform_match_id)s,
+    source = COALESCE(matches.source, %(source)s)
+WHERE platform_match_id IS NULL
+  AND home_team_name = %(home_team_name)s
+  AND away_team_name = %(away_team_name)s
+  AND COALESCE(match_date, 'epoch'::timestamp)
+      = COALESCE(%(match_date)s::timestamp, 'epoch'::timestamp)
+  AND COALESCE(age_group, '') = COALESCE(%(age_group)s, '')
+  AND COALESCE(gender, '')    = COALESCE(%(gender)s, '')
 """
 
 
@@ -170,7 +200,7 @@ def insert_matches(
 
     Dry-run returns zero counts and does not open a connection.
     """
-    counts = {"inserted": 0, "updated": 0, "skipped": 0}
+    counts = {"inserted": 0, "updated": 0, "skipped": 0, "presweep_upgraded": 0}
     if not rows:
         return counts
     if dry_run:
@@ -185,12 +215,16 @@ def insert_matches(
         with conn.cursor() as cur:
             for raw in rows:
                 row = _normalize_row(raw)
-                sql = (
-                    _INSERT_WITH_PLATFORM_ID
-                    if row["platform_match_id"] is not None
-                    else _INSERT_NATURAL_KEY
-                )
+                has_pid = row["platform_match_id"] is not None
+                sql = _INSERT_WITH_PLATFORM_ID if has_pid else _INSERT_NATURAL_KEY
                 try:
+                    # Split-brain sweep: upgrade any prior natural-key
+                    # row to carry this platform_match_id so the INSERT
+                    # below resolves via (source, platform_match_id).
+                    if has_pid:
+                        cur.execute(_PRESWEEP_PLATFORM_ID, row)
+                        if cur.rowcount and cur.rowcount > 0:
+                            counts["presweep_upgraded"] += cur.rowcount
                     cur.execute(sql, row)
                     result = cur.fetchone()
                 except Exception as exc:
@@ -217,4 +251,9 @@ def insert_matches(
         if own_conn and conn is not None:
             conn.close()
 
+    if counts["presweep_upgraded"]:
+        log.info(
+            "[matches-writer] split-brain sweep: upgraded %d prior natural-key row(s) with platform_match_id",
+            counts["presweep_upgraded"],
+        )
     return counts

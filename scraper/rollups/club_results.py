@@ -45,6 +45,19 @@ log = logging.getLogger(__name__)
 # The rollup aggregates each match twice — once from the home club's
 # perspective and once from the away club's. A UNION ALL of the two
 # projections, then a GROUP BY the club + grouping columns.
+_LINKER_PRECHECK_SQL = """
+SELECT COUNT(*)::int
+FROM matches
+WHERE home_club_id IS NOT NULL OR away_club_id IS NOT NULL
+"""
+
+
+# TODO: partition DELETE by (club_id, event_id, season) scope once we roll
+# up incrementally. A blanket DELETE is fine while the dataset is small
+# and every run recomputes the full table, but once we start ingesting
+# future-season league data the blanket wipe will nuke rows that the
+# current run has no matches for. Partition as soon as there's >1 season
+# of live data in matches.
 _ROLLUP_SQL = """
 DELETE FROM club_results;
 
@@ -152,6 +165,24 @@ def recompute_club_results(
 
     try:
         with conn.cursor() as cur:
+            # Linker guard: if no matches have any club FK resolved, the
+            # rollup would produce zero rows AND wipe existing
+            # club_results. Abort loudly so the operator runs the linker
+            # first. This is the common failure mode the first time the
+            # matches scraper runs in a fresh environment.
+            cur.execute(_LINKER_PRECHECK_SQL)
+            linked_count = cur.fetchone()[0]
+            if linked_count == 0:
+                raise RuntimeError(
+                    "club_results rollup aborted: no matches rows have "
+                    "home_club_id or away_club_id populated. The linker "
+                    "hasn't run yet — running this rollup would produce "
+                    "zero rows AND wipe any existing club_results data. "
+                    "Run the canonical-club linker first (see "
+                    "claude/canonical-club-linker branch), then re-run "
+                    "this rollup."
+                )
+
             cur.execute(_SKIPPED_COUNT_SQL)
             skipped = cur.fetchone()[0]
             cur.execute(_ROLLUP_SQL)

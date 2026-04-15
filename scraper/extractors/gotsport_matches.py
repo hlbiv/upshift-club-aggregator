@@ -112,7 +112,27 @@ def _get_with_retry(url: str, timeout: int = 20) -> requests.Response:
 # Field parsers
 # ---------------------------------------------------------------------------
 
-_SCORE_PATTERN = re.compile(r"^\s*(\d{1,2})\s*[-–:]\s*(\d{1,2})\s*$")
+# GotSport emits scores in several shapes:
+#   "3-2"            bare score
+#   "W 3-2" / "L 1-3" result-prefixed
+#   "F 1-0" / "0-0 FF" forfeit marker (trailing or embedded F/FF)
+#   "2-2 (4-3)"      draw + shootout (PK score in parens)
+#   ""               empty cell → scheduled / BYE
+# Empty-string and "BYE" are handled explicitly by the caller, not here.
+_SCORE_PATTERN = re.compile(
+    r"^\s*(?:[WLDTF]\s+)?"                       # optional result/forfeit prefix (W/L/D/T/F)
+    r"(\d{1,2})\s*[-–:]\s*(\d{1,2})"              # main score
+    r"(?:\s*\((\d{1,2})\s*[-–:]\s*(\d{1,2})\))?"  # optional shootout
+    r"(?:\s+FF|\s+F)?\s*$",                       # optional trailing forfeit marker
+    re.IGNORECASE,
+)
+_BYE_PATTERN = re.compile(r"^\s*bye\s*$", re.IGNORECASE)
+# "FF" / "forfeit" anywhere, OR a leading "F " before a score (GotSport's
+# forfeit-with-awarded-score notation, e.g. "F 1-0").
+_FORFEIT_PATTERN = re.compile(
+    r"(?:\b(?:ff|forfeit)\b|^\s*F\s+\d)",
+    re.IGNORECASE,
+)
 _AGE_PATTERN = re.compile(r"\b([BG]?)(U\d{2}|\d{4})\b", re.IGNORECASE)
 # GotSport date strings vary: "2026-03-14 15:30", "3/14/2026 3:30 PM",
 # "Sat, Mar 14 2026 3:30 PM". Try strict ISO first, then fall back.
@@ -143,6 +163,13 @@ def _parse_date(raw: str) -> Optional[datetime]:
 
 
 def _parse_score(raw: str) -> Tuple[Optional[int], Optional[int]]:
+    """Return (home_score, away_score) or (None, None).
+
+    Accepts bare "3-2", "W 3-2"/"L 1-3", "F 1-0"/"0-0 FF" forfeit variants,
+    and "2-2 (4-3)" shootouts. The main (pre-parens) score is what lands
+    in the DB; the shootout PK score is discarded (schema has no column
+    for it). An empty cell is a scheduled/BYE row — the caller decides.
+    """
     if not raw:
         return None, None
     m = _SCORE_PATTERN.match(raw)
@@ -152,6 +179,11 @@ def _parse_score(raw: str) -> Tuple[Optional[int], Optional[int]]:
         return int(m.group(1)), int(m.group(2))
     except ValueError:
         return None, None
+
+
+def _is_bye_cell(raw: str) -> bool:
+    """True if a cell represents a BYE (no match actually played)."""
+    return bool(raw) and bool(_BYE_PATTERN.match(raw))
 
 
 def _parse_age_gender(raw: str) -> Tuple[Optional[str], Optional[str]]:
@@ -184,7 +216,12 @@ def _parse_age_gender(raw: str) -> Tuple[Optional[str], Optional[str]]:
     return age, gender
 
 
-def _normalize_status(raw: Optional[str], home_score: Optional[int], away_score: Optional[int]) -> str:
+def _normalize_status(
+    raw: Optional[str],
+    home_score: Optional[int],
+    away_score: Optional[int],
+    score_cell: Optional[str] = None,
+) -> str:
     if raw:
         low = raw.lower().strip()
         if "final" in low or "complete" in low or "fin" == low:
@@ -195,6 +232,9 @@ def _normalize_status(raw: Optional[str], home_score: Optional[int], away_score:
             return "forfeit"
         if "postpon" in low:
             return "postponed"
+    # Forfeit markers appear in the score cell itself: "F 1-0", "0-0 FF".
+    if score_cell and _FORFEIT_PATTERN.search(score_cell):
+        return "forfeit"
     if home_score is not None and away_score is not None:
         return "final"
     return "scheduled"
@@ -307,6 +347,14 @@ def _extract_match_from_tr(
     home_name = _row_text(home_el)
     away_name = _row_text(away_el)
 
+    # BYE row — one side literally says BYE. Not a real match; skip.
+    if _is_bye_cell(home_name) or _is_bye_cell(away_name):
+        logger.debug(
+            "[gotsport-matches] BYE row skipped: home=%r away=%r",
+            home_name, away_name,
+        )
+        return None
+
     match_id_attr = tr.get("data-match-id") or (
         tr.select_one("[data-match-id]").get("data-match-id")
         if tr.select_one("[data-match-id]") else None
@@ -314,6 +362,7 @@ def _extract_match_from_tr(
 
     home_score: Optional[int] = None
     away_score: Optional[int] = None
+    score_cell_text: Optional[str] = None
     if score_home_el is not None:
         try:
             home_score = int(_row_text(score_home_el))
@@ -327,8 +376,15 @@ def _extract_match_from_tr(
 
     match_date = _parse_date(_row_text(date_el)) if date_el else None
 
-    # Fallback: positional cells.
-    if not home_name or not away_name:
+    # Positional-cell fallback: runs when either names or scores are
+    # missing from class-based selectors. GotSport often labels home/away
+    # team cells but leaves the middle score cell un-classed, so
+    # class-selector scrapes land names but not scores.
+    needs_tds_scan = (
+        not home_name or not away_name
+        or (home_score is None and away_score is None)
+    )
+    if needs_tds_scan:
         tds = tr.find_all("td")
         texts = [_row_text(td) for td in tds]
         if not texts:
@@ -354,13 +410,24 @@ def _extract_match_from_tr(
                     home_name = re.sub(r"\s+\d{1,2}\s*$", "", home_name).strip()
                     away_name = re.sub(r"^\s*\d{1,2}\s+", "", away_name).strip()
 
-        # Try score-shaped cells.
+        # BYE cell — not a real match, skip the row entirely.
+        for t in texts:
+            if _is_bye_cell(t):
+                logger.debug("[gotsport-matches] BYE row skipped: %s", texts)
+                return None
+
+        # Try score-shaped cells. Remember the cell for forfeit detection.
         if home_score is None or away_score is None:
             for t in texts:
                 hs, as_ = _parse_score(t)
                 if hs is not None:
                     home_score, away_score = hs, as_
+                    score_cell_text = t
                     break
+                if _FORFEIT_PATTERN.search(t):
+                    # "FF" / "Forfeit" with no score — remember the cell
+                    # so _normalize_status tags it as forfeit.
+                    score_cell_text = t
 
         # Try date-shaped cells.
         if match_date is None:
@@ -381,7 +448,16 @@ def _extract_match_from_tr(
     division = division_text or default_division
 
     status_raw = _row_text(status_el) if status_el else None
-    status = _normalize_status(status_raw, home_score, away_score)
+    status = _normalize_status(status_raw, home_score, away_score, score_cell_text)
+
+    # Empty score cell with no match-date → future / TBD match, leave as
+    # "scheduled" with null scores (the DB default). This is the expected
+    # state for a scrape of an upcoming weekend's schedule.
+    if home_score is None and away_score is None and status == "scheduled" and match_date is None:
+        logger.debug(
+            "[gotsport-matches] scheduled row with no date: %s vs %s",
+            home_name, away_name,
+        )
 
     return {
         "home_team_name": home_name,
