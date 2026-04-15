@@ -6,7 +6,7 @@ import {
   clubAffiliations,
 } from "@workspace/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
-import { ListLeaguesResponse, GetLeagueClubsResponse } from "@upshift/api-zod";
+import { ListLeaguesResponse, GetLeagueClubsResponse } from "@hlbiv/api-zod";
 
 const router: IRouter = Router();
 

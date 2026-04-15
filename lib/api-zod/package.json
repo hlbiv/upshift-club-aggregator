@@ -1,5 +1,5 @@
 {
-  "name": "@upshift/api-zod",
+  "name": "@hlbiv/api-zod",
   "version": "0.1.0",
   "description": "Orval-generated Zod validators and TypeScript types for the Upshift Data API (youth soccer club graph).",
   "license": "UNLICENSED",
@@ -29,7 +29,7 @@
     "typescript": "^5.6.3"
   },
   "publishConfig": {
-    "access": "public"
+    "registry": "https://npm.pkg.github.com"
   },
   "repository": {
     "type": "git",
