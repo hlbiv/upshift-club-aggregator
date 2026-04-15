@@ -92,6 +92,32 @@ def test_resolve_pass3_fuzzy_hit():
     assert res.score is not None and res.score >= 88
 
 
+def test_resolve_pass3_difflib_fallback_when_rapidfuzz_missing():
+    """Regression guard: when rapidfuzz is unavailable we must still
+    resolve pass-3 via stdlib difflib rather than silently returning
+    pass 4 (the 0/224 linker regression on Replit).
+    """
+    import canonical_club_linker as linker
+
+    idx = _make_index()
+    with mock.patch.object(linker, "_RAPIDFUZZ_AVAILABLE", False):
+        res = resolve_raw_team_name("Concorde Fire Phoenix 2011 Boys", idx)
+    assert res.club_id == 101
+    assert res.pass_number == 3
+    assert res.score is not None and res.score >= 88
+
+
+def test_resolve_pass3_difflib_fallback_no_match_returns_pass4():
+    """Fallback path still returns pass 4 when nothing is close enough."""
+    import canonical_club_linker as linker
+
+    idx = _make_index()
+    with mock.patch.object(linker, "_RAPIDFUZZ_AVAILABLE", False):
+        res = resolve_raw_team_name("Totally Unrelated Team XYZ", idx)
+    assert res.club_id is None
+    assert res.pass_number == 4
+
+
 def test_resolve_no_match():
     idx = _make_index()
     res = resolve_raw_team_name("Completely Unrelated Club XYZ", idx)
