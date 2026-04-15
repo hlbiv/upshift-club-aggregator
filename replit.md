@@ -160,7 +160,8 @@ Install: `pip install -r scraper/requirements.txt && python3 -m playwright insta
 | `club_affiliations` | League/source associations per club (unique on `club_id + source_name`) |
 | `coach_discoveries` | **Primary coach read model.** Path A additions: `coach_id` FK → `coaches.id`, `person_hash`, `phone`, `first_seen_at`, `last_seen_at` |
 | `leagues_master` / `league_sources` | League directory inventory + source registry |
-| `club_events` | **Deferred drop** — `/api/events/search` still reads from it; drops with the events-route rewire PR. (`club_coaches` dropped April 2026 after backfill verified.) |
+
+`club_coaches` and `club_events` were dropped April 2026 after their API routes were rewired to the Path A model (`coach_discoveries` and `events` + `event_teams`, respectively).
 
 ### Coaches (`schema/coaches.ts`)
 

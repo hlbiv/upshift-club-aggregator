@@ -161,9 +161,9 @@ PostgreSQL, managed with Drizzle ORM. 26 tables after the April 2026 Path A expa
 | `scrape_run_logs` | Per-run telemetry with `failure_kind` enum; written by `scraper/scrape_run_logger.py` |
 | `scrape_health` | Rolling health rollups |
 
-### Deferred drops
+### Dropped legacy tables (April 2026)
 
-`club_coaches` was dropped April 2026 after the backfill verified zero residual rows and the API route was rewired to `coach_discoveries`. `club_events` remains until `/api/events/search` is rewired to read from `events` + `event_teams`.
+`club_coaches` was dropped after the backfill verified zero residual rows and `/api/coaches/search` was rewired to `coach_discoveries`. `club_events` was dropped after `/api/events/search` was rewired to `events` + `event_teams`.
 
 See `docs/path-a-data-model.md` for the full domain-by-domain spec and `CLAUDE.md` for session context.
 
