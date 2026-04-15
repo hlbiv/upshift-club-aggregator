@@ -88,6 +88,33 @@ def test_parse_division_u12_boys_silver():
     assert birth == 2014
 
 
+def test_parse_division_u18_slash_19_band_keeps_lower_bound():
+    age, gender, code, birth = _parse_division("U18/19 Boys Premier")
+    assert age == "U18"
+    assert gender == "M"
+    assert code == "Premier"
+    assert birth is None
+
+
+def test_parse_division_hyphenated_u_15():
+    age, gender, code, birth = _parse_division("U-15 Girls Gold")
+    assert age == "U15"
+    assert gender == "F"
+    assert code == "Gold"
+
+
+def test_parse_division_number_first_15u():
+    age, gender, code, birth = _parse_division("15U Boys Silver")
+    assert age == "U15"
+    assert gender == "M"
+    assert code == "Silver"
+
+
+def test_parse_division_u_space_9():
+    age, _gender, _code, _birth = _parse_division("U 9 Girls Bronze")
+    assert age == "U9"
+
+
 def test_parse_division_nonsense_returns_code_only():
     age, gender, code, birth = _parse_division("Schedules are final.")
     # No age match — parser returns code=None age=None
@@ -224,8 +251,8 @@ def test_upsert_first_run_inserts_event_and_all_teams():
         # events upsert — returns (event_id=100, inserted=True), rowcount=1
         ((100, True), 1),
     ] + [
-        # Each team insert — rowcount=1 (new row)
-        (None, 1) for _ in teams
+        # Each team insert — row returned (inserted=True), rowcount=1
+        ((True,), 1) for _ in teams
     ]
     cur = _FakeCursor(script)
     conn = _FakeConn(cur)
@@ -235,6 +262,7 @@ def test_upsert_first_run_inserts_event_and_all_teams():
     assert res.events_created == 1
     assert res.events_updated == 0
     assert res.teams_created == len(teams)
+    assert res.teams_updated == 0
     assert res.teams_skipped == 0
     assert conn.commits == 1
     assert conn.rollbacks == 0
@@ -244,15 +272,17 @@ def test_upsert_first_run_inserts_event_and_all_teams():
     assert len(cur.executed) == 1 + len(teams)
 
 
-def test_upsert_second_run_is_idempotent():
-    """On re-run: event upsert returns inserted=False; teams all conflict."""
+def test_upsert_second_run_is_idempotent_when_nothing_changed():
+    """On re-run with unchanged bracket fields: DO UPDATE ... WHERE no-ops,
+    RETURNING yields no row, rowcount=0 → counted as skipped."""
     html = _load_fixture()
     meta, teams = parse_sincsports_teamlist(html, tid="GULFC")
     script = [
         # event upsert — existing row, (id=100, inserted=False), rowcount=1
         ((100, False), 1),
     ] + [
-        # Each team insert hits ON CONFLICT DO NOTHING → rowcount=0
+        # Each team insert hits ON CONFLICT ... DO UPDATE WHERE (unchanged
+        # fields fail the WHERE predicate) → no row returned, rowcount=0
         (None, 0) for _ in teams
     ]
     cur = _FakeCursor(script)
@@ -263,7 +293,33 @@ def test_upsert_second_run_is_idempotent():
     assert res.events_created == 0
     assert res.events_updated == 1
     assert res.teams_created == 0
+    assert res.teams_updated == 0
     assert res.teams_skipped == len(teams)
+    assert conn.commits == 1
+
+
+def test_upsert_propagates_bracket_changes_on_reingest():
+    """Re-scrape where teams have been re-bracketed: existing rows' bracket
+    fields differ, so the DO UPDATE ... WHERE fires and RETURNING yields
+    (inserted=False) with rowcount=1 → counted as teams_updated."""
+    html = _load_fixture()
+    meta, teams = parse_sincsports_teamlist(html, tid="GULFC")
+    script = [
+        # event upsert — existing row
+        ((100, False), 1),
+    ] + [
+        # Every team is a bracket change: update fired, inserted=False
+        ((False,), 1) for _ in teams
+    ]
+    cur = _FakeCursor(script)
+    conn = _FakeConn(cur)
+
+    res = upsert_event_and_teams(meta, teams, conn=conn)
+
+    assert res.events_updated == 1
+    assert res.teams_created == 0
+    assert res.teams_updated == len(teams)
+    assert res.teams_skipped == 0
     assert conn.commits == 1
 
 

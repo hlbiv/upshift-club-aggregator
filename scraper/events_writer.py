@@ -10,12 +10,16 @@ Idempotency contract:
     (``events_source_platform_id_uq``)
 
   event_teams
-    ON CONFLICT (event_id, team_name_raw) DO NOTHING
+    ON CONFLICT (event_id, team_name_raw) DO UPDATE
+      SET age_group, gender, division_code, team_name_canonical, source_url
+      WHERE any of those fields differs from EXCLUDED
     (``event_teams_event_team_name_uq``)
 
-    Matches the "race policy" docstring on the schema — duplicate raw
-    names across runs are tolerated and the linker job collapses them
-    later via ``canonical_club_id``.
+    Tournaments re-bracket teams after registration (U11 Gold → U11
+    Silver, division code corrected mid-season), so on re-scrape we must
+    propagate those changes. The WHERE clause makes idempotent re-runs
+    a no-op when nothing has changed. ``canonical_club_id`` is never
+    touched here — the nightly linker owns that column.
 
 This module never throws to the caller on DB errors. A failed upsert
 returns ``(0, 0)`` and logs a warning; the scrape run logger records
@@ -47,7 +51,8 @@ class WriteResult:
     events_created: int = 0
     events_updated: int = 0
     teams_created: int = 0
-    teams_skipped: int = 0  # existing (event_id, team_name_raw)
+    teams_updated: int = 0  # existing row whose bracket fields changed
+    teams_skipped: int = 0  # existing (event_id, team_name_raw), no change
 
 
 def _connect(dsn: Optional[str] = None):
@@ -94,7 +99,22 @@ _UPSERT_TEAM_SQL = """
         age_group, gender, division_code, source_url, source
     )
     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-    ON CONFLICT ON CONSTRAINT event_teams_event_team_name_uq DO NOTHING
+    ON CONFLICT ON CONSTRAINT event_teams_event_team_name_uq DO UPDATE
+    SET age_group = EXCLUDED.age_group,
+        gender = EXCLUDED.gender,
+        division_code = EXCLUDED.division_code,
+        team_name_canonical = EXCLUDED.team_name_canonical,
+        source_url = EXCLUDED.source_url
+    WHERE event_teams.age_group IS DISTINCT FROM EXCLUDED.age_group
+       OR event_teams.gender IS DISTINCT FROM EXCLUDED.gender
+       OR event_teams.division_code IS DISTINCT FROM EXCLUDED.division_code
+       OR event_teams.team_name_canonical IS DISTINCT FROM EXCLUDED.team_name_canonical
+       OR event_teams.source_url IS DISTINCT FROM EXCLUDED.source_url
+    -- Intentionally NOT updated on conflict:
+    --   canonical_club_id  -- owned by the nightly linker job
+    --   registered_at      -- historical first-seen timestamp
+    --   source             -- first-writer wins (same scraper in practice)
+    RETURNING (xmax = 0) AS inserted
 """
 
 
@@ -171,10 +191,19 @@ def upsert_event_and_teams(
                         meta.source,
                     ),
                 )
-                if cur.rowcount == 1:
-                    result.teams_created += 1
-                else:
+                # Three outcomes given the DO UPDATE ... WHERE clause:
+                #   rowcount == 0   → conflict hit, all fields unchanged → skip
+                #   rowcount == 1 + inserted=True  → brand-new row
+                #   rowcount == 1 + inserted=False → existing row, bracket changed
+                if cur.rowcount == 0:
                     result.teams_skipped += 1
+                else:
+                    row = cur.fetchone()
+                    inserted = bool(row[0]) if row is not None else False
+                    if inserted:
+                        result.teams_created += 1
+                    else:
+                        result.teams_updated += 1
 
         conn.commit()
     except Exception as exc:

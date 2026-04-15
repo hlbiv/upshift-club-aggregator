@@ -225,6 +225,16 @@ Empty counts + `total: 0` are expected until a scraper-wiring PR populates the n
 - ✅ `/api/events/search` rewired to `events` + `event_teams`; `club_events` dropped in the same PR
 - ⏳ **Next:** wire scrapers to populate Path A tables (`events`, `event_teams`, `matches`, rosters, etc.)
 
+### `/api/events/search?club_id=N` empty until linker runs
+
+The SincSports events scraper (PR #11) writes `event_teams.canonical_club_id = NULL`
+on every row by design — the linker job on branch `claude/canonical-club-linker`
+owns that column and resolves it by matching `team_name_canonical` against
+`canonical_clubs`. Until that PR merges and the linker runs, filtering
+`/api/events/search` by `club_id` will return an empty list even when teams
+from that club are present in `event_teams`. Filtering by league/age/gender/
+date range works today without the linker.
+
 See `docs/path-a-data-model.md` for the full domain-by-domain spec + changelog.
 
 ---

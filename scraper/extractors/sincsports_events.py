@@ -64,12 +64,26 @@ _SKIP_NAMES: frozenset = frozenset({"", "tbd", "tba", "n/a", "club", "state", "t
 #   "2017 (U9) Girls Gold 7v7"
 #   "2014 (U12) Boys Silver"
 #   "2009 (U17) Girls Premier 11v11"
+#   "U18/19 Boys Premier"           (slashed age bands)
+#   "U-15 Girls Gold"               (hyphenated)
+#   "15U Boys Silver"               (reversed number-first form)
+# The age token is normalized to "U{num}" in _parse_division; when a
+# slashed band like "U18/19" is matched, we keep the lower bound (U18)
+# since that's how SincSports labels the primary bracket.
+_AGE_PATTERN = re.compile(
+    r"(?:U[-\s]?(?P<u_num>\d{1,2})(?:/\d{1,2})?|(?P<num_u>\d{1,2})U)",
+    re.IGNORECASE,
+)
 _DIVISION_RE = re.compile(
     r"""^\s*
-        (?P<birth_year>\d{4})?\s*          # optional "2017"
-        \(?\s*(?P<age>U\d{1,2})\s*\)?\s*   # "U9" or "(U9)"
-        \s*(?P<gender>Boys|Girls|Coed|Mixed|Open)?\s*  # gender
-        (?P<rest>.*?)$                     # "Gold 7v7", "Silver", etc.
+        (?P<birth_year>\d{4})?\s*                        # optional "2017"
+        \(?\s*(?P<age_token>
+            U[-\s]?\d{1,2}(?:/\d{1,2})?                  # "U9", "U-15", "U18/19"
+            |
+            \d{1,2}U                                      # "15U"
+        )\s*\)?\s*
+        \s*(?P<gender>Boys|Girls|Coed|Mixed|Open)?\s*    # gender
+        (?P<rest>.*?)$                                    # "Gold 7v7", "Silver", etc.
     """,
     re.IGNORECASE | re.VERBOSE,
 )
@@ -149,17 +163,34 @@ def _parse_division(header_text: str) -> Tuple[Optional[str], Optional[str], Opt
     m = _DIVISION_RE.match(header_text.strip())
     if not m:
         return None, None, header_text.strip() or None, None
-    age = m.group("age")
+    age_token = m.group("age_token")
+    age = _normalize_age_token(age_token) if age_token else None
     gender = normalize_gender(m.group("gender"))
     rest = (m.group("rest") or "").strip()
     birth_year = int(m.group("birth_year")) if m.group("birth_year") else None
     division_code = rest or None
     return (
-        age.upper() if age else None,
+        age,
         gender,
         division_code,
         birth_year,
     )
+
+
+def _normalize_age_token(token: str) -> Optional[str]:
+    """Normalize any supported age token variant to the canonical
+    ``U{num}`` form. Handles ``U9``, ``U-15``, ``U 15``, ``U18/19``,
+    ``15U``. For slashed bands we keep the lower bound.
+    """
+    if not token:
+        return None
+    m = _AGE_PATTERN.search(token)
+    if not m:
+        return None
+    num = m.group("u_num") or m.group("num_u")
+    if not num:
+        return None
+    return f"U{int(num)}"
 
 
 def _is_team_table(table: Tag) -> bool:
@@ -224,9 +255,13 @@ def parse_sincsports_teamlist(html: str, tid: str, league_name: Optional[str] = 
         if age_group is None and division_code is None:
             continue  # not a division header (e.g. "Schedules are final.")
 
-        # Find the nearest following team-shaped table.
+        # Find the nearest following team-shaped table that hasn't
+        # already been matched to a previous h2. Without the
+        # claimed-skip, a missing/non-team table for one division causes
+        # ``find_next("table")`` to cross the next division boundary and
+        # attach the next division's table to the wrong h2.
         nxt = h2.find_next("table")
-        while nxt is not None and not _is_team_table(nxt):
+        while nxt is not None and (id(nxt) in claimed_tables or not _is_team_table(nxt)):
             nxt = nxt.find_next("table")
         if nxt is None:
             continue

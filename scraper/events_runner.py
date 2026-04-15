@@ -134,9 +134,23 @@ def run_sincsports_events(
             )
 
             if run_log is not None:
+                # Choice: use `teams_created` as the finer-grained unit for
+                # `records_created` (event_teams is the per-row ingest unit
+                # for this scraper — one HTTP GET yields ≤1 new event but
+                # 0..N new team rows, so teams dominate the count). Event-
+                # level churn is expressed via `records_updated`, which
+                # counts every existing-event re-scrape plus any team rows
+                # touched by the bracket-change DO UPDATE path (see
+                # `events_writer._UPSERT_TEAM_SQL`). This keeps the
+                # dashboard rollup interpretable as "new roster rows" +
+                # "re-scraped metadata", without double-counting the event
+                # into the row total.
                 run_log.finish_ok(
-                    records_created=result.events_created + result.teams_created,
-                    records_updated=result.events_updated,
+                    records_created=result.teams_created,
+                    records_updated=(
+                        result.events_updated + result.events_created
+                        + result.teams_updated
+                    ),
                 )
 
             outcomes.append(EventRunOutcome(
