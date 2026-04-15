@@ -1,0 +1,300 @@
+Right call. Let me lay the whole thing out so we can stress-test before anything moves. I'll aim for tight, not exhaustive.
+
+## Conventions (locked first)
+
+- **TS camelCase ↔ SQL snake_case**, matching existing style (`clubNameCanonical` ↔ `club_name_canonical`).
+- **Timestamps:** `scrapedAt` (event of record), `firstSeenAt` / `lastSeenAt` (where change detection matters), `createdAt` / `updatedAt` (only for records humans touch, e.g. admin overrides).
+- **Polymorphic refs:** `(entity_type, entity_id)` pattern for cross-entity tables (scrape_health, scrape_run_logs). No nullable-FK-per-type bloat.
+- **Natural keys = unique constraints** on every scraped table for idempotent upserts. Explicit, named.
+- **Check constraints** for enums (avoid Postgres native enums — harder to migrate).
+- **`player_name` is text, never an FK.** Aggregator doesn't have player identity — that's upshift-player-platform's job. Cross-roster attribution is a fuzzy derived job.
+- **Aggregator stops at "identified scraped fact."** Coach effectiveness, roster churn, movement events are **derived** tables (materialized views or nightly jobs), not scraped directly.
+
+## Entity graph (the skeleton)
+
+```
+leaguesMaster (98)
+       │
+       ▼
+canonicalClubs (3,960) ──┬── clubAliases
+                          ├── clubAffiliations
+                          ├── clubRosterSnapshots (NEW) ── season-over-season
+                          ├── clubSiteChanges (NEW)     ── site monitor diffs
+                          ├── clubTryouts (NEW)         ── derived from site monitor
+                          └── (thru) ─────────────┐
+                                                  ▼
+colleges (NEW) ──┬── collegeCoaches (NEW)    eventTeams (NEW)
+                 └── collegeRosterHistory (NEW)      │
+                                                     ▼
+                                                   events (NEW)
+                                                     │
+                                                     ▼
+                                                   matches (NEW) ─► clubResults (derived)
+
+coachDiscoveries (2,647) ──┬── coachCareerHistory (NEW) ─► (canonical_clubs | colleges)
+                           ├── coachMovementEvents (NEW) ─► detected from career history diffs
+                           └── coachEffectiveness (NEW)  ─► derived: career × college_roster_history
+
+scrapeRunLogs (NEW)  ── every invocation
+scrapeHealth (NEW)   ── rollup, polymorphic (entity_type, entity_id)
+```
+
+## Domain-by-domain model
+
+### Domain 1 — Clubs
+
+**Extend `canonicalClubs`** (6 new cols):
+```
+logo_url, founded_year, twitter, instagram, facebook, staff_page_url
+website_status  check: active|dead|redirected|no_staff_page|unchecked
+website_last_checked_at, last_scraped_at, scrape_confidence
+```
+
+**New `clubRosterSnapshots`:**
+```
+id, club_id FK, season, age_group, gender, division
+player_name (text, no FK), jersey_number, position
+scraped_at, source, event_id FK nullable → events
+UNIQUE (club_id, season, age_group, player_name)
+```
+*Note:* The per-season roster is unique on player_name because the same kid can't be on two rosters in the same age_group/season for the same club. Cross-club duplicates are fine.
+
+**New `clubSiteChanges`:**
+```
+id, club_id FK
+change_type check: staff_added|staff_removed|tryout_posted|announcement|site_redesign|page_404
+change_detail jsonb, detected_at, page_url, snapshot_hash_before, snapshot_hash_after
+```
+
+---
+
+### Domain 2 — Colleges (new entity)
+
+**New `colleges`:**
+```
+id, name, slug unique, ncaa_id
+division check: D1|D2|D3|NAIA|NJCAA
+conference, state, city
+website, soccer_program_url
+gender_program check: mens|womens|both
+enrollment, scholarship_available bool
+logo_url, twitter, last_scraped_at, scrape_confidence
+UNIQUE (name, division, gender_program)
+```
+
+**New `collegeCoaches`:**
+```
+id, college_id FK, name, title, email, phone, twitter, linkedin
+is_head_coach bool, source, source_url, scraped_at, confidence
+first_seen_at, last_seen_at
+UNIQUE (college_id, name, title)
+```
+
+**New `collegeRosterHistory`:**
+```
+id, college_id FK
+player_name, position
+year check: freshman|sophomore|junior|senior|grad
+academic_year (e.g. "2024-25")
+hometown, prev_club, jersey_number, scraped_at
+UNIQUE (college_id, player_name, academic_year)
+```
+
+---
+
+### Domain 3 — Youth Coaches
+
+**Extend `coachDiscoveries`** (3 cols):
+```
+first_seen_at, last_seen_at, person_hash
+```
+`person_hash` is the key to dedup across clubs — sha256 of normalized name + email if present. Lets you detect "this is the same coach at a different club" without fuzzy matching at query time.
+
+**New `coachCareerHistory`:**
+```
+id, coach_id FK → coach_discoveries
+entity_type check: club|college
+entity_id (polymorphic: canonical_clubs.id or colleges.id)
+role check: head_coach|assistant|doc|gk_coach|fitness|club_director|other
+start_year, end_year nullable, is_current bool
+source, source_url, confidence
+UNIQUE (coach_id, entity_type, entity_id, role, start_year)
+```
+
+**New `coachMovementEvents`** (append-only, derived from weekly diffs):
+```
+id, coach_id FK
+event_type check: joined|departed|promoted|role_changed|vanished
+from_entity_type, from_entity_id (polymorphic)
+to_entity_type, to_entity_id (polymorphic)
+from_role, to_role, detected_at, scrape_run_log_id FK, confidence
+```
+
+**New `coachScrapeSnapshots`** (raw per-scrape blobs, source of truth for diffs):
+```
+id, club_id FK, scraped_at, raw_staff jsonb, parse_confidence, staff_count
+UNIQUE (club_id, scraped_at)
+```
+
+**New `coachEffectiveness`** (materialized; recomputed nightly):
+```
+id, coach_id FK
+players_placed_d1, players_placed_d2, players_placed_d3, players_placed_naia, players_placed_njcaa
+players_placed_total, clubs_coached, seasons_tracked
+last_calculated_at
+UNIQUE (coach_id)
+```
+
+---
+
+### Domain 4 — Events
+
+**Replace existing `clubEvents` with three tables** (existing one is empty; drop it).
+
+**New `events`** (tournament/showcase itself):
+```
+id, name, slug unique, league_name, season
+age_group, gender, division
+location_city, location_state
+start_date, end_date, registration_url, source_url
+source check: gotsport|sincsports|manual|other
+platform_event_id (e.g. GotSport's event ID)
+last_scraped_at
+UNIQUE (source, platform_event_id)
+```
+
+**New `eventTeams`:**
+```
+id, event_id FK, canonical_club_id FK nullable (null = unmatched scraped team)
+team_name_raw, team_name_canonical, age_group, gender, division_code
+registered_at, source_url, source
+UNIQUE (event_id, team_name_raw)
+```
+
+**New `eventSchedule`:**
+```
+id, event_id FK, home_team_id FK → eventTeams, away_team_id FK → eventTeams
+scheduled_at, field, status check: scheduled|final|cancelled|postponed|forfeit
+home_score, away_score
+UNIQUE (event_id, home_team_id, away_team_id, scheduled_at)
+```
+
+---
+
+### Domain 5 — Matches
+
+**New `matches`** (superset — covers league play AND event games, not just tournament):
+```
+id, event_id FK nullable (null = league match, not tournament)
+home_club_id FK → canonical_clubs, away_club_id FK → canonical_clubs
+home_team_name, away_team_name, home_score, away_score
+match_date, age_group, gender, division, season, league
+status check: scheduled|final|cancelled|forfeit
+source, source_url, platform_match_id
+scraped_at
+UNIQUE (source, platform_match_id) WHERE platform_match_id IS NOT NULL
+```
+
+**New `clubResults`** (materialized; recomputed nightly from matches):
+```
+id, club_id FK, season, league, division, age_group, gender
+wins, losses, draws, goals_for, goals_against, matches_played
+last_calculated_at
+UNIQUE (club_id, season, league, division, age_group, gender)
+```
+
+---
+
+### Domain 6 — Historical Rosters
+
+No new tables. Uses `clubRosterSnapshots` (Domain 1) + `collegeRosterHistory` (Domain 2). Add:
+
+**New `rosterDiffs`** (materialized; recomputed when new snapshot lands):
+```
+id, club_id FK, season_from, season_to, age_group, gender
+players_joined jsonb[], players_departed jsonb[], players_retained jsonb[]
+retention_rate real, calculated_at
+UNIQUE (club_id, season_from, season_to, age_group, gender)
+```
+
+---
+
+### Domain 7 — Tryouts
+
+**New `tryouts`:**
+```
+id, club_id FK, age_group, gender, division
+tryout_date, registration_deadline
+location_name, location_address, location_city, location_state
+cost, url, notes
+source check: site_monitor|gotsport|manual|other
+status check: active|expired|cancelled|unknown
+detected_at, scraped_at, expires_at, site_change_id FK nullable → clubSiteChanges
+```
+
+---
+
+### Domain 8 — Scrape Health
+
+Already drafted but tightening now:
+
+**`scrapeRunLogs`** — one row per scraper invocation, append-only:
+```
+id, scraper_key, league_name nullable
+started_at, completed_at nullable
+status check: running|ok|partial|failed
+failure_kind check: NULL | timeout|network|parse_error|zero_results|unknown
+records_created, records_updated, records_failed, records_touched (derived: created+updated)
+error_message, source_url
+```
+
+**`scrapeHealth`** — polymorphic current-state rollup:
+```
+id, entity_type check: club|league|college|coach|event|match|tryout
+entity_id, last_scraped_at, last_success_at
+status check: ok|stale|failed|never
+confidence, consecutive_failures, last_error
+next_scheduled_at, priority check: 1..4
+UNIQUE (entity_type, entity_id)
+```
+
+## Cross-domain FK map (the critical joins)
+
+| Join | Path | Purpose |
+|---|---|---|
+| Club → career | `canonical_clubs ← coach_career_history (entity_type='club')` | "who has coached here" |
+| College → career | `colleges ← coach_career_history (entity_type='college')` | coach college stints |
+| Coach → placements | `coach_career_history.entity_id (club) → clubRosterSnapshots.player_name → collegeRosterHistory.player_name` (fuzzy) | the moat: D1 placement rates |
+| Event → results | `events → eventSchedule` OR `events → matches (event_id)` | two ways — eventSchedule is tournament-internal, matches is the superset |
+| Club → match history | `canonical_clubs ← matches.home_club_id/away_club_id` | season records |
+
+## Decisions I'd flag for approval
+
+1. **Drop existing `clubEvents` table.** It's empty, wrong-shaped, and `eventTeams` replaces it. Cleaner than renaming.
+
+2. **`matches.platform_match_id` is the dedup key, not `(home_club, away_club, date)`.** Because league vs tournament matches may both exist with same teams on same date; platform IDs disambiguate. Partial unique index when platform_match_id is not null; accept dupes for manually-entered matches.
+
+3. **`coachEffectiveness` is derived, not scraped.** The whole table regenerates nightly from career × college rosters. No incremental updates. Simpler; correctness > performance at this scale.
+
+4. **`matches` is the superset of `eventSchedule`.** `eventSchedule` is redundant if matches has `event_id`. **I'd drop `eventSchedule` and just use matches everywhere.** Spec had both; I'd unify. Flag for you.
+
+5. **Coach `person_hash` as the dedup identity.** Because one coach moves between clubs — you want `coach_movement_events` to actually link them. `person_hash` solves that without requiring a separate `coaches` master table (which would be another migration).
+
+6. **No aggregator-side player identity.** Player rosters are text names. Cross-matching is fuzzy in jobs, not structural. Pushes player identity to upshift-player-platform where it belongs.
+
+## What I think is still loose
+
+- **Does `coachDiscoveries` stay as "the coach" or do we introduce a proper `coaches` master?** Current: it's both the scraped row AND the identity. That's fine if we accept `person_hash` as dedup, but if one real coach ever has 5 `coach_discoveries` rows across 5 clubs, then `coachCareerHistory` FKs need to point at one canonical coach, not any one of the discoveries. **This is the biggest structural question.** My lean: add `coaches` master table (minimal: id, person_hash, display_name, primary_email, first_seen_at, last_seen_at), and `coachDiscoveries` gets a `coach_id` FK pointing at it. Small cost, clean.
+
+- **Event team matching to `canonical_clubs`.** `eventTeams.canonical_club_id` is nullable — how does the matching happen? Online during scrape (fuzzy match at write time) or offline batch? I'd say **offline batch** — scrape writes team_name_raw with null club_id, a linker job fills it in. Matches the aggregator's existing deferred-enrichment pattern.
+
+- **`matches` uniqueness when `platform_match_id` is null.** Manually-entered / partial scraped matches. Options: (a) accept dupes, (b) composite unique `(home_team_name, away_team_name, match_date, age_group, gender)`. Lean (b) with `WHERE platform_match_id IS NULL` partial index, so scraped and manual coexist.
+
+## My recommended tightenings before migration
+
+1. Add `coaches` master table, refactor `coachDiscoveries` → `coach_id` FK. Raises total new tables from ~14 to 15.
+2. Drop `eventSchedule`, use `matches` everywhere.
+3. Drop `clubEvents` (empty, wrong shape).
+4. Commit to "polymorphic `(entity_type, entity_id)` with app-layer validation" as the pattern for `scrapeHealth`, `coachCareerHistory`, `coachMovementEvents`, `scrapeRunLogs`.
+
+Does this version hold up? Which of the 4 decisions (coaches master / drop eventSchedule / drop clubEvents / commit to polymorphic) do you want to push back on?
