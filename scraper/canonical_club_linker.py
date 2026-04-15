@@ -50,9 +50,22 @@ except ImportError:  # pragma: no cover
     fuzz = None  # type: ignore
     rf_process = None  # type: ignore
 
-from config import FUZZY_THRESHOLD
+# Stdlib fallback for pass-3 fuzzy matching. We prefer rapidfuzz for its
+# token_set_ratio scorer (better with reordered/extra tokens), but difflib
+# gets us to ~90% of the same match rate on youth-soccer club names when
+# rapidfuzz is absent from the Python environment.
+#
+# The original silent-degrade behavior (return pass 4 when rapidfuzz is
+# missing) caused a 0/224 linker regression on Replit after Python env
+# rebuild — ~60% of event_teams depend on pass-3 for abbreviated team
+# names like "NUFC", "Crossfire 17 18", "Fultondale".
+import difflib  # noqa: E402
+
+from config import FUZZY_THRESHOLD  # noqa: E402
 
 log = logging.getLogger("canonical_club_linker")
+
+_RAPIDFUZZ_AVAILABLE = fuzz is not None and rf_process is not None
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +217,7 @@ def resolve_raw_team_name(
             return ResolveResult(idx.canonical_exact[k], 2, matched_choice=k)
 
     # Pass 3 — fuzzy
-    if fuzz is None or rf_process is None or not idx.fuzzy_choices:
+    if not idx.fuzzy_choices:
         return ResolveResult(None, 4)
 
     # Prefer the stripped key for fuzzy — age/gender tokens inflate the
@@ -213,18 +226,76 @@ def resolve_raw_team_name(
     if not query:
         return ResolveResult(None, 4)
 
-    match = rf_process.extractOne(
-        query,
-        idx.fuzzy_choices,
-        scorer=fuzz.token_set_ratio,
-        score_cutoff=threshold,
-    )
-    if match is None:
+    if _RAPIDFUZZ_AVAILABLE:
+        match = rf_process.extractOne(
+            query,
+            idx.fuzzy_choices,
+            scorer=fuzz.token_set_ratio,
+            score_cutoff=threshold,
+        )
+        if match is None:
+            return ResolveResult(None, 4)
+
+        matched_choice, score, match_idx = match
+        club_id = idx.fuzzy_club_ids[match_idx]
+        return ResolveResult(club_id, 3, score=int(score), matched_choice=matched_choice)
+
+    # Stdlib fallback — approximates rapidfuzz.fuzz.token_set_ratio
+    # using difflib. Required when rapidfuzz isn't installed; keeps
+    # pass-3 alive rather than silently dropping to pass 4 (the 0/224
+    # regression root cause). Slower than the C backend but linker runs
+    # nightly on a fixed batch so the cost is acceptable.
+    cutoff = threshold / 100.0
+    best_score = 0.0
+    best_idx: Optional[int] = None
+    best_choice: Optional[str] = None
+    for i, choice in enumerate(idx.fuzzy_choices):
+        r = _difflib_token_set_ratio(query, choice)
+        if r >= cutoff and r > best_score:
+            best_score = r
+            best_idx = i
+            best_choice = choice
+
+    if best_idx is None:
         return ResolveResult(None, 4)
 
-    matched_choice, score, match_idx = match
-    club_id = idx.fuzzy_club_ids[match_idx]
-    return ResolveResult(club_id, 3, score=int(score), matched_choice=matched_choice)
+    club_id = idx.fuzzy_club_ids[best_idx]
+    return ResolveResult(
+        club_id, 3, score=int(round(best_score * 100)), matched_choice=best_choice
+    )
+
+
+def _difflib_token_set_ratio(a: str, b: str) -> float:
+    """Approximate ``rapidfuzz.fuzz.token_set_ratio`` using stdlib difflib.
+
+    token_set_ratio is order- and duplicate-insensitive — it partitions
+    the two token sets into intersection + each side's unique tokens,
+    then returns the max pairwise ratio among three reconstructed
+    strings. Good for names like "Fire Concorde" vs "Concorde Fire"
+    or "NTH Tophat U15" vs "NTH Tophat".
+
+    Returns a 0-1 ratio (not 0-100) — caller scales.
+    """
+    ta = set(a.split())
+    tb = set(b.split())
+    if not ta or not tb:
+        return 0.0
+    inter = ta & tb
+    diff_a = ta - tb
+    diff_b = tb - ta
+    s_inter = " ".join(sorted(inter))
+    s_a = (s_inter + " " + " ".join(sorted(diff_a))).strip()
+    s_b = (s_inter + " " + " ".join(sorted(diff_b))).strip()
+    sm = difflib.SequenceMatcher(None, autojunk=False)
+    best = 0.0
+    for x, y in ((s_inter, s_a), (s_inter, s_b), (s_a, s_b)):
+        if not x or not y:
+            continue
+        sm.set_seqs(x, y)
+        r = sm.ratio()
+        if r > best:
+            best = r
+    return best
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +501,19 @@ def link_all(
             len(idx.alias_exact),
             idx.size(),
         )
+        if _RAPIDFUZZ_AVAILABLE:
+            log.info(
+                "Fuzzy backend: rapidfuzz (token_set_ratio, threshold=%d)",
+                FUZZY_THRESHOLD,
+            )
+        else:
+            log.warning(
+                "rapidfuzz is NOT installed — falling back to stdlib difflib "
+                "(SequenceMatcher, threshold=%d). Install rapidfuzz for "
+                "faster + more accurate fuzzy matching: "
+                "pip install -r scraper/requirements.txt",
+                FUZZY_THRESHOLD,
+            )
 
         event_team_rows = _fetch_null_event_teams(cur, limit)
         matches_home = _fetch_null_matches(cur, "home", limit)
