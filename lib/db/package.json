@@ -11,7 +11,9 @@
     "push": "drizzle-kit push --config ./drizzle.config.ts",
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
     "migrate": "drizzle-kit push --config ./drizzle.config.ts",
-    "seed": "pnpm exec tsx src/seed.ts"
+    "seed": "pnpm exec tsx src/seed.ts",
+    "test:schema": "pnpm exec tsx src/schema/__tests__/smoke.ts",
+    "test:integration": "pnpm exec tsx src/schema/__tests__/integration-pg.ts"
   },
   "dependencies": {
     "csv-parse": "^6.2.1",
