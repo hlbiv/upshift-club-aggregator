@@ -15,10 +15,11 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "scripts/fix-esm-extensions.mjs"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/fix-esm-extensions.mjs",
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
