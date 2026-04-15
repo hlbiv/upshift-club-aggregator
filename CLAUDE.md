@@ -136,6 +136,9 @@ python3 run.py --list            # inventory dump
 # Non-league scrapers (--source) and rollups (--rollup)
 python3 run.py --source gotsport-matches --event-id 12345 \
     --season 2025-26 --league-name "ECNL Boys National"
+python3 run.py --source sincsports-events                # all 14 SincSports seeds
+python3 run.py --source sincsports-events --dry-run      # preview without DB writes
+python3 run.py --source sincsports-events --tid GULFC    # single event
 python3 run.py --rollup club-results
 ```
 
@@ -268,7 +271,7 @@ cd scraper && python3 run.py --source link-canonical-clubs
 
 Idempotent — only touches rows where the FK is currently NULL.
 
-**Downstream consumers depend on this running:** `/api/events/search?club_id=N`, `matches` → `club_results` rollup. Neither works end-to-end without at least one linker pass.
+**Downstream consumers depend on this running:** `/api/events/search?club_id=N` (SincSports events scraper in PR #11 writes NULL FKs by design), `matches` → `club_results` rollup. Neither works end-to-end without at least one linker pass.
 
 See `docs/path-a-data-model.md` for the full domain-by-domain spec + changelog.
 
