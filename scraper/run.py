@@ -366,6 +366,131 @@ def _write_website_coverage(frame_entries: list[tuple[str, pd.DataFrame]]) -> No
 
 
 # ---------------------------------------------------------------------------
+# Alternative dispatchers: per-source scraper + rollup jobs
+# ---------------------------------------------------------------------------
+
+def _run_source(args) -> None:
+    """Dispatch --source KEY to the appropriate non-league scraper."""
+    key = args.source
+    if key == "gotsport-matches":
+        if not args.event_id:
+            logger.error("--source gotsport-matches requires --event-id")
+            sys.exit(2)
+        _run_gotsport_matches(
+            event_id=args.event_id,
+            season=args.season,
+            league_name=args.league_name,
+            dry_run=args.dry_run,
+        )
+        return
+    if key in ("sincsports-events", "sincsports_events"):
+        from events_runner import run_sincsports_events, print_summary
+        outcomes = run_sincsports_events(dry_run=args.dry_run, only_tid=args.tid)
+        print_summary(outcomes)
+        return
+    if key in ("link-canonical-clubs", "link_canonical_clubs"):
+        from canonical_club_linker import run_cli as _run_linker
+        rc = _run_linker(dry_run=args.dry_run, limit=args.limit)
+        sys.exit(rc)
+    logger.error("Unknown --source key: %s", key)
+    sys.exit(2)
+
+
+def _run_gotsport_matches(
+    *,
+    event_id: str,
+    season: Optional[str],
+    league_name: Optional[str],
+    dry_run: bool,
+) -> None:
+    from extractors.gotsport_matches import scrape_gotsport_matches
+    from ingest.matches_writer import insert_matches
+
+    scraper_key = f"gotsport-matches:{event_id}"
+    run_log: Optional[ScrapeRunLogger] = None
+    if not dry_run:
+        run_log = ScrapeRunLogger(
+            scraper_key=scraper_key,
+            league_name=league_name or f"gotsport-event-{event_id}",
+        )
+        run_log.start(source_url=f"https://system.gotsport.com/org_event/events/{event_id}/schedules")
+
+    try:
+        rows = scrape_gotsport_matches(
+            event_id,
+            default_season=season,
+            default_league=league_name,
+        )
+    except Exception as exc:
+        kind = _classify_exception(exc)
+        logger.error("[gotsport-matches] failed: %s", exc)
+        if run_log is not None:
+            run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+        return
+
+    if not rows:
+        logger.warning("[gotsport-matches] event %s → 0 matches", event_id)
+        if run_log is not None:
+            run_log.finish_partial(records_failed=0, error_message="no matches extracted")
+        return
+
+    if dry_run:
+        logger.info("[dry-run] would upsert %d matches for event %s", len(rows), event_id)
+        return
+
+    counts = insert_matches(rows, dry_run=False)
+    logger.info(
+        "[gotsport-matches] event %s → inserted=%d updated=%d skipped=%d",
+        event_id, counts["inserted"], counts["updated"], counts["skipped"],
+    )
+    if run_log is not None:
+        run_log.finish_ok(
+            records_created=counts["inserted"],
+            records_updated=counts["updated"],
+            records_failed=counts["skipped"],
+        )
+
+
+def _run_rollup(args) -> None:
+    key = args.rollup
+    if key == "club-results":
+        from rollups.club_results import recompute_club_results
+
+        scraper_key = "rollup:club-results"
+        run_log: Optional[ScrapeRunLogger] = None
+        if not args.dry_run:
+            run_log = ScrapeRunLogger(
+                scraper_key=scraper_key,
+                league_name="club_results rollup",
+            )
+            run_log.start(source_url="derived:matches")
+
+        try:
+            result = recompute_club_results(dry_run=args.dry_run)
+        except Exception as exc:
+            kind = _classify_exception(exc)
+            logger.error("[rollup:club-results] failed: %s", exc)
+            if run_log is not None:
+                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+            return
+
+        logger.info(
+            "[rollup:club-results] rows_written=%d skipped_linker_pending=%d",
+            result["rows_written"], result["skipped_linker_pending"],
+        )
+        if run_log is not None:
+            run_log.finish_ok(
+                records_created=result["rows_written"],
+                records_updated=0,
+                records_failed=result["skipped_linker_pending"],
+            )
+        return
+
+    logger.error("Unknown --rollup key: %s", key)
+    sys.exit(2)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -391,33 +516,38 @@ def main() -> None:
     parser.add_argument("--teams", action="store_true",
                         help="Also scrape team-level data (age groups, contacts) where available. "
                              "For GotSport leagues this makes one additional HTTP request per club.")
-    parser.add_argument("--source", metavar="NAME",
-                        help="Run a non-league job instead of the legacy club-listing "
-                             "pipeline. Supported: 'sincsports-events' (populates events "
-                             "+ event_teams), 'link-canonical-clubs' (resolves "
-                             "event_teams.canonical_club_id).")
+    parser.add_argument("--source", metavar="KEY",
+                        help="Run a non-league scraper by key. Supported: "
+                             "'gotsport-matches' (requires --event-id), "
+                             "'sincsports-events' (populates events + event_teams), "
+                             "'link-canonical-clubs' (resolves event_teams.canonical_club_id).")
+    parser.add_argument("--event-id", metavar="ID",
+                        help="GotSport event id for --source gotsport-matches.")
+    parser.add_argument("--season", metavar="SEASON",
+                        help="Season tag (e.g. '2025-26') to stamp on scraped/rollup rows.")
+    parser.add_argument("--league-name", metavar="NAME",
+                        help="League name to tag on match rows (e.g. 'ECNL Boys National').")
     parser.add_argument("--tid", metavar="TID",
                         help="When --source=sincsports-events, scrape a single tid instead "
                              "of iterating the full seed list.")
     parser.add_argument("--limit", type=int, metavar="N",
                         help="Cap the number of rows processed by --source jobs that "
                              "support it (e.g. link-canonical-clubs).")
+    parser.add_argument("--rollup", choices=["club-results"],
+                        help="Run a derived-data rollup over existing DB rows.")
     args = parser.parse_args()
 
-    # --source dispatcher — non-league jobs short-circuit here.
+    # ------------------------------------------------------------------
+    # Alternative dispatchers: --source (non-league scrapers) / --rollup
+    # These short-circuit the league-iteration path. They log to
+    # scrape_run_logs with their own scraper_key.
+    # ------------------------------------------------------------------
+    if args.rollup:
+        _run_rollup(args)
+        return
     if args.source:
-        key = args.source.lower().strip()
-        if key in ("sincsports-events", "sincsports_events"):
-            from events_runner import run_sincsports_events, print_summary
-            outcomes = run_sincsports_events(dry_run=args.dry_run, only_tid=args.tid)
-            print_summary(outcomes)
-            return
-        if key in ("link-canonical-clubs", "link_canonical_clubs"):
-            from canonical_club_linker import run_cli as _run_linker
-            rc = _run_linker(dry_run=args.dry_run, limit=args.limit)
-            sys.exit(rc)
-        logger.error("Unknown --source: %s", args.source)
-        sys.exit(2)
+        _run_source(args)
+        return
 
     if args.teams:
         os.environ["UPSHIFT_SCRAPE_TEAMS"] = "1"

@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head><title>Score variants fixture</title></head>
+<body>
+<!--
+  Fixture covering GotSport score shapes that the original regex rejected:
+  W/L/D prefix, forfeits (F/FF), shootout parens, BYE, future match.
+  Each tr.match has a score cell layout typical of SportsEngine-style
+  schedule renders (score is in a plain td, not .home-score/.away-score).
+-->
+<table>
+  <thead>
+    <tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th><th>Division</th></tr>
+  </thead>
+  <tbody>
+    <tr class="match" data-match-id="SV-1">
+      <td class="match-date">2026-03-14 10:00</td>
+      <td class="home">W Team</td>
+      <td>W 3-2</td>
+      <td class="away">L Team</td>
+      <td class="division">B15 Premier</td>
+    </tr>
+    <tr class="match" data-match-id="SV-2">
+      <td class="match-date">2026-03-14 12:00</td>
+      <td class="home">FF Home</td>
+      <td>F 1-0</td>
+      <td class="away">Ghost FC</td>
+      <td class="division">B15 Premier</td>
+    </tr>
+    <tr class="match" data-match-id="SV-3">
+      <td class="match-date">2026-03-14 14:00</td>
+      <td class="home">Shootout A</td>
+      <td>2-2 (4-3)</td>
+      <td class="away">Shootout B</td>
+      <td class="division">B15 Premier</td>
+    </tr>
+    <tr class="match" data-match-id="SV-4">
+      <td class="match-date">2026-03-21 10:00</td>
+      <td class="home">Future Team</td>
+      <td></td>
+      <td class="away">TBD FC</td>
+      <td class="division">B15 Premier</td>
+    </tr>
+    <tr class="match" data-match-id="SV-5">
+      <td class="match-date">2026-03-21 12:00</td>
+      <td class="home">Resting Team</td>
+      <td>BYE</td>
+      <td class="away">BYE</td>
+      <td class="division">B15 Premier</td>
+    </tr>
+  </tbody>
+</table>
+</body>
+</html>
