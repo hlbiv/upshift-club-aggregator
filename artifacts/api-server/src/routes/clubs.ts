@@ -13,7 +13,7 @@ import {
   GetRelatedClubsResponse,
   ClubSearchResponse,
   ClubStaffResponse,
-} from "@workspace/api-zod";
+} from "@upshift/api-zod";
 import { parsePagination, buildWhere } from "../lib/pagination";
 
 const router: IRouter = Router();
