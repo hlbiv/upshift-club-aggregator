@@ -160,6 +160,16 @@ pnpm --filter @workspace/api-server run dev            # start API on 8080
 
 Base: `/api` on port 8080. Pagination: `?page=1&page_size=20` (max 100).
 
+### Authentication (M2M)
+
+Every `/api/*` route except `/api/healthz` requires a valid API key in either `X-API-Key: <key>` or `Authorization: Bearer <key>`. Middleware lives at `artifacts/api-server/src/middlewares/apiKeyAuth.ts` and is mounted in `app.ts` before the router. The `api_keys` table stores only sha256 hashes — plaintext is shown once at creation time via `scripts/src/create-api-key.ts`. Revoke via `scripts/src/revoke-api-key.ts --prefix <8-char>`. `last_used_at` is updated on every successful lookup inside `findApiKeyByHash`.
+
+**First-key bootstrap (Replit):** after this PR merges, run once:
+```bash
+pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-player-platform prod"
+```
+Copy the plaintext into the caller's `UPSHIFT_DATA_API_KEY` env var. Rotating = create new → update env → revoke old. Helpers (`hashApiKey`, `generateApiKey`, `findApiKeyByHash`) are exported from `@workspace/db`.
+
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/healthz` | Health |

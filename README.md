@@ -173,6 +173,47 @@ See `docs/path-a-data-model.md` for the full domain-by-domain spec and `CLAUDE.m
 
 Base URL: `/api` — port 8080. All list endpoints are paginated (`?page=1&page_size=20`, max 100).
 
+### Authentication
+
+Every request under `/api/*` except `/api/healthz` requires a machine-to-machine API key. Pass it in either header:
+
+```
+X-API-Key: <key>
+```
+```
+Authorization: Bearer <key>
+```
+
+Requests without a valid key return `401 { "error": "unauthorized", ... }`. There are no user sessions — this is a pure M2M API.
+
+#### Creating a key (on Replit)
+
+```bash
+pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-player-platform prod"
+```
+
+The plaintext key is printed ONCE. Copy it immediately into the caller's env var (e.g. `UPSHIFT_DATA_API_KEY` on `upshift-player-platform`). Only the sha256 hash is stored in the database — a lost key cannot be recovered, only revoked and replaced.
+
+#### Rotating a key
+
+1. Create a new key with `create-api-key` (different `--name` suffix or timestamp).
+2. Update the caller's env var and redeploy.
+3. Confirm the new key works by tailing logs for 401s.
+4. Revoke the old key:
+   ```bash
+   pnpm --filter @workspace/scripts run revoke-api-key -- --prefix <8-char-prefix>
+   ```
+
+#### Calling from `upshift-player-platform`
+
+```ts
+const res = await fetch(`${process.env.UPSHIFT_DATA_API_URL}/api/clubs`, {
+  headers: { "X-API-Key": process.env.UPSHIFT_DATA_API_KEY! },
+});
+```
+
+`/api/healthz` remains open for Replit liveness probes.
+
 ### Club Endpoints
 
 | Endpoint | Description |

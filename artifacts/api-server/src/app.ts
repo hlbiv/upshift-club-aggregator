@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { apiKeyAuth } from "./middlewares/apiKeyAuth";
 
 const app: Express = express();
 
@@ -28,6 +29,10 @@ app.use(
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// M2M API-key auth. Runs before the router so every `/api/*` path except
+// the liveness probe requires a valid key. See middlewares/apiKeyAuth.ts.
+app.use("/api", apiKeyAuth);
 
 app.use("/api", router);
 
