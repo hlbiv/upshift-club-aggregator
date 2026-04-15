@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { canonicalClubs, clubAliases } from "@workspace/db/schema";
 import { ilike, or, asc, sql, inArray } from "drizzle-orm";
-import { SearchClubsResponse } from "@upshift/api-zod";
+import { SearchClubsResponse } from "@hlbiv/api-zod";
 
 const router: IRouter = Router();
 

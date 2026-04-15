@@ -163,7 +163,7 @@ importers:
 
   artifacts/api-server:
     dependencies:
-      '@upshift/api-zod':
+      '@hlbiv/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
       '@workspace/db':

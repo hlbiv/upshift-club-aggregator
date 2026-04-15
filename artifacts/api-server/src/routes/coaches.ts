@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { coachDiscoveries } from "@workspace/db/schema";
 import { eq, ilike, gte, sql, asc } from "drizzle-orm";
-import { CoachSearchResponse } from "@upshift/api-zod";
+import { CoachSearchResponse } from "@hlbiv/api-zod";
 import { parsePagination, buildWhere } from "../lib/pagination";
 
 /**
