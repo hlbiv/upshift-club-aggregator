@@ -192,6 +192,41 @@ Every `/api/*` route except `/api/healthz` requires a valid API key in either `X
 
 Rotating = create new → update env → revoke old. Helpers (`hashApiKey`, `generateApiKey`, `findApiKeyByHash`) are exported from `@workspace/db`.
 
+### API-key auth cutover
+
+One-time flip to require `X-API-Key` on every `/api/*` call. Run the steps in order on Replit; none of this should be executed locally.
+
+1. **Mint the caller's key.** The CLI takes `--name` only; there is no `--scope` flag (scopes default to `[]` in the `api_keys` row and are reserved for future use).
+   ```bash
+   pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-player-platform"
+   ```
+   The script prints the plaintext key exactly once. Copy it now.
+
+2. **Hand the plaintext to the sibling repo.** Set `UPSHIFT_DATA_API_KEY=<plaintext>` in the `upshift-player-platform` Replit Secrets. Also set `UPSHIFT_DATA_API_URL=<this-repo's-api-base>` if it isn't already wired. Redeploy / restart the player-platform server so the env is picked up.
+
+3. **Enable enforcement on this repo.** In Replit Secrets set `API_KEY_AUTH_ENABLED=true`, then restart the api-server. Boot log should print `[api-key-auth] enabled` (the `DISABLED` line means the flag is still false / unset).
+
+4. **Smoke-test the cutover.** From a shell with `UPSHIFT_DATA_API_KEY` exported (reuse the key minted in step 1):
+   ```bash
+   pnpm --filter @workspace/scripts run smoke-api-key
+   ```
+   The script probes `/api/healthz`, `/api/clubs`, `/api/coaches/search`, `/api/events/search` with and without the key and asserts 200 / 401. Non-zero exit = cutover is broken. Quick manual equivalent:
+   ```bash
+   curl -sS -o /dev/null -w "%{http_code}\n" \
+     -H "X-API-Key: $UPSHIFT_DATA_API_KEY" \
+     http://localhost:8080/api/clubs?page_size=1    # expect 200
+   curl -sS -o /dev/null -w "%{http_code}\n" \
+     http://localhost:8080/api/clubs?page_size=1    # expect 401
+   ```
+
+5. **Rollback** (both safe and reversible):
+   - **Disable globally:** set `API_KEY_AUTH_ENABLED=false` and restart. Middleware is skipped on boot; behaves as pre-cutover. Use this if the sibling repo is 401-ing and you need to unblock traffic.
+   - **Revoke a single key:** `pnpm --filter @workspace/scripts run revoke-api-key -- --prefix <first-8-chars-of-plaintext>` (CLI keys off the 8-char prefix, not an id). Soft-sets `revoked_at`; next request from that key 401s.
+
+**Rotation after cutover:** mint new → update caller env → redeploy caller → revoke old prefix. Redeploying between mint and revoke avoids a window where the caller sends the old key and 401s.
+
+The handoff doc for the sibling repo (fetch wrapper + error handling) lives at `docs/integrating-from-player-platform.md`.
+
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/healthz` | Health |
