@@ -50,6 +50,7 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 │   ├── scraper_static.py        # BeautifulSoup
 │   ├── scraper_js.py            # Playwright
 │   ├── normalizer.py            # RapidFuzz dedup (threshold 88)
+│   ├── canonical_club_linker.py # 4-pass raw-team-name → canonical_clubs.id resolver
 │   ├── extractors/              # Per-site custom extractors (URL-pattern matched)
 │   └── tests/                   # Pytest suite
 ├── lib/
@@ -219,6 +220,27 @@ Empty counts + `total: 0` are expected until a scraper-wiring PR populates the n
 - ✅ `club_coaches` dropped — absorb step returned 0 rows on Replit, API route was rewired in PR #3
 - ✅ `/api/events/search` rewired to `events` + `event_teams`; `club_events` dropped in the same PR
 - ⏳ **Next:** wire scrapers to populate Path A tables (`events`, `event_teams`, `matches`, rosters, etc.)
+
+### Canonical-Club Linker
+
+Event + match scrapers write `team_name_raw` / `home_team_name` / `away_team_name` and leave the `canonical_club_id` / `home_club_id` / `away_club_id` FKs NULL on purpose (keeps scraper code simple and surfaces parsing bugs instead of hiding them behind fuzzy matching). A separate linker job resolves those FKs.
+
+**Run after every scrape** on Replit:
+
+```bash
+cd scraper && python3 run.py --source link-canonical-clubs
+# optional smoke: --dry-run, --limit 100
+```
+
+4-pass resolver, each pass short-circuits on hit:
+1. Exact alias match (`club_aliases.alias_name`)
+2. Exact canonical match (`canonical_clubs.club_name_canonical`)
+3. Fuzzy match via `rapidfuzz.fuzz.token_set_ratio >= 88`; on hit, writes a new `club_aliases` row so future runs hit pass #1
+4. No match — leaves FK NULL, reports the top unmatched raw names
+
+Idempotent — only touches rows where the FK is currently NULL.
+
+**Downstream consumers depend on this running:** `/api/events/search?club_id=N`, `matches` → `club_results` rollup. Neither works end-to-end without at least one linker pass.
 
 See `docs/path-a-data-model.md` for the full domain-by-domain spec + changelog.
 

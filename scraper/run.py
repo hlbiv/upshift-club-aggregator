@@ -391,7 +391,22 @@ def main() -> None:
     parser.add_argument("--teams", action="store_true",
                         help="Also scrape team-level data (age groups, contacts) where available. "
                              "For GotSport leagues this makes one additional HTTP request per club.")
+    parser.add_argument("--source", metavar="NAME",
+                        help="Run a non-league job. Supported: 'link-canonical-clubs'. "
+                             "Skips the league-scraping loop entirely.")
+    parser.add_argument("--limit", type=int, metavar="N",
+                        help="Cap the number of rows processed by --source jobs that "
+                             "support it (e.g. link-canonical-clubs).")
     args = parser.parse_args()
+
+    # --source dispatcher — non-league jobs short-circuit here.
+    if args.source:
+        if args.source == "link-canonical-clubs":
+            from canonical_club_linker import run_cli as _run_linker
+            rc = _run_linker(dry_run=args.dry_run, limit=args.limit)
+            sys.exit(rc)
+        logger.error("Unknown --source: %s", args.source)
+        sys.exit(2)
 
     if args.teams:
         os.environ["UPSHIFT_SCRAPE_TEAMS"] = "1"
