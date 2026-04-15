@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { events, eventTeams } from "@workspace/db/schema";
 import { eq, ilike, gte, lte, sql, asc } from "drizzle-orm";
-import { EventSearchResponse } from "@workspace/api-zod";
+import { EventSearchResponse } from "@upshift/api-zod";
 import { parsePagination, buildWhere } from "../lib/pagination";
 
 const router: IRouter = Router();

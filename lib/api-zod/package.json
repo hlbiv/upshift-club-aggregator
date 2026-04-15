@@ -1,12 +1,39 @@
 {
-  "name": "@workspace/api-zod",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@upshift/api-zod",
+  "version": "0.1.0",
+  "description": "Orval-generated Zod validators and TypeScript types for the Upshift Data API (youth soccer club graph).",
+  "license": "UNLICENSED",
   "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "scripts/fix-esm-extensions.mjs"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/fix-esm-extensions.mjs",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "zod": "catalog:"
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hlbiv/upshift-club-aggregator.git",
+    "directory": "lib/api-zod"
   }
 }

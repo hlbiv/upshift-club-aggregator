@@ -163,7 +163,7 @@ importers:
 
   artifacts/api-server:
     dependencies:
-      '@workspace/api-zod':
+      '@upshift/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
       '@workspace/db':
@@ -414,8 +414,12 @@ importers:
   lib/api-zod:
     dependencies:
       zod:
-        specifier: 'catalog:'
+        specifier: ^3.25.76
         version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
 
   lib/db:
     dependencies:
