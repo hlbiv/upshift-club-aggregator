@@ -160,6 +160,22 @@ pnpm --filter @workspace/api-server run dev            # start API on 8080
 
 Base: `/api` on port 8080. Pagination: `?page=1&page_size=20` (max 100).
 
+### Authentication (M2M)
+
+Every `/api/*` route except `/api/healthz` requires a valid API key in either `X-API-Key: <key>` or `Authorization: Bearer <key>` — **when the `API_KEY_AUTH_ENABLED=true` env var is set**. Without the flag the middleware is skipped entirely and the server logs `[api-key-auth] DISABLED` on boot. This lets a fresh deploy mint a key before enforcement turns on (otherwise merging this PR would 401 every call until someone ran the create-key script). Middleware lives at `artifacts/api-server/src/middlewares/apiKeyAuth.ts` and is conditionally mounted in `app.ts` before the router. The `api_keys` table stores only sha256 hashes — plaintext is shown once at creation time via `scripts/src/create-api-key.ts`. Revoke via `scripts/src/revoke-api-key.ts --prefix <8-char>`. `last_used_at` is updated on every successful lookup inside `findApiKeyByHash` (revoked rows are filtered in SQL via `AND revoked_at IS NULL`, so a revoked key never gets its timestamp bumped). 401 bodies are a generic `{error: "unauthorized"}` for every failure mode; the specific reason (`missing` / `notfound`) is logged server-side via `console.warn` with ip + path + key prefix.
+
+**Bootstrap (Replit, first deploy):**
+1. Pull + `pnpm install` + `pnpm --filter @workspace/db run push` (creates `api_keys`).
+2. Mint the first key:
+   ```bash
+   pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-player-platform prod"
+   ```
+3. Copy the plaintext into the caller's `UPSHIFT_DATA_API_KEY` env var.
+4. Set `API_KEY_AUTH_ENABLED=true` in Replit Secrets.
+5. Restart the API server — boot log prints `[api-key-auth] enabled`.
+
+Rotating = create new → update env → revoke old. Helpers (`hashApiKey`, `generateApiKey`, `findApiKeyByHash`) are exported from `@workspace/db`.
+
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/healthz` | Health |
