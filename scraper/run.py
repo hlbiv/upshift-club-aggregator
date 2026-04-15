@@ -392,6 +392,16 @@ def _run_source(args) -> None:
         from canonical_club_linker import run_cli as _run_linker
         rc = _run_linker(dry_run=args.dry_run, limit=args.limit)
         sys.exit(rc)
+    if key in ("sincsports-rosters", "sincsports_rosters"):
+        from rosters_runner import run_sincsports_rosters, print_summary
+        outcomes = run_sincsports_rosters(dry_run=args.dry_run, only_tid=args.tid)
+        print_summary(outcomes)
+        return
+    if key in ("tryouts-wordpress", "tryouts_wordpress"):
+        from tryouts_runner import run_tryouts_wordpress, print_summary
+        outcomes = run_tryouts_wordpress(dry_run=args.dry_run, limit=args.limit)
+        print_summary(outcomes)
+        return
     logger.error("Unknown --source key: %s", key)
     sys.exit(2)
 
@@ -520,6 +530,8 @@ def main() -> None:
                         help="Run a non-league scraper by key. Supported: "
                              "'gotsport-matches' (requires --event-id), "
                              "'sincsports-events' (populates events + event_teams), "
+                             "'sincsports-rosters' (populates club_roster_snapshots + roster_diffs), "
+                             "'tryouts-wordpress' (populates tryouts from WordPress sites), "
                              "'link-canonical-clubs' (resolves event_teams.canonical_club_id).")
     parser.add_argument("--event-id", metavar="ID",
                         help="GotSport event id for --source gotsport-matches.")

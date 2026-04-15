@@ -188,6 +188,8 @@ High-value leagues have site-specific extractors registered in `extractors/regis
 | MSPSP (Michigan) | `mspsp.py` | GotSport event 50611 clubs page | 88 |
 | DPL | `dpl.py` | WordPress pages + Playwright on bracket pages | 0 |
 | EDP Soccer | `edp.py` | Static + link crawl (Wix fallback) | 0 |
+| SincSports rosters | `sincsports_rosters.py` | TTTeamList → TTRoster pages; emits `club_roster_snapshots` + per-player `roster_diffs` | — |
+| WordPress tryouts | `tryouts_wordpress.py` | `/tryouts/`, `/register/`, `/join/` probes on club websites → `tryouts` table | — |
 
 ### Adding a Custom Extractor
 
