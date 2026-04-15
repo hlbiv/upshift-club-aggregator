@@ -3,7 +3,7 @@
  * looking up M2M API credentials. Imported by the api-server middleware and
  * by the create-/revoke- CLI scripts.
  */
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "./index";
 import { apiKeys, type ApiKey } from "./schema/api-keys";
 
@@ -16,7 +16,14 @@ export type { GeneratedApiKey } from "./api-keys-crypto";
 /**
  * Look up a key by its sha256 hash. If the key exists and is not revoked,
  * update last_used_at in the same statement and return the row. Returns null
- * on miss OR on a revoked key — the middleware treats both as 401.
+ * on miss OR on a revoked key.
+ *
+ * The `revoked_at IS NULL` predicate is part of the UPDATE's WHERE clause on
+ * purpose: a revoked key must not have its `last_used_at` bumped by a 401
+ * attempt (that would pollute the audit trail and give an attacker a free
+ * DB write on every probe). Revoked keys and never-existed keys are
+ * intentionally indistinguishable from the caller's perspective — both
+ * return null and the middleware responds with a generic 401.
  */
 export async function findApiKeyByHash(
   hash: string,
@@ -24,11 +31,10 @@ export async function findApiKeyByHash(
   const rows = await db
     .update(apiKeys)
     .set({ lastUsedAt: new Date() })
-    .where(eq(apiKeys.keyHash, hash))
+    .where(and(eq(apiKeys.keyHash, hash), isNull(apiKeys.revokedAt)))
     .returning();
 
   const row = rows[0];
   if (!row) return null;
-  if (row.revokedAt) return null;
   return row;
 }

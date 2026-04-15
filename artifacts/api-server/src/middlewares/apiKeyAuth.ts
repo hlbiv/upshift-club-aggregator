@@ -50,6 +50,33 @@ function extractKey(req: Request): string | null {
  * Factory — build a middleware with a custom lookup function. Used by
  * tests to inject a fake without hitting the database.
  */
+/**
+ * Client-facing 401 body. Intentionally identical for every failure mode
+ * (missing header / bad key / revoked key) so an attacker probing the
+ * endpoint can't distinguish "this key was once valid" from "never existed".
+ * Detailed reason is logged server-side — see logAuthFailure below.
+ */
+const UNAUTHORIZED_BODY = { error: "unauthorized" };
+
+type AuthFailureReason = "missing" | "notfound";
+
+function logAuthFailure(
+  req: Request,
+  reason: AuthFailureReason,
+  keyPrefix: string | null,
+): void {
+  // Use console.warn to stay consistent with the rest of the repo's logging
+  // posture in middleware (pino-http handles request logging; this is a
+  // separate security-event line).
+  // eslint-disable-next-line no-console
+  console.warn("[api-key-auth] auth failure", {
+    ip: req.ip,
+    path: req.path,
+    prefix: keyPrefix ?? "(none)",
+    reason,
+  });
+}
+
 export function makeApiKeyAuth(lookup: ApiKeyLookup): RequestHandler {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (req.method === "OPTIONS") {
@@ -62,20 +89,21 @@ export function makeApiKeyAuth(lookup: ApiKeyLookup): RequestHandler {
     }
     const plaintext = extractKey(req);
     if (!plaintext) {
-      res.status(401).json({
-        error: "unauthorized",
-        message:
-          "Missing API key. Pass it in the X-API-Key header or as Authorization: Bearer <key>.",
-      });
+      logAuthFailure(req, "missing", null);
+      res.status(401).json(UNAUTHORIZED_BODY);
       return;
     }
+    // Derive the key prefix (first 8 chars) for audit logging before we
+    // hash. Safe to log — the prefix is stored in plaintext in the DB too.
+    const keyPrefix = plaintext.slice(0, 8);
     try {
       const row = await lookup(hashApiKey(plaintext));
       if (!row) {
-        res.status(401).json({
-          error: "unauthorized",
-          message: "Invalid or revoked API key.",
-        });
+        // findApiKeyByHash filters revoked rows in SQL, so "not found" here
+        // covers both "never existed" and "revoked" — indistinguishable by
+        // design. Client sees the same generic 401 in either case.
+        logAuthFailure(req, "notfound", keyPrefix);
+        res.status(401).json(UNAUTHORIZED_BODY);
         return;
       }
       req.apiKey = {

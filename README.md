@@ -175,7 +175,7 @@ Base URL: `/api` — port 8080. All list endpoints are paginated (`?page=1&page_
 
 ### Authentication
 
-Every request under `/api/*` except `/api/healthz` requires a machine-to-machine API key. Pass it in either header:
+Every request under `/api/*` except `/api/healthz` requires a machine-to-machine API key (when enforcement is turned on — see bootstrap below). Pass it in either header:
 
 ```
 X-API-Key: <key>
@@ -184,15 +184,25 @@ X-API-Key: <key>
 Authorization: Bearer <key>
 ```
 
-Requests without a valid key return `401 { "error": "unauthorized", ... }`. There are no user sessions — this is a pure M2M API.
+Requests without a valid key return `401 { "error": "unauthorized" }`. The response body is intentionally the same for missing, unknown, and revoked keys — detailed reason is logged server-side only. There are no user sessions — this is a pure M2M API.
 
-#### Creating a key (on Replit)
+#### Bootstrap sequence (first deploy)
 
-```bash
-pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-player-platform prod"
-```
+Enforcement is gated by the `API_KEY_AUTH_ENABLED` env var. A fresh deploy with the flag unset accepts all `/api/*` traffic so you can bring the table up and mint a key before flipping it on.
 
-The plaintext key is printed ONCE. Copy it immediately into the caller's env var (e.g. `UPSHIFT_DATA_API_KEY` on `upshift-player-platform`). Only the sha256 hash is stored in the database — a lost key cannot be recovered, only revoked and replaced.
+1. Pull, install, and push the schema (creates the `api_keys` table):
+   ```bash
+   pnpm install
+   pnpm --filter @workspace/db run push
+   ```
+2. Create the first key (plaintext prints once — copy immediately into the caller's env):
+   ```bash
+   pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-player-platform prod"
+   ```
+3. Set `API_KEY_AUTH_ENABLED=true` in Replit Secrets.
+4. Restart the API server. The boot log will print `[api-key-auth] enabled`; from here every `/api/*` call requires the header.
+
+The plaintext key is printed ONCE. Only the sha256 hash is stored in the database — a lost key cannot be recovered, only revoked and replaced.
 
 #### Rotating a key
 

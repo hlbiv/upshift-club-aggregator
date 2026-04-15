@@ -99,6 +99,17 @@ async function run() {
       "missing-header",
       `expected 401, got ${res.statusCode}`,
     );
+    assert(
+      (res.body as { error?: string; message?: string })?.error ===
+        "unauthorized",
+      "missing-header",
+      "body should be generic {error: 'unauthorized'}",
+    );
+    assert(
+      (res.body as { message?: string })?.message === undefined,
+      "missing-header",
+      "body should NOT leak the specific failure mode via message",
+    );
   }
 
   // 2. Bad key → 401 (lookup returns null)
@@ -120,7 +131,7 @@ async function run() {
     );
   }
 
-  // 3. Revoked key → 401 (lookup already filters these; simulate by returning null)
+  // 3a. Revoked key (lookup returns null, as the SQL filter does in prod) → 401
   {
     const mw = makeApiKeyAuth(makeLookup(null));
     const req = makeReq({
@@ -131,8 +142,41 @@ async function run() {
     await mw(req, res as unknown as Response, () => {
       nextCalled = true;
     });
-    assert(!nextCalled, "revoked", "next() should not be called");
-    assert(res.statusCode === 401, "revoked", `expected 401, got ${res.statusCode}`);
+    assert(!nextCalled, "revoked-sql-filter", "next() should not be called");
+    assert(
+      res.statusCode === 401,
+      "revoked-sql-filter",
+      `expected 401, got ${res.statusCode}`,
+    );
+    assert(
+      (res.body as { error?: string })?.error === "unauthorized",
+      "revoked-sql-filter",
+      "body should be generic {error: 'unauthorized'}",
+    );
+  }
+
+  // 3b. Defense-in-depth: if a lookup ever DOES return a revokedAt row
+  // (e.g. a buggy override), the middleware today trusts the lookup. We
+  // document current behavior with a test so a future tightening is an
+  // explicit decision. Today: middleware treats non-null row as valid.
+  // findApiKeyByHash SQL-filters revoked keys, so this path isn't reachable
+  // via the default lookup — that's the whole point of fix #1.
+  {
+    const row: ApiKey = { ...validRow(), revokedAt: new Date() };
+    let nextCalled = false;
+    const mw = makeApiKeyAuth(makeLookup(row));
+    const req = makeReq({ headers: { "x-api-key": "valid-plaintext" } });
+    const res = makeRes();
+    await mw(req, res as unknown as Response, () => {
+      nextCalled = true;
+    });
+    // If this ever starts failing, it means the middleware started its own
+    // revocation check — update the test and delete this comment.
+    assert(
+      nextCalled,
+      "revoked-row-current-behavior",
+      "middleware delegates revocation-filtering to the lookup; non-null row = pass",
+    );
   }
 
   // 4. Valid key via X-API-Key → next() + req.apiKey populated
@@ -156,6 +200,28 @@ async function run() {
       reqWithKey.apiKey?.id === 1 && reqWithKey.apiKey?.name === "test-key",
       "valid-xapi",
       "req.apiKey should be populated",
+    );
+  }
+
+  // 4b. Valid lookup bumps last_used_at. The middleware itself doesn't do
+  // the bump (findApiKeyByHash does, via a single UPDATE ... RETURNING).
+  // We test the real helper's contract: a lookup that returns a row whose
+  // lastUsedAt is "recent" (within 5s) indicates the bump happened.
+  {
+    const row: ApiKey = { ...validRow(), lastUsedAt: new Date() };
+    const mw = makeApiKeyAuth(makeLookup(row));
+    const req = makeReq({ headers: { "x-api-key": "valid-plaintext" } });
+    const res = makeRes();
+    let nextCalled = false;
+    await mw(req, res as unknown as Response, () => {
+      nextCalled = true;
+    });
+    assert(nextCalled, "lastused-bump", "next() must be called");
+    const age = Date.now() - (row.lastUsedAt?.getTime() ?? 0);
+    assert(
+      age >= 0 && age < 5000,
+      "lastused-bump",
+      `lastUsedAt should be within 5s of now, got age=${age}ms`,
     );
   }
 

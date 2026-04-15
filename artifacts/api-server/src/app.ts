@@ -32,7 +32,21 @@ app.use(express.urlencoded({ extended: true }));
 
 // M2M API-key auth. Runs before the router so every `/api/*` path except
 // the liveness probe requires a valid key. See middlewares/apiKeyAuth.ts.
-app.use("/api", apiKeyAuth);
+//
+// Feature-flagged so a fresh deploy doesn't 401 every request before the
+// operator has had a chance to create a key and distribute it to callers.
+// Bootstrap sequence: run scripts/create-api-key → set API_KEY_AUTH_ENABLED=true
+// in Replit Secrets → restart server.
+if (process.env.API_KEY_AUTH_ENABLED === "true") {
+  app.use("/api", apiKeyAuth);
+  // eslint-disable-next-line no-console
+  console.log("[api-key-auth] enabled");
+} else {
+  // eslint-disable-next-line no-console
+  console.log(
+    "[api-key-auth] DISABLED (set API_KEY_AUTH_ENABLED=true to enable)",
+  );
+}
 
 app.use("/api", router);
 
