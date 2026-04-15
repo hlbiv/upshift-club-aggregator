@@ -147,22 +147,61 @@ Install: `pip install -r scraper/requirements.txt && python3 -m playwright insta
 
 ---
 
-## PostgreSQL Graph Database
+## PostgreSQL Graph Database (Path A, April 2026)
 
-Schema in `lib/db/src/schema/index.ts`. Push with `pnpm --filter @workspace/db run push`.
+26 tables across 8 schema files in `lib/db/src/schema/`. Push with `pnpm --filter @workspace/db run push`.
 
-### Tables
+### Core club graph (`schema/index.ts`)
 
 | Table | Description |
 |---|---|
-| `canonical_clubs` | Deduplicated master club records; includes `website`, `website_status`, `website_discovered_at` |
+| `canonical_clubs` | Deduplicated master records. Path A additions: `logo_url`, `founded_year`, `twitter`, `instagram`, `facebook`, `staff_page_url`, `website_last_checked_at`, `last_scraped_at`, `scrape_confidence` |
 | `club_aliases` | All raw scraped name variants pointing to a canonical club |
 | `club_affiliations` | League/source associations per club (unique on `club_id + source_name`) |
-| `club_events` | Scraped event/bracket participation records with age group, gender, dates |
-| `club_coaches` | Scraped coach records from league directories |
-| `coach_discoveries` | Staff page coach discoveries (platform_family, confidence score 0–1) |
-| `leagues_master` | League/directory inventory |
-| `league_sources` | Official scrape source registry |
+| `coach_discoveries` | **Primary coach read model.** Path A additions: `coach_id` FK → `coaches.id`, `person_hash`, `phone`, `first_seen_at`, `last_seen_at` |
+| `leagues_master` / `league_sources` | League directory inventory + source registry |
+| `club_events` | **Deferred drop** — `/api/events/search` still reads from it; drops with the events-route rewire PR. (`club_coaches` dropped April 2026 after backfill verified.) |
+
+### Coaches (`schema/coaches.ts`)
+
+`coaches` (master, person-hash deduped, `manually_merged` guard), `coach_career_history`, `coach_movement_events`, `coach_scrape_snapshots`, `coach_effectiveness`.
+
+### Competition (`schema/events.ts`, `schema/matches.ts`)
+
+`events`, `event_teams`, `matches`, `club_results`.
+
+### Rosters / discovery (`schema/rosters-and-tryouts.ts`, `schema/clubs-extended.ts`)
+
+`roster_diffs`, `tryouts`, `club_roster_snapshots`, `club_site_changes`.
+
+### Colleges (`schema/colleges.ts`)
+
+`colleges`, `college_coaches`, `college_roster_history`.
+
+### Scrape telemetry (`schema/scrape-health.ts`)
+
+`scrape_run_logs` (per-run log; `failure_kind` ∈ `timeout | network | parse_error | zero_results | unknown`; `records_touched` is a STORED generated column), `scrape_health` (rolling rollups).
+
+### Contract invariants
+
+- **FailureKind enum** is synchronized across 3 places: Postgres CHECK on `scrape_run_logs`, `scraper/run.py:FailureKind`, `scraper/scrape_run_logger.py:FailureKind`. A parity pytest enforces this.
+- **Partial unique index with COALESCE**: `matches_natural_key_uq` uses `COALESCE(match_date, 'epoch'::timestamp)` etc. because Postgres treats NULLs as distinct under plain `unique()`. Same pattern in `tryouts_club_date_bracket_uq`.
+- **Drizzle 0.45 `generatedAlwaysAs`** is single-arg only. Do not pass `{mode: 'stored'}`.
+- **ESM forward-ref FK**: `coach_discoveries.coach_id` references `coaches.id`. Drizzle resolves FK callbacks lazily, so the `coaches.ts ↔ index.ts` ESM cycle is safe.
+
+### Path A runbook (post-schema-push)
+
+```bash
+pnpm install                                                          # refresh workspace symlinks
+pnpm --filter @workspace/db run push                                  # apply schema
+pnpm --filter @workspace/scripts run backfill-coaches -- --dry-run    # preview
+pnpm --filter @workspace/scripts run backfill-coaches                 # commit
+psql "$DATABASE_URL" -c "SELECT count(*) FROM coach_discoveries WHERE coach_id IS NULL;"  # should return 0
+```
+
+Verified on Replit April 2026: 2,647 discoveries scanned → 2,603 coaches inserted, 44-row `person_hash` collision rate, residual `coach_id IS NULL` = 0.
+
+See `docs/path-a-data-model.md` for the full spec + changelog; `CLAUDE.md` for session context.
 
 ---
 

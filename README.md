@@ -51,6 +51,10 @@ python3 scrape_staff.py --limit 100  # Scrape staff pages for coaches
 pnpm --filter @workspace/db run push
 npx tsx lib/db/src/seed.ts
 
+# Backfill coaches master from coach_discoveries (idempotent)
+pnpm --filter @workspace/scripts run backfill-coaches -- --dry-run
+pnpm --filter @workspace/scripts run backfill-coaches
+
 # Start API (port 8080)
 pnpm --filter @workspace/api-server run dev
 ```
@@ -112,18 +116,56 @@ lib/db/src/seed.ts ──► PostgreSQL
 
 ## Database Schema
 
-PostgreSQL, managed with Drizzle ORM. Push schema: `pnpm --filter @workspace/db run push`.
+PostgreSQL, managed with Drizzle ORM. 26 tables after the April 2026 Path A expansion. Push schema: `pnpm --filter @workspace/db run push`.
+
+### Core club graph
 
 | Table | Purpose |
 |---|---|
-| `canonical_clubs` | Master club records with website and status fields |
+| `canonical_clubs` | Master club records; website, status, socials, last-scraped timestamps |
 | `club_aliases` | All scraped name variants per canonical club |
 | `club_affiliations` | League/source associations (unique on `club_id + source_name`) |
-| `club_events` | Event/bracket participation: age group, gender, division, dates |
-| `club_coaches` | Coach records from league directories |
-| `coach_discoveries` | Staff-page-discovered coaches with platform family and confidence score |
 | `leagues_master` | League directory inventory |
 | `league_sources` | Official scrape source registry |
+
+### Coaches (Path A)
+
+| Table | Purpose |
+|---|---|
+| `coaches` | Master coach records; `person_hash` dedup; `manually_merged` guard for operator curation |
+| `coach_discoveries` | Primary coach read model; FK to `coaches` via `coach_id`; platform family + confidence |
+| `coach_career_history` | Role+tenure records per coach across clubs |
+| `coach_movement_events` | Hire/leave/promotion events |
+| `coach_scrape_snapshots` | Point-in-time snapshot per scrape run |
+| `coach_effectiveness` | Aggregated outcome metrics |
+
+### Competition + rosters (Path A)
+
+| Table | Purpose |
+|---|---|
+| `events` / `event_teams` | Tournaments, leagues, showcases and participating teams |
+| `matches` / `club_results` | Individual games + aggregated per-club results |
+| `roster_diffs` / `tryouts` | Roster change log + tryout announcements |
+| `club_roster_snapshots` / `club_site_changes` | Point-in-time roster diffing + website change detection |
+
+### Colleges (Path A)
+
+| Table | Purpose |
+|---|---|
+| `colleges` / `college_coaches` / `college_roster_history` | NCAA/NAIA/NJCAA dataset |
+
+### Scrape telemetry (Path A)
+
+| Table | Purpose |
+|---|---|
+| `scrape_run_logs` | Per-run telemetry with `failure_kind` enum; written by `scraper/scrape_run_logger.py` |
+| `scrape_health` | Rolling health rollups |
+
+### Deferred drops
+
+`club_coaches` was dropped April 2026 after the backfill verified zero residual rows and the API route was rewired to `coach_discoveries`. `club_events` remains until `/api/events/search` is rewired to read from `events` + `event_teams`.
+
+See `docs/path-a-data-model.md` for the full domain-by-domain spec and `CLAUDE.md` for session context.
 
 ---
 

@@ -134,19 +134,17 @@ export const clubEvents = pgTable("club_events", {
   scrapedAt: timestamp("scraped_at").defaultNow(),
 });
 
-export const clubCoaches = pgTable("club_coaches", {
-  id: serial("id").primaryKey(),
-  clubId: integer("club_id").references(() => canonicalClubs.id, {
-    onDelete: "cascade",
-  }),
-  name: text("name").notNull(),
-  title: text("title"),
-  email: text("email"),
-  phone: text("phone"),
-  confidenceScore: real("confidence_score").default(1.0),
-  sourceUrl: text("source_url"),
-  scrapedAt: timestamp("scraped_at").defaultNow(),
-});
+// club_coaches — DROPPED April 2026.
+//
+// Prototype coach table that predated coach_discoveries. Absorbed into
+// coach_discoveries via scripts/src/backfill-coaches-master.ts (step 1).
+// On Replit the absorb step returned 0 rows because the table was already
+// empty. API route (/api/coaches/search) was rewired to coach_discoveries
+// in PR #3 before this drop.
+//
+// club_events — DEFERRED. /api/events/search still reads from clubEvents.
+// Drops in a follow-up PR that simultaneously rewires the events route to
+// the new events + event_teams tables.
 
 export const coachDiscoveries = pgTable(
   "coach_discoveries",
@@ -195,7 +193,6 @@ export const canonicalClubsRelations = relations(
     aliases: many(clubAliases),
     affiliations: many(clubAffiliations),
     events: many(clubEvents),
-    coaches: many(clubCoaches),
     coachDiscoveries: many(coachDiscoveries),
   }),
 );
@@ -220,13 +217,6 @@ export const clubAffiliationsRelations = relations(
 export const clubEventsRelations = relations(clubEvents, ({ one }) => ({
   club: one(canonicalClubs, {
     fields: [clubEvents.clubId],
-    references: [canonicalClubs.id],
-  }),
-}));
-
-export const clubCoachesRelations = relations(clubCoaches, ({ one }) => ({
-  club: one(canonicalClubs, {
-    fields: [clubCoaches.clubId],
     references: [canonicalClubs.id],
   }),
 }));
@@ -256,9 +246,6 @@ export const insertClubAffiliationSchema = createInsertSchema(
 export const insertClubEventSchema = createInsertSchema(clubEvents).omit({
   id: true,
 });
-export const insertClubCoachSchema = createInsertSchema(clubCoaches).omit({
-  id: true,
-});
 export const insertCoachDiscoverySchema = createInsertSchema(
   coachDiscoveries,
 ).omit({ id: true });
@@ -269,7 +256,6 @@ export type ClubAlias = typeof clubAliases.$inferSelect;
 export type ClubAffiliation = typeof clubAffiliations.$inferSelect;
 export type LeagueSource = typeof leagueSources.$inferSelect;
 export type ClubEvent = typeof clubEvents.$inferSelect;
-export type ClubCoach = typeof clubCoaches.$inferSelect;
 export type CoachDiscovery = typeof coachDiscoveries.$inferSelect;
 
 export type InsertLeague = typeof leaguesMaster.$inferInsert;
@@ -277,7 +263,6 @@ export type InsertCanonicalClub = typeof canonicalClubs.$inferInsert;
 export type InsertClubAlias = typeof clubAliases.$inferInsert;
 export type InsertClubAffiliation = typeof clubAffiliations.$inferInsert;
 export type InsertClubEvent = typeof clubEvents.$inferInsert;
-export type InsertClubCoach = typeof clubCoaches.$inferInsert;
 export type InsertCoachDiscovery = typeof coachDiscoveries.$inferInsert;
 
 // ---------------------------------------------------------------------------
