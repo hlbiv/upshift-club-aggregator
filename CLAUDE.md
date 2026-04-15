@@ -140,6 +140,10 @@ python3 run.py --source gotsport-matches --event-id 12345 \
 python3 run.py --source sincsports-events                # all 14 SincSports seeds
 python3 run.py --source sincsports-events --dry-run      # preview without DB writes
 python3 run.py --source sincsports-events --tid GULFC    # single event
+python3 run.py --source sincsports-rosters               # walk teams, upsert club_roster_snapshots + diffs
+python3 run.py --source sincsports-rosters --tid GULFC --dry-run
+python3 run.py --source tryouts-wordpress                # probe WordPress tryout pages
+python3 run.py --source tryouts-wordpress --limit 5      # first 5 seed sites
 python3 run.py --rollup club-results
 ```
 
@@ -286,7 +290,8 @@ Empty counts + `total: 0` are expected until a scraper-wiring PR populates the n
 - ✅ Replit backfill run: 2,647 discoveries → 2,603 coaches inserted, 44-row collision rate, `coach_id IS NULL` count = 0
 - ✅ `club_coaches` dropped — absorb step returned 0 rows on Replit, API route was rewired in PR #3
 - ✅ `/api/events/search` rewired to `events` + `event_teams`; `club_events` dropped in the same PR
-- ⏳ **Next:** wire scrapers to populate Path A tables (`events`, `event_teams`, `matches`, rosters, etc.)
+- ✅ PR for rosters + tryouts scrapers — `sincsports-rosters` and `tryouts-wordpress` run behind `--source` keys in `run.py`, write through `scraper/ingest/roster_snapshot_writer.py` + `tryouts_writer.py` with named `ON CONFLICT ON CONSTRAINT` upserts and per-player diff materialization. See `docs/rosters-and-tryouts-pipeline.md`.
+- ⏳ **Next:** remaining Path A tables (additional roster sources beyond SincSports, richer tryouts seed list beyond WordPress clubs).
 
 ### Canonical-Club Linker
 
