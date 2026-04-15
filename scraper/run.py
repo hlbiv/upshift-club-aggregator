@@ -1,5 +1,5 @@
 """
-Upshift Club Aggregator — main entry point.
+Upshift Data — main entry point.
 
 Usage examples:
     python run.py                              # all scrapeable leagues
@@ -321,7 +321,7 @@ def _write_website_coverage(frame_entries: list[tuple[str, pd.DataFrame]]) -> No
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Upshift Club Aggregator",
+        description="Upshift Data",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--league", metavar="NAME",

@@ -5,7 +5,9 @@
  * Upshift Data API — youth soccer club graph database
  * OpenAPI spec version: 0.2.0
  */
+import type { CoachDiscovery } from "./coachDiscovery";
 
-export interface HealthStatus {
-  status: string;
+export interface ClubStaffResponse {
+  club_id: number;
+  staff: CoachDiscovery[];
 }

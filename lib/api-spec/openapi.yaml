@@ -3,7 +3,7 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.2.0
-  description: Upshift Club Aggregator API — youth soccer club graph database
+  description: Upshift Data API — youth soccer club graph database
 servers:
   - url: /api
     description: Base API path

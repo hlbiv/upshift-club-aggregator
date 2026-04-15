@@ -1,5 +1,5 @@
 """
-Configuration for the Upshift Club Aggregator scraper.
+Configuration for the Upshift Data scraper.
 
 Leagues are loaded dynamically from the seed CSV files in data/:
   - data/leagues_master.csv            — full league inventory

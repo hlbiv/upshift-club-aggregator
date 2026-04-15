@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface HealthStatus {
-  status: string;
-}
+export type CoverageResponseSummaryWebsiteCoverage = {
+  with_website?: number;
+  without_website?: number;
+  pct?: number;
+};

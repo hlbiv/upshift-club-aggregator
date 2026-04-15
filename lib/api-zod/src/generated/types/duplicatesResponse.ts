@@ -5,10 +5,10 @@
  * Upshift Data API — youth soccer club graph database
  * OpenAPI spec version: 0.2.0
  */
-import type { Club } from "./club";
+import type { DuplicateCluster } from "./duplicateCluster";
 
-export interface ClubListResponse {
-  clubs: Club[];
+export interface DuplicatesResponse {
+  duplicates: DuplicateCluster[];
   total: number;
   page: number;
   page_size: number;

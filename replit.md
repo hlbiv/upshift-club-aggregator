@@ -2,11 +2,11 @@
 
 ## Overview
 
-pnpm workspace monorepo with TypeScript and a standalone Python scraper toolkit. Builds the **Upshift Club Aggregator** — a data pipeline and REST API for US youth soccer clubs across 127 league directories, deduplicating into a PostgreSQL graph database and serving data via a typed REST API at port 8080.
+pnpm workspace monorepo with TypeScript and a standalone Python scraper toolkit. Builds **Upshift Data** — a data pipeline and REST API for US youth soccer clubs across 127 league directories, deduplicating into a PostgreSQL graph database and serving data via a typed REST API at port 8080.
 
 ---
 
-## Python Scraper — Upshift Club Aggregator
+## Python Scraper — Upshift Data
 
 Located in `scraper/`. Extracts youth soccer club data from league directories, normalizes club names, deduplicates with fuzzy matching (FUZZY_THRESHOLD=88), and outputs structured CSVs. Also provides club website enrichment (directory extraction + Brave Search API) and a staff page scraper for coach discovery.
 

@@ -1,4 +1,4 @@
-# Upshift Club Aggregator — League Scraper
+# Upshift Data — League Scraper
 
 Extracts youth soccer club data from 83 US league directories, normalizes club names, deduplicates with fuzzy matching, and outputs structured CSVs ready for loading into the canonical club graph.
 

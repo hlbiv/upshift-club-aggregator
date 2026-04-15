@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface StateCoverage {
+  state: string;
+  club_count: number;
+  below_threshold: boolean;
 }

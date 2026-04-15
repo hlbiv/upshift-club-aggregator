@@ -1,4 +1,4 @@
-# Upshift Club Aggregator
+# Upshift Data
 
 A scraper toolkit, PostgreSQL graph database, and REST API for US youth soccer club data. Covers 127 league directories across all tiers of the US youth soccer pyramid — from MLS NEXT down to 54 state associations — normalizing and deduplicating clubs into a single canonical dataset.
 

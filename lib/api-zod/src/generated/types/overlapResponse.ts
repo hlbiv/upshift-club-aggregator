@@ -5,7 +5,11 @@
  * Upshift Data API — youth soccer club graph database
  * OpenAPI spec version: 0.2.0
  */
+import type { OverlapClub } from "./overlapClub";
 
-export interface HealthStatus {
-  status: string;
+export interface OverlapResponse {
+  clubs: OverlapClub[];
+  total: number;
+  page: number;
+  page_size: number;
 }

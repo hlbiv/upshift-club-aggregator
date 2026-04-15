@@ -5,7 +5,11 @@
  * Upshift Data API — youth soccer club graph database
  * OpenAPI spec version: 0.2.0
  */
+import type { Coach } from "./coach";
 
-export interface HealthStatus {
-  status: string;
+export interface CoachSearchResponse {
+  coaches: Coach[];
+  total: number;
+  page: number;
+  page_size: number;
 }

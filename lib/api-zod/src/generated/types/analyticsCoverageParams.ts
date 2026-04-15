@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface HealthStatus {
-  status: string;
-}
+export type AnalyticsCoverageParams = {
+  /**
+   * States with fewer clubs than this threshold are flagged
+   * @minimum 1
+   */
+  min_clubs?: number;
+};
