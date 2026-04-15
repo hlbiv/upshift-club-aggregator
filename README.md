@@ -38,6 +38,12 @@ python3 run.py --list                # Print league inventory
 python3 run.py --source gotsport-matches --event-id 12345 \
     --season 2025-26 --league-name "ECNL Boys National"
 
+# Resolve raw team names on event_teams + matches to canonical_clubs.id.
+# Run after every scrape — powers /api/events/search?club_id=N and
+# matches -> club_results rollup.
+python3 run.py --source link-canonical-clubs
+python3 run.py --source link-canonical-clubs --dry-run --limit 100
+
 # Derived-data rollups
 python3 run.py --rollup club-results
 ```
@@ -186,6 +192,57 @@ See `docs/path-a-data-model.md` for the full domain-by-domain spec and `CLAUDE.m
 ## REST API
 
 Base URL: `/api` — port 8080. All list endpoints are paginated (`?page=1&page_size=20`, max 100).
+
+### Authentication
+
+Every request under `/api/*` except `/api/healthz` requires a machine-to-machine API key (when enforcement is turned on — see bootstrap below). Pass it in either header:
+
+```
+X-API-Key: <key>
+```
+```
+Authorization: Bearer <key>
+```
+
+Requests without a valid key return `401 { "error": "unauthorized" }`. The response body is intentionally the same for missing, unknown, and revoked keys — detailed reason is logged server-side only. There are no user sessions — this is a pure M2M API.
+
+#### Bootstrap sequence (first deploy)
+
+Enforcement is gated by the `API_KEY_AUTH_ENABLED` env var. A fresh deploy with the flag unset accepts all `/api/*` traffic so you can bring the table up and mint a key before flipping it on.
+
+1. Pull, install, and push the schema (creates the `api_keys` table):
+   ```bash
+   pnpm install
+   pnpm --filter @workspace/db run push
+   ```
+2. Create the first key (plaintext prints once — copy immediately into the caller's env):
+   ```bash
+   pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-player-platform prod"
+   ```
+3. Set `API_KEY_AUTH_ENABLED=true` in Replit Secrets.
+4. Restart the API server. The boot log will print `[api-key-auth] enabled`; from here every `/api/*` call requires the header.
+
+The plaintext key is printed ONCE. Only the sha256 hash is stored in the database — a lost key cannot be recovered, only revoked and replaced.
+
+#### Rotating a key
+
+1. Create a new key with `create-api-key` (different `--name` suffix or timestamp).
+2. Update the caller's env var and redeploy.
+3. Confirm the new key works by tailing logs for 401s.
+4. Revoke the old key:
+   ```bash
+   pnpm --filter @workspace/scripts run revoke-api-key -- --prefix <8-char-prefix>
+   ```
+
+#### Calling from `upshift-player-platform`
+
+```ts
+const res = await fetch(`${process.env.UPSHIFT_DATA_API_URL}/api/clubs`, {
+  headers: { "X-API-Key": process.env.UPSHIFT_DATA_API_KEY! },
+});
+```
+
+`/api/healthz` remains open for Replit liveness probes.
 
 ### Club Endpoints
 

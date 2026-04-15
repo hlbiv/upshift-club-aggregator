@@ -383,6 +383,10 @@ def _run_source(args) -> None:
             dry_run=args.dry_run,
         )
         return
+    if key in ("link-canonical-clubs", "link_canonical_clubs"):
+        from canonical_club_linker import run_cli as _run_linker
+        rc = _run_linker(dry_run=args.dry_run, limit=args.limit)
+        sys.exit(rc)
     logger.error("Unknown --source key: %s", key)
     sys.exit(2)
 
@@ -508,14 +512,18 @@ def main() -> None:
                         help="Also scrape team-level data (age groups, contacts) where available. "
                              "For GotSport leagues this makes one additional HTTP request per club.")
     parser.add_argument("--source", metavar="KEY",
-                        help="Run a non-league scraper by key. Currently supported: "
-                             "'gotsport-matches' (requires --event-id).")
+                        help="Run a non-league scraper by key. Supported: "
+                             "'gotsport-matches' (requires --event-id), "
+                             "'link-canonical-clubs' (resolves event_teams.canonical_club_id).")
     parser.add_argument("--event-id", metavar="ID",
                         help="GotSport event id for --source gotsport-matches.")
     parser.add_argument("--season", metavar="SEASON",
                         help="Season tag (e.g. '2025-26') to stamp on scraped/rollup rows.")
     parser.add_argument("--league-name", metavar="NAME",
                         help="League name to tag on match rows (e.g. 'ECNL Boys National').")
+    parser.add_argument("--limit", type=int, metavar="N",
+                        help="Cap the number of rows processed by --source jobs that "
+                             "support it (e.g. link-canonical-clubs).")
     parser.add_argument("--rollup", choices=["club-results"],
                         help="Run a derived-data rollup over existing DB rows.")
     args = parser.parse_args()

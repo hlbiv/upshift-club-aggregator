@@ -6,6 +6,9 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "backfill-coaches": "tsx ./src/backfill-coaches-master.ts",
+    "create-api-key": "tsx ./src/create-api-key.ts",
+    "revoke-api-key": "tsx ./src/revoke-api-key.ts",
+    "test:api-key": "DATABASE_URL=postgres://unused@localhost/test tsx ./src/__tests__/api-key.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

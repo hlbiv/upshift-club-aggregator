@@ -202,6 +202,22 @@ psql "$DATABASE_URL" -c "SELECT count(*) FROM coach_discoveries WHERE coach_id I
 
 Verified on Replit April 2026: 2,647 discoveries scanned → 2,603 coaches inserted, 44-row `person_hash` collision rate, residual `coach_id IS NULL` = 0.
 
+### Post-scrape runbook — canonical-club linker
+
+`event_teams` and `matches` scrapers deliberately write NULL `canonical_club_id` / `home_club_id` / `away_club_id`. After every scrape, run the linker to populate those FKs:
+
+```bash
+cd scraper
+python3 run.py --source link-canonical-clubs --dry-run   # preview
+python3 run.py --source link-canonical-clubs             # commit
+
+# smoke check
+psql "$DATABASE_URL" -c "SELECT count(*) FROM event_teams WHERE canonical_club_id IS NULL;"
+psql "$DATABASE_URL" -c "SELECT count(*) FROM matches WHERE home_club_id IS NULL OR away_club_id IS NULL;"
+```
+
+Idempotent — only touches rows where the FK is currently NULL. Fuzzy hits write new `club_aliases` rows so re-runs short-circuit at the exact-alias pass. `/api/events/search?club_id=N` and the `matches` → `club_results` rollup both require at least one linker pass after each scrape to function.
+
 See `docs/path-a-data-model.md` for the full spec + changelog; `CLAUDE.md` for session context.
 
 ---
