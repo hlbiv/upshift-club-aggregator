@@ -30,9 +30,20 @@ export const clubRosterSnapshots = pgTable(
   "club_roster_snapshots",
   {
     id: serial("id").primaryKey(),
-    clubId: integer("club_id")
-      .notNull()
-      .references(() => canonicalClubs.id, { onDelete: "cascade" }),
+    // Nullable by design — scrapers write snapshots with the raw club name
+    // before the canonical-club linker resolves the FK. See
+    // `scraper/canonical_club_linker.py`.
+    clubId: integer("club_id").references(() => canonicalClubs.id, {
+      onDelete: "cascade",
+    }),
+    // Raw scraped club name — what the source called the club. The linker
+    // reads this column to resolve `club_id`.
+    clubNameRaw: text("club_name_raw").notNull(),
+    // URL the snapshot was captured from. Nullable — not every source has
+    // a stable roster URL.
+    sourceUrl: text("source_url"),
+    // When the scrape captured this roster. Defaults to now() at the DB.
+    snapshotDate: timestamp("snapshot_date").defaultNow(),
     season: text("season").notNull(),
     ageGroup: text("age_group").notNull(),
     gender: text("gender").notNull(),
@@ -49,8 +60,11 @@ export const clubRosterSnapshots = pgTable(
     }),
   },
   (t) => [
-    unique("club_roster_snapshots_unique").on(
-      t.clubId,
+    // Named natural-key constraint keyed on the RAW club name so scrapers
+    // can upsert before the linker runs. Named (not predicate-based) to
+    // survive Drizzle expression-text drift — see PR #10 matches.ts.
+    unique("club_roster_snapshots_name_season_age_gender_player_uq").on(
+      t.clubNameRaw,
       t.season,
       t.ageGroup,
       t.gender,

@@ -89,11 +89,18 @@ website_last_checked_at, last_scraped_at, scrape_confidence
 
 **New `club_roster_snapshots`:**
 ```
-id, club_id FK, season, age_group, gender, division
+id, club_id FK NULLABLE (resolved by canonical-club linker)
+club_name_raw text NOT NULL     ← scraper writes this; linker reads it
+source_url text NULLABLE        ← page the snapshot came from
+snapshot_date timestamp DEFAULT now()
+season, age_group, gender, division
 player_name (text, no FK), jersey_number, position
 scraped_at, source, event_id FK nullable → events
-UNIQUE (club_id, season, age_group, gender, player_name)
+UNIQUE (club_name_raw, season, age_group, gender, player_name)
+   → named: club_roster_snapshots_name_season_age_gender_player_uq
 ```
+Scrapers leave `club_id` NULL and write `club_name_raw`. The canonical-club linker
+(`scraper/canonical_club_linker.py`) fills `club_id` in a follow-up pass.
 
 **New `club_site_changes`:**
 ```
@@ -265,23 +272,33 @@ UNIQUE (club_id, season, league, division, age_group, gender)
 
 No new raw tables — uses `club_roster_snapshots` (Domain 1) + `college_roster_history` (Domain 2).
 
-**New `roster_diffs`** (materialized; recomputed when new snapshot lands):
+**New `roster_diffs`** (per-player events materialized from snapshot-over-snapshot diffs; uses canonical-club linker pattern):
 ```
-id, club_id FK, season_from, season_to, age_group, gender
-players_joined jsonb      (stores a JSON array, not jsonb[])
-players_departed jsonb
-players_retained jsonb
-retention_rate real, calculated_at
-UNIQUE (club_id, season_from, season_to, age_group, gender)
+id, club_id FK NULLABLE (resolved by linker)
+club_name_raw text NOT NULL       ← scraper/diff job writes this
+season, age_group, gender         (all nullable)
+player_name text NOT NULL
+diff_type text NOT NULL  check: added|removed|jersey_changed|position_changed
+from_jersey_number, to_jersey_number, from_position, to_position  (all nullable)
+detected_at timestamp NOT NULL DEFAULT now()
+UNIQUE (club_name_raw, COALESCE(season,''), COALESCE(age_group,''),
+        COALESCE(gender,''), player_name, diff_type)
+   → named: roster_diffs_name_season_age_gender_player_type_uq
 ```
+Shape reworked from the original aggregate-per-season shape
+(`players_joined`/`players_departed`/`players_retained` jsonb) to per-player
+event rows so (a) the linker pattern applies and (b) richer diff detail
+(jersey change, position change) fits without schema churn.
 
 ---
 
 ### Domain 7 — Tryouts
 
-**New `tryouts`:**
+**New `tryouts`** (uses canonical-club linker pattern):
 ```
-id, club_id FK, age_group, gender, division
+id, club_id FK NULLABLE (resolved by linker)
+club_name_raw text NOT NULL    ← scraper writes this
+age_group, gender, division
 tryout_date, registration_deadline
 location_name, location_address, location_city, location_state
 cost, url, notes
@@ -289,7 +306,8 @@ source  check: site_monitor|gotsport|manual|other
 status  check: active|expired|cancelled|unknown
 detected_at, scraped_at, expires_at
 site_change_id FK nullable → club_site_changes
-UNIQUE (club_id, tryout_date, age_group, gender)
+UNIQUE (club_name_raw, COALESCE(tryout_date,'epoch'), COALESCE(age_group,''), COALESCE(gender,''))
+   → named: tryouts_name_date_bracket_uq
 ```
 
 ---

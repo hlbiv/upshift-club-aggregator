@@ -147,6 +147,42 @@ class FakeCursor:
                 for r in self.state["matches"]
                 if r["away_club_id"] is None
             ]
+        elif sql.startswith("SELECT id, club_name_raw FROM club_roster_snapshots"):
+            self._last_result = [
+                (r["id"], r["club_name_raw"])
+                for r in self.state["club_roster_snapshots"]
+                if r["club_id"] is None
+            ]
+        elif sql.startswith("SELECT id, club_name_raw FROM roster_diffs"):
+            self._last_result = [
+                (r["id"], r["club_name_raw"])
+                for r in self.state["roster_diffs"]
+                if r["club_id"] is None
+            ]
+        elif sql.startswith("SELECT id, club_name_raw FROM tryouts"):
+            self._last_result = [
+                (r["id"], r["club_name_raw"])
+                for r in self.state["tryouts"]
+                if r["club_id"] is None
+            ]
+        elif sql.startswith("UPDATE club_roster_snapshots"):
+            club_id, row_id = params
+            for r in self.state["club_roster_snapshots"]:
+                if r["id"] == row_id and r["club_id"] is None:
+                    r["club_id"] = club_id
+                    self.state["writes"].append(("club_roster_snapshots", row_id, club_id))
+        elif sql.startswith("UPDATE roster_diffs"):
+            club_id, row_id = params
+            for r in self.state["roster_diffs"]:
+                if r["id"] == row_id and r["club_id"] is None:
+                    r["club_id"] = club_id
+                    self.state["writes"].append(("roster_diffs", row_id, club_id))
+        elif sql.startswith("UPDATE tryouts"):
+            club_id, row_id = params
+            for r in self.state["tryouts"]:
+                if r["id"] == row_id and r["club_id"] is None:
+                    r["club_id"] = club_id
+                    self.state["writes"].append(("tryouts", row_id, club_id))
         elif sql.startswith("UPDATE event_teams"):
             club_id, row_id = params
             for r in self.state["event_teams"]:
@@ -208,6 +244,9 @@ def _base_state():
         "alias_keys": {(101, "Concorde Fire Soccer Club")},
         "event_teams": [],
         "matches": [],
+        "club_roster_snapshots": [],
+        "roster_diffs": [],
+        "tryouts": [],
         "writes": [],
     }
 
@@ -324,11 +363,90 @@ def test_linker_stats_details():
     stats.event_teams_linked = 5
     stats.matches_home_linked = 3
     stats.matches_away_linked = 2
+    stats.roster_snapshots_linked = 7
+    stats.roster_diffs_linked = 4
+    stats.tryouts_linked = 1
     stats.pass_hits.update({1: 6, 2: 2, 3: 2, 4: 1})
     stats.unmatched_names["Weird Team"] = 1
     details = stats.to_details()
     assert details["event_teams_linked"] == 5
+    assert details["roster_snapshots_linked"] == 7
+    assert details["roster_diffs_linked"] == 4
+    assert details["tryouts_linked"] == 1
     assert details["pass_1_alias_hits"] == 6
     assert details["no_match_count"] == 1
     assert details["unmatched_unique_count"] == 1
     assert "Weird Team" in details["unmatched_sample"]
+    # total_linked sums all six sources.
+    assert stats.total_linked() == 5 + 3 + 2 + 7 + 4 + 1
+
+
+# ---------------------------------------------------------------------------
+# link_all — new Path A tables (rosters + diffs + tryouts)
+# ---------------------------------------------------------------------------
+
+def test_link_all_roster_snapshot_exact_alias_hit():
+    state = _base_state()
+    state["club_roster_snapshots"].append({
+        "id": 1,
+        "club_name_raw": "Concorde Fire Soccer Club",
+        "club_id": None,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    assert stats.roster_snapshots_linked == 1
+    assert state["club_roster_snapshots"][0]["club_id"] == 101
+    assert conn.committed
+
+
+def test_link_all_roster_diff_exact_canonical_hit():
+    state = _base_state()
+    state["roster_diffs"].append({
+        "id": 1,
+        "club_name_raw": "Concorde Fire 2011 Boys",
+        "club_id": None,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    assert stats.roster_diffs_linked == 1
+    assert state["roster_diffs"][0]["club_id"] == 101
+
+
+def test_link_all_tryout_fuzzy_hit():
+    state = _base_state()
+    state["tryouts"].append({
+        "id": 1,
+        "club_name_raw": "Concorde Fire Phoenix 2011 Boys",
+        "club_id": None,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    assert stats.tryouts_linked == 1
+    assert state["tryouts"][0]["club_id"] == 101
+
+
+def test_link_all_new_tables_skip_non_null_rows():
+    state = _base_state()
+    state["club_roster_snapshots"].append({
+        "id": 1,
+        "club_name_raw": "Concorde Fire",
+        "club_id": 999,
+    })
+    state["roster_diffs"].append({
+        "id": 2,
+        "club_name_raw": "Concorde Fire",
+        "club_id": 999,
+    })
+    state["tryouts"].append({
+        "id": 3,
+        "club_name_raw": "Concorde Fire",
+        "club_id": 999,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    assert stats.roster_snapshots_linked == 0
+    assert stats.roster_diffs_linked == 0
+    assert stats.tryouts_linked == 0
+    assert state["club_roster_snapshots"][0]["club_id"] == 999
+    assert state["roster_diffs"][0]["club_id"] == 999
+    assert state["tryouts"][0]["club_id"] == 999

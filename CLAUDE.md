@@ -97,8 +97,8 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 | `colleges.ts` | `colleges`, `college_coaches`, `college_roster_history` | NCAA/NAIA/NJCAA dataset |
 | `events.ts` | `events`, `event_teams` | Tournaments, leagues, showcases |
 | `matches.ts` | `matches`, `club_results` | Game records + aggregated results |
-| `rosters-and-tryouts.ts` | `roster_diffs`, `tryouts` | Roster change log + tryout announcements |
-| `clubs-extended.ts` | `club_roster_snapshots`, `club_site_changes` | Point-in-time roster diffing + website change detection |
+| `rosters-and-tryouts.ts` | `roster_diffs`, `tryouts` | Roster change log (per-player events: `added`/`removed`/`jersey_changed`/`position_changed`) + tryout announcements. Both tables use the canonical-club-linker pattern — scrapers write `club_name_raw`; linker resolves `club_id`. |
+| `clubs-extended.ts` | `club_roster_snapshots`, `club_site_changes` | Point-in-time roster diffing + website change detection. `club_roster_snapshots` uses the canonical-club-linker pattern (scrapers write `club_name_raw` + `source_url` + `snapshot_date`; `club_id` resolved by linker). |
 | `scrape-health.ts` | `scrape_run_logs`, `scrape_health` | Per-run telemetry + rolling health rollups |
 
 ### Key rules
@@ -107,6 +107,7 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 - `coaches.person_hash` = `sha256(normalize(name) + '|' + lower(email))` if email exists, else `sha256(normalize(name) + '|no-email|' + club_id)`. Dedup collisions collapse multiple discoveries into one master row.
 - `coaches.manually_merged = true` — operator-curated rows; backfill NEVER overwrites these.
 - `matches_natural_key_uq` is a partial unique index with `COALESCE(...)` on `match_date`/`age_group`/`gender` because Postgres NULL-distinct breaks plain `unique()`. Don't "fix" this.
+- **Canonical-club linker pattern (5 tables).** `event_teams.canonical_club_id`, `matches.home_club_id`, `matches.away_club_id`, `club_roster_snapshots.club_id`, `roster_diffs.club_id`, and `tryouts.club_id` are all NULL at scrape time. Scrapers MUST write the raw source name into the paired text column (`team_name_raw`, `home_team_name`/`away_team_name`, or `club_name_raw`) and leave the FK column NULL. The linker (`scraper/canonical_club_linker.py`, `python3 run.py --source link-canonical-clubs`) runs the 4-pass resolver and fills them in. Scrapers for rosters/tryouts in particular MUST NOT try to pre-resolve `club_id` — that used to be required and became the reason this pattern exists.
 - `scrape_run_logs.records_touched` is a STORED generated column. Drizzle 0.45.1's `generatedAlwaysAs` is single-arg only — no `{mode: 'stored'}`. Postgres doesn't support VIRTUAL pre-17 anyway.
 - `scrape_run_logs.failure_kind` enum (`timeout | network | parse_error | zero_results | unknown`) is synchronized across three places: the Postgres CHECK constraint, Python `run.py:FailureKind`, and Python `scrape_run_logger.py:FailureKind`. Changes require updating all three. The parity test `test_run_py_failure_kind_matches_logger_and_db_enum` enforces this.
 
