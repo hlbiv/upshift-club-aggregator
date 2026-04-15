@@ -33,6 +33,12 @@ python3 run.py --scope state         # All 54 USYS state associations
 python3 run.py --league "ECNL"       # Single league by name
 python3 run.py --dry-run             # Preview without writing
 python3 run.py --list                # Print league inventory
+
+# Resolve raw team names on event_teams + matches to canonical_clubs.id.
+# Run after every scrape — powers /api/events/search?club_id=N and
+# matches -> club_results rollup.
+python3 run.py --source link-canonical-clubs
+python3 run.py --source link-canonical-clubs --dry-run --limit 100
 ```
 
 ### Website & Staff Enrichment
