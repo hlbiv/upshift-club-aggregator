@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Upshift Data — Missing Data Spec</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --border: #1e1e2e;
+    --accent: #00e5a0;
+    --accent2: #ff6b35;
+    --accent3: #7c5cfc;
+    --text: #e8e8f0;
+    --muted: #6b6b80;
+    --red: #ff4466;
+    --yellow: #ffc142;
+    --green: #00e5a0;
+  }
+
+- { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+background: var(–bg);
+color: var(–text);
+font-family: ‘Syne’, sans-serif;
+min-height: 100vh;
+overflow-x: hidden;
+}
+
+/* Grid background */
+body::before {
+content: ‘’;
+position: fixed;
+inset: 0;
+background-image:
+linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px),
+linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+background-size: 40px 40px;
+pointer-events: none;
+z-index: 0;
+}
+
+.container {
+max-width: 900px;
+margin: 0 auto;
+padding: 40px 24px 80px;
+position: relative;
+z-index: 1;
+}
+
+/* Header */
+.header {
+margin-bottom: 48px;
+}
+
+.header-eyebrow {
+font-family: ‘Space Mono’, monospace;
+font-size: 11px;
+color: var(–accent);
+letter-spacing: 0.2em;
+text-transform: uppercase;
+margin-bottom: 12px;
+}
+
+.header h1 {
+font-size: clamp(28px, 5vw, 42px);
+font-weight: 800;
+line-height: 1.1;
+letter-spacing: -0.02em;
+}
+
+.header h1 span {
+color: var(–accent);
+}
+
+.header-meta {
+display: flex;
+gap: 24px;
+margin-top: 16px;
+flex-wrap: wrap;
+}
+
+.meta-pill {
+font-family: ‘Space Mono’, monospace;
+font-size: 11px;
+color: var(–muted);
+background: var(–surface);
+border: 1px solid var(–border);
+padding: 4px 10px;
+border-radius: 4px;
+}
+
+/* Boundary banner */
+.boundary {
+background: linear-gradient(135deg, rgba(0,229,160,0.08), rgba(124,92,252,0.08));
+border: 1px solid rgba(0,229,160,0.2);
+border-radius: 8px;
+padding: 16px 20px;
+margin-bottom: 40px;
+font-family: ‘Space Mono’, monospace;
+font-size: 12px;
+color: var(–accent);
+line-height: 1.6;
+}
+
+.boundary strong {
+color: var(–text);
+}
+
+/* Stats row */
+.stats-row {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+gap: 12px;
+margin-bottom: 48px;
+}
+
+.stat-card {
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 8px;
+padding: 16px;
+text-align: center;
+}
+
+.stat-number {
+font-family: ‘Space Mono’, monospace;
+font-size: 22px;
+font-weight: 700;
+color: var(–accent);
+display: block;
+}
+
+.stat-label {
+font-size: 11px;
+color: var(–muted);
+margin-top: 4px;
+text-transform: uppercase;
+letter-spacing: 0.05em;
+}
+
+/* Domain cards */
+.domains {
+display: flex;
+flex-direction: column;
+gap: 24px;
+}
+
+.domain-card {
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 12px;
+overflow: hidden;
+transition: border-color 0.2s;
+}
+
+.domain-card:hover {
+border-color: rgba(0,229,160,0.3);
+}
+
+.domain-header {
+display: flex;
+align-items: center;
+gap: 14px;
+padding: 20px 24px 16px;
+cursor: pointer;
+user-select: none;
+}
+
+.domain-number {
+font-family: ‘Space Mono’, monospace;
+font-size: 11px;
+color: var(–muted);
+min-width: 24px;
+}
+
+.domain-title-block {
+flex: 1;
+}
+
+.domain-title {
+font-size: 16px;
+font-weight: 700;
+letter-spacing: -0.01em;
+}
+
+.domain-subtitle {
+font-size: 12px;
+color: var(–muted);
+margin-top: 2px;
+}
+
+.status-badge {
+font-family: ‘Space Mono’, monospace;
+font-size: 10px;
+padding: 4px 10px;
+border-radius: 100px;
+font-weight: 700;
+white-space: nowrap;
+}
+
+.status-empty {
+background: rgba(255,68,102,0.15);
+color: var(–red);
+border: 1px solid rgba(255,68,102,0.3);
+}
+
+.status-partial {
+background: rgba(255,193,66,0.15);
+color: var(–yellow);
+border: 1px solid rgba(255,193,66,0.3);
+}
+
+.status-good {
+background: rgba(0,229,160,0.12);
+color: var(–green);
+border: 1px solid rgba(0,229,160,0.25);
+}
+
+.domain-body {
+padding: 0 24px 24px;
+border-top: 1px solid var(–border);
+}
+
+/* Progress bar */
+.progress-row {
+display: flex;
+align-items: center;
+gap: 12px;
+padding: 14px 0;
+border-bottom: 1px solid var(–border);
+}
+
+.progress-track {
+flex: 1;
+height: 4px;
+background: var(–border);
+border-radius: 2px;
+overflow: hidden;
+}
+
+.progress-fill {
+height: 100%;
+border-radius: 2px;
+transition: width 0.8s ease;
+}
+
+.fill-red { background: var(–red); }
+.fill-yellow { background: var(–yellow); }
+.fill-green { background: var(–green); }
+
+.progress-pct {
+font-family: ‘Space Mono’, monospace;
+font-size: 11px;
+color: var(–muted);
+min-width: 32px;
+text-align: right;
+}
+
+/* Tables/lists */
+.section-label {
+font-family: ‘Space Mono’, monospace;
+font-size: 10px;
+color: var(–accent);
+text-transform: uppercase;
+letter-spacing: 0.15em;
+margin: 18px 0 10px;
+}
+
+.existing-row {
+display: flex;
+align-items: center;
+gap: 10px;
+padding: 6px 0;
+border-bottom: 1px solid rgba(255,255,255,0.04);
+font-size: 13px;
+}
+
+.existing-row:last-child { border-bottom: none; }
+
+.dot {
+width: 6px;
+height: 6px;
+border-radius: 50%;
+flex-shrink: 0;
+}
+
+.dot-green { background: var(–green); }
+.dot-yellow { background: var(–yellow); }
+.dot-red { background: var(–red); }
+.dot-muted { background: var(–muted); }
+
+.row-count {
+font-family: ‘Space Mono’, monospace;
+font-size: 11px;
+color: var(–muted);
+margin-left: auto;
+}
+
+/* Missing items */
+.missing-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+gap: 8px;
+margin-top: 4px;
+}
+
+.missing-item {
+background: rgba(255,255,255,0.03);
+border: 1px solid var(–border);
+border-radius: 6px;
+padding: 10px 12px;
+font-size: 12px;
+}
+
+.missing-item-name {
+font-weight: 600;
+margin-bottom: 3px;
+}
+
+.missing-item-source {
+font-family: ‘Space Mono’, monospace;
+font-size: 10px;
+color: var(–accent3);
+}
+
+.missing-item-blocker {
+font-family: ‘Space Mono’, monospace;
+font-size: 10px;
+color: var(–red);
+margin-top: 3px;
+}
+
+/* Moat callout */
+.moat-callout {
+background: linear-gradient(135deg, rgba(124,92,252,0.1), rgba(0,229,160,0.05));
+border: 1px solid rgba(124,92,252,0.3);
+border-radius: 8px;
+padding: 14px 16px;
+margin-top: 16px;
+font-size: 12px;
+line-height: 1.6;
+}
+
+.moat-label {
+font-family: ‘Space Mono’, monospace;
+font-size: 10px;
+color: var(–accent3);
+text-transform: uppercase;
+letter-spacing: 0.1em;
+margin-bottom: 4px;
+}
+
+/* Priority flag */
+.priority-flag {
+font-family: ‘Space Mono’, monospace;
+font-size: 10px;
+padding: 2px 8px;
+border-radius: 3px;
+margin-left: 8px;
+}
+
+.p0 { background: rgba(255,68,102,0.2); color: var(–red); }
+.p1 { background: rgba(255,193,66,0.2); color: var(–yellow); }
+.p2 { background: rgba(0,229,160,0.1); color: var(–green); }
+
+/* Player blocker callout */
+.blocker-banner {
+background: rgba(255,68,102,0.08);
+border: 1px solid rgba(255,68,102,0.2);
+border-radius: 6px;
+padding: 10px 14px;
+margin-top: 14px;
+font-family: ‘Space Mono’, monospace;
+font-size: 11px;
+color: var(–red);
+line-height: 1.5;
+}
+
+/* Footer */
+.footer {
+margin-top: 60px;
+padding-top: 24px;
+border-top: 1px solid var(–border);
+font-family: ‘Space Mono’, monospace;
+font-size: 11px;
+color: var(–muted);
+display: flex;
+justify-content: space-between;
+flex-wrap: gap;
+gap: 8px;
+}
+</style>
+
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+
+  <div class="header">
+    <div class="header-eyebrow">Upshift Data Platform</div>
+    <h1>Missing Data <span>Spec</span><br>by Domain</h1>
+    <div class="header-meta">
+      <span class="meta-pill">Generated: 2026-04-15</span>
+      <span class="meta-pill">Repo: upshift-data (separate)</span>
+      <span class="meta-pill">Integration: REST API → Player</span>
+      <span class="meta-pill">8 Domains</span>
+    </div>
+  </div>
+
+  <!-- Boundary -->
+
+  <div class="boundary">
+    <strong>Architectural boundary:</strong> Public + scraped data lives here. Player identity, enrichment, and user-facing logic stays in Upshift Player. No shared DB — Player consumes via REST only.
+  </div>
+
+  <!-- Current DB Stats -->
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <span class="stat-number">3,960</span>
+      <div class="stat-label">Canonical Clubs</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-number">7,111</span>
+      <div class="stat-label">Club Affiliations</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-number">3,729</span>
+      <div class="stat-label">Club Aliases</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-number">2,647</span>
+      <div class="stat-label">Coach Discoveries</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-number">98</span>
+      <div class="stat-label">Leagues</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-number">0</span>
+      <div class="stat-label">Club Events</div>
+    </div>
+  </div>
+
+  <!-- Domain Cards -->
+
+  <div class="domains">
+
+```
+<!-- D1: Clubs -->
+<div class="domain-card">
+  <div class="domain-header">
+    <span class="domain-number">D1</span>
+    <div class="domain-title-block">
+      <div class="domain-title">Clubs <span class="priority-flag p1">P1</span></div>
+      <div class="domain-subtitle">Canonical club graph, affiliations, events, results</div>
+    </div>
+    <span class="status-badge status-partial">PARTIAL</span>
+  </div>
+  <div class="domain-body">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill fill-yellow" style="width:40%"></div></div>
+      <span class="progress-pct">40%</span>
+    </div>
+
+    <div class="section-label">What exists</div>
+    <div class="existing-row"><span class="dot dot-green"></span> canonical_clubs <span class="row-count">3,960</span></div>
+    <div class="existing-row"><span class="dot dot-green"></span> club_affiliations <span class="row-count">7,111</span></div>
+    <div class="existing-row"><span class="dot dot-green"></span> club_aliases <span class="row-count">3,729</span></div>
+    <div class="existing-row"><span class="dot dot-red"></span> club_events <span class="row-count">0</span></div>
+    <div class="existing-row"><span class="dot dot-muted"></span> club_results — <em style="color:var(--muted);font-size:12px">table doesn't exist</em></div>
+
+    <div class="section-label">What's missing</div>
+    <div class="missing-grid">
+      <div class="missing-item">
+        <div class="missing-item-name">club_events scraper</div>
+        <div class="missing-item-source">Source: GotSport, SincSports</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">club_results table + scraper</div>
+        <div class="missing-item-source">Source: GotSport brackets</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Logo enrichment</div>
+        <div class="missing-item-source">Source: Club sites, Google</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Social handles</div>
+        <div class="missing-item-source">Source: Instagram, X search</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Fuzzy name dedup</div>
+        <div class="missing-item-source">Task: open in Boswell</div>
+        <div class="missing-item-blocker">⚠ "Concorde Fire SC" vs "Concorde Fire"</div>
+      </div>
+    </div>
+
+    <div class="blocker-banner">
+      Blocks Player: events_batch_by_ids, events_teams_extensions (touchCount, gameLabel, divisionCode)
+    </div>
+  </div>
+</div>
+
+<!-- D2: Colleges -->
+<div class="domain-card">
+  <div class="domain-header">
+    <span class="domain-number">D2</span>
+    <div class="domain-title-block">
+      <div class="domain-title">Colleges <span class="priority-flag p0">P0</span></div>
+      <div class="domain-subtitle">NCAA/NAIA/NJCAA programs, college coaches, contact info</div>
+    </div>
+    <span class="status-badge status-empty">NOT STARTED</span>
+  </div>
+  <div class="domain-body">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill fill-red" style="width:0%"></div></div>
+      <span class="progress-pct">0%</span>
+    </div>
+
+    <div class="section-label">What exists</div>
+    <div class="existing-row"><span class="dot dot-red"></span> colleges table — <em style="color:var(--muted);font-size:12px">doesn't exist</em></div>
+    <div class="existing-row"><span class="dot dot-red"></span> college_coaches table — <em style="color:var(--muted);font-size:12px">doesn't exist</em></div>
+
+    <div class="section-label">What's missing</div>
+    <div class="missing-grid">
+      <div class="missing-item">
+        <div class="missing-item-name">colleges table</div>
+        <div class="missing-item-source">Schema: name, division, conf, state, enrollment, logo</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">college_coaches table</div>
+        <div class="missing-item-source">Schema: college_id, name, role, email, phone, hired_year</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">NCAA scraper</div>
+        <div class="missing-item-source">Source: ncaa.org rosters</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">NAIA scraper</div>
+        <div class="missing-item-source">Source: naia.org</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">NJCAA scraper</div>
+        <div class="missing-item-source">Source: njcaa.org</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Coach email/phone enrichment</div>
+        <div class="missing-item-source">Source: TopDrawerSoccer</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Roster spots / openings</div>
+        <div class="missing-item-source">Source: College sites, TDS</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Recruiting activity signals</div>
+        <div class="missing-item-source">Source: NCSA, Berecruited</div>
+      </div>
+    </div>
+
+    <div class="blocker-banner">
+      Blocks Player: PR 1 — routes/schools.ts entirely (13 endpoints). Highest priority gap.
+    </div>
+  </div>
+</div>
+
+<!-- D3: Youth Coaches -->
+<div class="domain-card">
+  <div class="domain-header">
+    <span class="domain-number">D3</span>
+    <div class="domain-title-block">
+      <div class="domain-title">Youth Coaches <span class="priority-flag p0">P0</span></div>
+      <div class="domain-subtitle">Career history, club movement, D1 production effectiveness</div>
+    </div>
+    <span class="status-badge status-partial">PARTIAL</span>
+  </div>
+  <div class="domain-body">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill fill-yellow" style="width:25%"></div></div>
+      <span class="progress-pct">25%</span>
+    </div>
+
+    <div class="section-label">What exists</div>
+    <div class="existing-row"><span class="dot dot-yellow"></span> coach_discoveries <span class="row-count">2,647</span></div>
+    <div class="existing-row"><span class="dot dot-muted"></span> No career history, no movement tracking, no effectiveness data</div>
+
+    <div class="section-label">What's missing</div>
+    <div class="missing-grid">
+      <div class="missing-item">
+        <div class="missing-item-name">coach_career_history</div>
+        <div class="missing-item-source">Schema: coach_id, club_id, role, years_start, years_end</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">coach_placements</div>
+        <div class="missing-item-source">Schema: coach_id, player_id, college_id, year</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Club movement tracker</div>
+        <div class="missing-item-source">Source: Club sites, LinkedIn</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">D1 placement graph</div>
+        <div class="missing-item-source">Source: College rosters → backtrack</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Effectiveness score</div>
+        <div class="missing-item-source">Derived: placements / roster size</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Current roster endpoint</div>
+        <div class="missing-item-source">Blocks: /coach/my/roster in Player</div>
+      </div>
+    </div>
+
+    <div class="moat-callout">
+      <div class="moat-label">🔑 Key Moat</div>
+      Which youth coaches produce D1 players. Nobody in the market has this. Requires cross-referencing college rosters backward to youth clubs. High effort, high defensibility.
+    </div>
+
+    <div class="blocker-banner">
+      Blocks Player: coaches_history_roster (/:id/career, /placements, /my/roster), reportCoachClaim
+    </div>
+  </div>
+</div>
+
+<!-- D4: Events & Schedules -->
+<div class="domain-card">
+  <div class="domain-header">
+    <span class="domain-number">D4</span>
+    <div class="domain-title-block">
+      <div class="domain-title">Events & Schedules <span class="priority-flag p0">P0</span></div>
+      <div class="domain-subtitle">Tournaments, showcases, league play, brackets</div>
+    </div>
+    <span class="status-badge status-empty">TABLE EMPTY</span>
+  </div>
+  <div class="domain-body">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill fill-red" style="width:5%"></div></div>
+      <span class="progress-pct">5%</span>
+    </div>
+
+    <div class="section-label">What exists</div>
+    <div class="existing-row"><span class="dot dot-yellow"></span> club_events table — <em style="color:var(--muted);font-size:12px">schema exists, 0 rows</em></div>
+
+    <div class="section-label">What's missing</div>
+    <div class="missing-grid">
+      <div class="missing-item">
+        <div class="missing-item-name">GotSport scraper</div>
+        <div class="missing-item-source">Source: gotsport.com</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">SincSports scraper</div>
+        <div class="missing-item-source">Source: sincsports.com</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">EventBrite / manual events</div>
+        <div class="missing-item-source">Source: Club sites, TYSA</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Event → club linkage</div>
+        <div class="missing-item-source">FK: event_id → club_id</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Age group tagging</div>
+        <div class="missing-item-source">U9–U19 normalization</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">events_batch_by_ids endpoint</div>
+        <div class="missing-item-source">Needed by Player routes/events.ts</div>
+        <div class="missing-item-blocker">⚠ Current Player blocker</div>
+      </div>
+    </div>
+
+    <div class="blocker-banner">
+      Blocks Player: routes/events.ts full swap — currently using local fallback only. events_batch_by_ids + events_teams_extensions (touchCount, gameLabel, divisionCode) both pending.
+    </div>
+  </div>
+</div>
+
+<!-- D5: Matches & Results -->
+<div class="domain-card">
+  <div class="domain-header">
+    <span class="domain-number">D5</span>
+    <div class="domain-title-block">
+      <div class="domain-title">Matches & Results <span class="priority-flag p1">P1</span></div>
+      <div class="domain-subtitle">Historical W/L/D, season-over-season club performance</div>
+    </div>
+    <span class="status-badge status-empty">NOT STARTED</span>
+  </div>
+  <div class="domain-body">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill fill-red" style="width:0%"></div></div>
+      <span class="progress-pct">0%</span>
+    </div>
+
+    <div class="section-label">What exists</div>
+    <div class="existing-row"><span class="dot dot-red"></span> No matches table, no results table</div>
+
+    <div class="section-label">What's missing</div>
+    <div class="missing-grid">
+      <div class="missing-item">
+        <div class="missing-item-name">matches table</div>
+        <div class="missing-item-source">Schema: event_id, home_club, away_club, score, date</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">club_results table</div>
+        <div class="missing-item-source">Schema: club_id, season, W, L, D, GF, GA</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">GotSport bracket scraper</div>
+        <div class="missing-item-source">Source: gotsport.com brackets</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Historical season snapshots</div>
+        <div class="missing-item-source">2+ seasons back minimum</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">W/L/D trend analytics</div>
+        <div class="missing-item-source">Derived from matches table</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- D6: Historical Rosters -->
+<div class="domain-card">
+  <div class="domain-header">
+    <span class="domain-number">D6</span>
+    <div class="domain-title-block">
+      <div class="domain-title">Historical Rosters <span class="priority-flag p1">P1</span></div>
+      <div class="domain-subtitle">Year-over-year snapshots, player churn metric</div>
+    </div>
+    <span class="status-badge status-empty">NOT STARTED</span>
+  </div>
+  <div class="domain-body">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill fill-red" style="width:0%"></div></div>
+      <span class="progress-pct">0%</span>
+    </div>
+
+    <div class="section-label">What's missing</div>
+    <div class="missing-grid">
+      <div class="missing-item">
+        <div class="missing-item-name">roster_snapshots table</div>
+        <div class="missing-item-source">Schema: club_id, season, player_name, grad_year, position</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Roster scraper</div>
+        <div class="missing-item-source">Source: GotSport, club sites</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Player churn metric</div>
+        <div class="missing-item-source">Derived: YoY roster deltas</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">shadow_players linkage</div>
+        <div class="missing-item-source">Blocks PR 6 in Player</div>
+        <div class="missing-item-blocker">⚠ Player blocker</div>
+      </div>
+    </div>
+
+    <div class="blocker-banner">
+      Blocks Player: shadow_players endpoints — PR 6 (games.ts), /coach/players, /coach/shadow-search, /coach/appearance-feed all pending.
+    </div>
+  </div>
+</div>
+
+<!-- D7: Tryout Listings -->
+<div class="domain-card">
+  <div class="domain-header">
+    <span class="domain-number">D7</span>
+    <div class="domain-title-block">
+      <div class="domain-title">Tryout Listings <span class="priority-flag p2">P2</span></div>
+      <div class="domain-subtitle">Club tryouts, open sessions — TYSA board seat distribution</div>
+    </div>
+    <span class="status-badge status-empty">NOT STARTED</span>
+  </div>
+  <div class="domain-body">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill fill-red" style="width:0%"></div></div>
+      <span class="progress-pct">0%</span>
+    </div>
+
+    <div class="section-label">What's missing</div>
+    <div class="missing-grid">
+      <div class="missing-item">
+        <div class="missing-item-name">tryout_listings table</div>
+        <div class="missing-item-source">Schema: club_id, date, age_groups, location, contact</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Club site scraper</div>
+        <div class="missing-item-source">Source: Club websites, social</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Manual submission API</div>
+        <div class="missing-item-source">Clubs submit directly via form</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">TYSA distribution hook</div>
+        <div class="missing-item-source">Board seat = direct channel</div>
+      </div>
+    </div>
+
+    <div class="moat-callout">
+      <div class="moat-label">📡 Distribution advantage</div>
+      TYSA board seat gives direct distribution to member clubs. This domain has the clearest go-to-market path — clubs want their tryouts listed, players want to find them.
+    </div>
+  </div>
+</div>
+
+<!-- D8: Scrape Health -->
+<div class="domain-card">
+  <div class="domain-header">
+    <span class="domain-number">D8</span>
+    <div class="domain-title-block">
+      <div class="domain-title">Scrape Health <span class="priority-flag p0">P0</span></div>
+      <div class="domain-subtitle">Required before paid API access goes live</div>
+    </div>
+    <span class="status-badge status-empty">NOT STARTED</span>
+  </div>
+  <div class="domain-body">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill fill-red" style="width:0%"></div></div>
+      <span class="progress-pct">0%</span>
+    </div>
+
+    <div class="section-label">What's missing</div>
+    <div class="missing-grid">
+      <div class="missing-item">
+        <div class="missing-item-name">scrape_runs table</div>
+        <div class="missing-item-source">Schema: scraper_id, started_at, rows_upserted, errors</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Staleness tracking</div>
+        <div class="missing-item-source">last_scraped_at per entity</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Coverage analytics endpoint</div>
+        <div class="missing-item-source">GET /analytics/coverage</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Alert on scraper failure</div>
+        <div class="missing-item-source">Email/webhook on run failure</div>
+      </div>
+      <div class="missing-item">
+        <div class="missing-item-name">Freshness SLA definition</div>
+        <div class="missing-item-source">Events: daily. Coaches: weekly.</div>
+      </div>
+    </div>
+
+    <div class="moat-callout">
+      <div class="moat-label">⚠ Gate</div>
+      This is a prerequisite for charging for API access. Without scrape health tracking, you can't guarantee data freshness to paying consumers. Build this in parallel with D2 and D4 scrapers.
+    </div>
+  </div>
+</div>
+```
+
+  </div><!-- end domains -->
+
+  <!-- Footer -->
+
+  <div class="footer">
+    <span>Upshift Data — Missing Data Spec v1.0</span>
+    <span>2026-04-15 · 8 domains · 6 unstarted</span>
+  </div>
+
+</div>
+</body>
+</html>

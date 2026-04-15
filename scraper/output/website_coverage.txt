@@ -1,7 +1,12 @@
-Website Coverage Report — 2026-04-11 21:21 UTC
+Website Coverage Report — 2026-04-15 02:57 UTC
 ============================================================
 
-  scrape_state_association                               0/28    (0%)
+  scrape_ecnl                                            0/324   (0%)
+  scrape_elite64                                         0/80    (0%)
+  scrape_girls_academy                                   1/126   (1%)
+  scrape_mls_next                                        0/159   (0%)
+  scrape_nwsl_academy                                    0/16    (0%)
+  scrape_usl_academy                                     0/98    (0%)
 
 ============================================================
-  TOTAL  0/28 clubs have a website (0.0%)
+  TOTAL  1/803 clubs have a website (0.1%)

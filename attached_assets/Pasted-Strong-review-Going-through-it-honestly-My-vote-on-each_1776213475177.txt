@@ -1,0 +1,51 @@
+Strong review. Going through it honestly:
+
+My vote on each point
+Accept all 10. Replit didn't give me a single point to push back on. Specifically:
+
+#	Point	My read
+1	coaches master can't be deferred	Agreed — doc already lands here, Replit just underlines why
+2	Drop eventSchedule	Agreed — already in doc
+3	clubRosterSnapshots needs gender in unique key	Good catch. "Alex" on U13G vs U13B same season collides. Fix.
+4	tryouts needs a unique constraint	I missed it. Lean (club_id, tryout_date, age_group, gender) — URLs aren't always stable across edits
+5	rosterDiffs: jsonb not jsonb[]	Good catch. Drizzle + Postgres arrays of jsonb are genuinely awkward. Fix.
+6	records_touched as GENERATED column	Good. I'd written it ambiguously ("derived"). Make it GENERATED ALWAYS AS (created + updated) STORED.
+7	coachMovementEvents + clubSiteChanges need unique keys	Good catch — rerunning a diff job would double-insert. Accept Replit's proposed keys.
+8	events multi-bracket: age_group/gender/division nullable	Good. Jefferson Cup = U13–U19, both genders. Event-level fields are wrong shape unless nullable. Fix.
+9	clubCoaches fate before migration	I missed this entirely. Need to decide before writing any schema.
+10	websiteStatus migration ordering	Fair operational note for the migration author
+The real question Replit surfaced: clubCoaches
+Let me actually look at what's in it before recommending a fate.
+
+Ran
+Check row counts in both coach tables
+Can't check row counts from here (no local DB). But structural comparison is enough to make a call:
+
+club_coaches:         club_id, name, title, email, PHONE,   confidence_score, source_url, scraped_at
+                      NO unique constraint, NO check constraints
+coach_discoveries:    club_id, name, title, email,          confidence, PLATFORM_FAMILY, source_url, scraped_at
+                      UNIQUE (club_id, name, title)
+                      CHECK (confidence 0..1), CHECK (platform_family enum)
+They're 95% the same. club_coaches looks like an earlier prototype; coach_discoveries is the newer structured table with constraints. README describes them as different sources, but the schemas don't support that distinction.
+
+My call: merge club_coaches INTO coach_discoveries, drop club_coaches.
+
+Migration:
+
+Add phone column to coach_discoveries
+INSERT INTO coach_discoveries (...) SELECT ... FROM club_coaches ON CONFLICT (club_id, name, title) DO NOTHING
+Drop club_coaches
+Then the new coaches master + coach_discoveries.coach_id FK applies uniformly. No parallel table to maintain.
+
+One thing to verify on Replit before committing: row count in club_coaches and whether anything actually writes to it. If it has meaningful data that's NOT in coach_discoveries, we merge carefully. If it's <100 rows or dead code, drop and re-scrape is fine.
+
+What I'd do now
+Two options:
+
+A. Update the review doc with all 10 resolutions baked in + 5th decision (merge clubCoaches), send back to Replit for sign-off on the updated version. One more round.
+
+B. Treat Replit's review as de facto sign-off since there were no disagreements, update the doc, and start writing the migration. Skip the ping-pong.
+
+I lean B — Replit's review was thorough and you already agreed with all points. A second round risks adding scope without value. But it's your call; some reviewers want the courtesy of seeing their comments incorporated.
+
+Which path? And either way, want me to update the doc now with the resolutions?
