@@ -163,7 +163,7 @@ PostgreSQL, managed with Drizzle ORM. 26 tables after the April 2026 Path A expa
 
 ### Deferred drops
 
-`club_coaches` and `club_events` are superseded by `coach_discoveries` + `events`/`event_teams` respectively. They remain in the schema until their drop PR lands.
+`club_coaches` was dropped April 2026 after the backfill verified zero residual rows and the API route was rewired to `coach_discoveries`. `club_events` remains until `/api/events/search` is rewired to read from `events` + `event_teams`.
 
 See `docs/path-a-data-model.md` for the full domain-by-domain spec and `CLAUDE.md` for session context.
 
