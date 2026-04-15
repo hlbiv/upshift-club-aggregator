@@ -7,6 +7,8 @@ info:
 servers:
   - url: /api
     description: Base API path
+security:
+  - apiKey: []
 tags:
   - name: health
     description: Health operations
@@ -25,6 +27,7 @@ paths:
       tags: [health]
       summary: Health check
       description: Returns server health status
+      security: []
       responses:
         "200":
           description: Healthy
@@ -490,6 +493,18 @@ paths:
                 $ref: "#/components/schemas/OverlapResponse"
 
 components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: >
+        Machine-to-machine authentication. Mint a key with
+        `scripts/src/create-api-key.ts` on Replit and send the plaintext in
+        this header on every request. Server also accepts
+        `Authorization: Bearer <key>` as an alternative. Gated by the
+        `API_KEY_AUTH_ENABLED` env var; when unset, auth is skipped
+        entirely (bootstrap mode). `/healthz` is exempt.
   schemas:
     HealthStatus:
       type: object
