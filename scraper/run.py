@@ -392,8 +392,13 @@ def main() -> None:
                         help="Also scrape team-level data (age groups, contacts) where available. "
                              "For GotSport leagues this makes one additional HTTP request per club.")
     parser.add_argument("--source", metavar="NAME",
-                        help="Run a non-league job. Supported: 'link-canonical-clubs'. "
-                             "Skips the league-scraping loop entirely.")
+                        help="Run a non-league job instead of the legacy club-listing "
+                             "pipeline. Supported: 'sincsports-events' (populates events "
+                             "+ event_teams), 'link-canonical-clubs' (resolves "
+                             "event_teams.canonical_club_id).")
+    parser.add_argument("--tid", metavar="TID",
+                        help="When --source=sincsports-events, scrape a single tid instead "
+                             "of iterating the full seed list.")
     parser.add_argument("--limit", type=int, metavar="N",
                         help="Cap the number of rows processed by --source jobs that "
                              "support it (e.g. link-canonical-clubs).")
@@ -401,7 +406,13 @@ def main() -> None:
 
     # --source dispatcher — non-league jobs short-circuit here.
     if args.source:
-        if args.source == "link-canonical-clubs":
+        key = args.source.lower().strip()
+        if key in ("sincsports-events", "sincsports_events"):
+            from events_runner import run_sincsports_events, print_summary
+            outcomes = run_sincsports_events(dry_run=args.dry_run, only_tid=args.tid)
+            print_summary(outcomes)
+            return
+        if key in ("link-canonical-clubs", "link_canonical_clubs"):
             from canonical_club_linker import run_cli as _run_linker
             rc = _run_linker(dry_run=args.dry_run, limit=args.limit)
             sys.exit(rc)

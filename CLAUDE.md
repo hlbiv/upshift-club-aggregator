@@ -132,6 +132,11 @@ python3 run.py --scope state     # 54 USYS state associations
 python3 run.py --league "ECNL"   # name filter
 python3 run.py --dry-run         # no writes
 python3 run.py --list            # inventory dump
+
+# Path-A-aware scrapers (write to events + event_teams, not CSVs)
+python3 run.py --source sincsports-events                # all 14 SincSports seeds
+python3 run.py --source sincsports-events --dry-run      # preview without DB writes
+python3 run.py --source sincsports-events --tid GULFC    # single event
 ```
 
 ---
@@ -256,7 +261,7 @@ cd scraper && python3 run.py --source link-canonical-clubs
 
 Idempotent — only touches rows where the FK is currently NULL.
 
-**Downstream consumers depend on this running:** `/api/events/search?club_id=N`, `matches` → `club_results` rollup. Neither works end-to-end without at least one linker pass.
+**Downstream consumers depend on this running:** `/api/events/search?club_id=N` (SincSports events scraper in PR #11 writes NULL FKs by design), `matches` → `club_results` rollup. Neither works end-to-end without at least one linker pass.
 
 See `docs/path-a-data-model.md` for the full domain-by-domain spec + changelog.
 

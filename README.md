@@ -299,6 +299,7 @@ Custom extractors live in `scraper/extractors/` and are matched by URL pattern v
 | `norcal.py` | NorCal Premier Soccer | `/clubs/` table |
 | `gotsport.py` | SOCAL, MSPSP, state assocs, NPL regions | GotSport `org_event/events/{id}/clubs` roster pages |
 | `sincsports.py` | 14 SincSports tournaments | `TTTeamList.aspx?tid=` static HTML; single response, no pagination |
+| `sincsports_events.py` | Same 14 tournaments, Path A mode | Populates `events` + `event_teams` tables (not CSVs); invoke via `python3 run.py --source sincsports-events` |
 | `state_assoc.py` | All 54 USYS state associations | GotSport events or Google Maps KML per state |
 | `npl_extra.py` | SE NPL, Empire Soccer, Mid-Atlantic, NY Club Soccer | GotSport event IDs via `_multi_event_scrape` helper |
 | `edp.py` | EDP Soccer | Wix static crawl |
