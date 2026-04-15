@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<!--
+  Fixture modeled on the real April-2026 SincSports TTTeamList.aspx output
+  (verified against https://soccer.sincsports.com/TTTeamList.aspx?tid=GULFC).
+
+  Key property: team rows are plain <td> text cells with NO <a href> anchors
+  pointing at TTRoster.aspx?teamid=... — rosters are gated behind team-admin
+  auth + __doPostBack on the Schedules page, not exposed here. This fixture
+  exercises the "no teamid hits" guard in scrape_sincsports_rosters.
+-->
+<html>
+<head><title>Team List - Coastal Soccer Invitational</title></head>
+<body>
+  <h1>Teams by Division</h1>
+  <h2 class="m-0 p-0">2017 (U9) Girls Gold 7v7</h2>
+  <table>
+    <tr><th>Team</th><th>Club</th><th>State</th><th>Division</th><th>Points</th></tr>
+    <tr class="tblrow">
+      <td>AFC Central Academy 17 Red</td><td>Alabama FC</td><td>AL</td><td></td><td></td>
+    </tr>
+    <tr class="tblrow">
+      <td>Foley FC 17G Gold</td><td>Foley FC</td><td>AL</td><td></td><td></td>
+    </tr>
+  </table>
+  <h2 class="m-0 p-0">2014 (U12) Boys Silver</h2>
+  <table>
+    <tr><th>Team</th><th>Club</th><th>State</th><th>Division</th><th>Points</th></tr>
+    <tr class="tblrow">
+      <td>NOLA Lightning 14B</td><td>NOLA Lightning</td><td>LA</td><td></td><td></td>
+    </tr>
+  </table>
+</body>
+</html>

@@ -1,8 +1,18 @@
 <!DOCTYPE html>
 <!--
-  Minimal fixture for the sincsports_rosters team-descriptor parser.
-  Each team cell carries an <a href="TTRoster.aspx?tid=ROSTR&teamid=NNN">
-  link which is what the extractor chases for the roster follow-up fetch.
+  HYPOTHETICAL fixture for the sincsports_rosters team-descriptor parser.
+
+  NOTE (April 2026): the real SincSports TTTeamList.aspx page does NOT
+  expose TTRoster.aspx?teamid= anchors — rosters are gated behind
+  team-admin auth + __doPostBack and this extractor's
+  `scrape_sincsports_rosters` runtime path returns [] after a loud
+  warning. See `teamlist_REAL_no_teamid.html` for the real shape.
+
+  This fixture is retained to test the PURE parser functions
+  (parse_team_descriptors, parse_roster_html) against a page that HAS
+  the expected structure — either a legacy template or a future
+  SincSports redesign that re-exposes public rosters. Do not treat the
+  TTRoster.aspx links here as real public URLs.
 -->
 <html>
 <head><title>Team List - Roster Test Cup</title></head>

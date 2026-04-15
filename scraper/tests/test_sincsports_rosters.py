@@ -18,10 +18,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from unittest import mock  # noqa: E402
+
 from extractors.sincsports_rosters import (  # noqa: E402
     current_season_tag,
     parse_roster_html,
     parse_team_descriptors,
+    scrape_sincsports_rosters,
 )
 from ingest.roster_snapshot_writer import (  # noqa: E402
     _compute_diff_rows,
@@ -54,6 +57,45 @@ def test_team_descriptors_captures_teamid_and_metadata():
     assert d.gender == "M"
     assert d.division_code == "Silver"
     assert d.birth_year == 2014
+
+
+def test_team_descriptors_real_world_no_teamid_returns_empty():
+    """On real SincSports pages there are no TTRoster.aspx?teamid=... anchors
+    inside team cells. The pure parser must return [] rather than guess."""
+    html = _read("teamlist_REAL_no_teamid.html")
+    descriptors = parse_team_descriptors(html, tid="GULFC")
+    assert descriptors == []
+
+
+def test_scrape_sincsports_rosters_detects_no_teamid_pages_and_bails():
+    """Runtime guard: when the real TTTeamList HTML has zero teamid= hits,
+    scrape_sincsports_rosters must log a loud warning and return [] without
+    attempting per-team fetches. This is the fix for the 0 teams discovered
+    regression seen against every real SincSports seed tid."""
+    html = _read("teamlist_REAL_no_teamid.html")
+    with mock.patch(
+        "extractors.sincsports_rosters._fetch", return_value=html
+    ) as fetch_mock:
+        rows = scrape_sincsports_rosters("GULFC")
+    # Only the team-list fetch should have fired — no per-team roster fetches.
+    assert fetch_mock.call_count == 1
+    assert rows == []
+
+
+def test_scrape_sincsports_rosters_still_works_on_pages_that_expose_teamid():
+    """Inverse guard: if SincSports ever re-exposes teamid anchors, the
+    existing happy path still kicks in. Uses the hypothetical fixture."""
+    team_list_html = _read("teamlist_ROSTR.html")
+    roster_html = _read("roster_ROSTR_team_1001.html")
+    # First call → team list; subsequent calls → roster pages (same body ok).
+    responses = [team_list_html, roster_html, roster_html]
+    with mock.patch(
+        "extractors.sincsports_rosters._fetch",
+        side_effect=responses,
+    ):
+        rows = scrape_sincsports_rosters("ROSTR")
+    assert len(rows) > 0
+    assert all(r["player_name"] for r in rows)
 
 
 # --------------------------------------------------------------------------- extractor: roster parsing

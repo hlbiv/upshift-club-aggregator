@@ -25,14 +25,39 @@ Output rows match the ``club_roster_snapshots`` contract consumed by
 
 STRATEGY
 --------
-The ``TTTeamList.aspx`` page renders team anchors like::
+**April 2026 update — SincSports does NOT expose public roster URLs.**
+The ``TTTeamList.aspx`` page renders team rows as plain text cells with
+no ``teamid=``-bearing anchors (verified against 14 real tournament
+pages: GULFC, etc). ``TTRoster.aspx?teamid=<N>`` 302-redirects to
+``/pageNotFound.aspx`` even when invoked directly. Rosters are gated
+behind team-admin auth and ``__doPostBack`` calls on the Schedules
+page — there is no public HTML surface we can scrape.
 
-    <a href="TTRoster.aspx?tid=GULFC&teamid=12345">Foley FC 2017 Girls</a>
+PR #15's original design (fetch TTTeamList → follow per-team
+``TTRoster.aspx`` anchors → parse roster table) was built against a
+fabricated fixture (``teamlist_ROSTR.html`` with invented
+``TTRoster.aspx?teamid=NNN`` links). The real-world HTML has no such
+anchors, so ``parse_team_descriptors`` always returns ``[]`` and the
+scraper logs ``0 teams discovered`` for every seed tid.
 
-We reuse the division-header + team-table parsing from
-``sincsports_events`` to get the (age_group, gender, division_code,
-birth_year) context for each team, then walk each row's first cell
-looking for a ``teamid=`` link — that's the teamid we follow.
+The extractor now:
+  * keeps ``parse_team_descriptors`` + ``parse_roster_html`` as pure
+    functions (fixture-driven tests still pass; both functions are
+    sound when given a page with the expected shape — e.g. a future
+    SincSports redesign, or an alternate roster source that reuses
+    this module).
+  * at runtime (``scrape_sincsports_rosters``) detects the "no teamid
+    anchors on real TTTeamList" case and emits a single loud warning
+    per run instead of continuing to thrash the network. Also counts
+    total ``teamid=`` regex hits in the raw HTML so future SincSports
+    template changes that re-expose the links are caught automatically.
+  * returns ``[]`` gracefully so the runner's ZERO_RESULTS path records
+    the partial run correctly.
+
+If/when SincSports exposes public rosters via a different endpoint, the
+pure parse functions can be reused against that endpoint with only
+``scrape_sincsports_rosters`` needing updated fetch logic. Writer +
+runner + dispatcher are unchanged.
 
 Roster pages are plain HTML, one table whose header row contains at
 least one of ``{name, player}`` and optionally ``{jersey, number, #}``.
@@ -304,11 +329,33 @@ def scrape_sincsports_rosters(
         logger.error("[sincsports-rosters] team list fetch failed tid=%s: %s", tid, exc)
         return []
 
+    # SincSports' public TTTeamList page does not render TTRoster.aspx
+    # anchors — rosters are gated behind team-admin auth + __doPostBack.
+    # Detect that shape explicitly (zero teamid= hits anywhere in the
+    # raw HTML) and fail loudly *once* rather than logging "0 teams"
+    # per seed on every run. If SincSports ever starts exposing teamid
+    # links again, this guard auto-disables and parse_team_descriptors
+    # takes over.
+    teamid_hits = len(_TEAMID_RE.findall(html))
+    if teamid_hits == 0:
+        logger.warning(
+            "[sincsports-rosters] tid=%s — TTTeamList exposes no teamid "
+            "anchors; SincSports rosters are not publicly scrapable via "
+            "TTRoster.aspx. Skipping. (HTML length=%d; grep teamid=0)",
+            tid, len(html),
+        )
+        return []
+
     descriptors = parse_team_descriptors(html, tid)
     if max_teams is not None:
         descriptors = descriptors[:max_teams]
     if not descriptors:
-        logger.warning("[sincsports-rosters] tid=%s — 0 teams discovered", tid)
+        logger.warning(
+            "[sincsports-rosters] tid=%s — TTTeamList had %d teamid hits "
+            "but parse_team_descriptors yielded 0 teams (page structure "
+            "may have changed — inspect fixture + parser)",
+            tid, teamid_hits,
+        )
         return []
 
     rows: List[Dict] = []
