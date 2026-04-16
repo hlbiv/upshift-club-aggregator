@@ -768,6 +768,372 @@ function OverlapPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Events Tab
+// ---------------------------------------------------------------------------
+
+interface EventItem {
+  id: number;
+  name: string;
+  slug: string;
+  league_name: string | null;
+  season: string | null;
+  age_group: string | null;
+  gender: string | null;
+  division: string | null;
+  location_city: string | null;
+  location_state: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  source: string | null;
+  platform_event_id: string | null;
+  source_url: string | null;
+  team_count: number;
+}
+
+interface EventStats {
+  total_events: number;
+  total_seasons: number;
+  upcoming_events: number;
+  past_events: number;
+  total_teams: number;
+  by_season: { season: string; event_count: number; team_count: number }[];
+  by_source: { source: string; event_count: number }[];
+}
+
+interface EventListResponse {
+  events: EventItem[];
+  filters: { seasons: string[]; sources: string[] };
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatDateRange(start: string | null, end: string | null): string {
+  if (!start) return "-";
+  const s = new Date(start);
+  const startStr = s.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (!end) return `${startStr}, ${s.getFullYear()}`;
+  const e = new Date(end);
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+    return `${startStr}-${e.getDate()}, ${s.getFullYear()}`;
+  }
+  const endStr = e.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${startStr} - ${endStr}, ${s.getFullYear()}`;
+}
+
+function SourceBadge({ source }: { source: string | null }) {
+  if (!source) return <Badge variant="outline" className="text-xs">unknown</Badge>;
+  const variants: Record<string, string> = {
+    gotsport: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+    sincsports: "bg-green-500/15 text-green-400 border-green-500/30",
+    other: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+    manual: "bg-purple-500/15 text-purple-400 border-purple-500/30",
+  };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${variants[source] ?? variants.other}`}>
+      {source}
+    </span>
+  );
+}
+
+function TimeframeBadge({ startDate }: { startDate: string | null }) {
+  if (!startDate) return null;
+  const now = new Date();
+  const start = new Date(startDate);
+  const isPast = start < now;
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+      isPast
+        ? "bg-zinc-500/10 text-zinc-500"
+        : "bg-emerald-500/15 text-emerald-400"
+    }`}>
+      {isPast ? "Past" : "Upcoming"}
+    </span>
+  );
+}
+
+function EventsTab() {
+  const [stats, setStats] = useState<EventStats | null>(null);
+  const [data, setData] = useState<EventListResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+
+  // Filters
+  const [seasonFilter, setSeasonFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [stateFilter, setStateFilter] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [timeframe, setTimeframe] = useState("all");
+
+  // Load stats once
+  useEffect(() => {
+    api<EventStats>("/events/stats").then(setStats).catch(() => {});
+  }, []);
+
+  // Load event list
+  const loadEvents = useCallback(
+    async (p = 1) => {
+      setLoading(true);
+      setPage(p);
+      try {
+        const params: Record<string, string> = {
+          page: String(p),
+          page_size: "25",
+        };
+        if (seasonFilter) params.season = seasonFilter;
+        if (sourceFilter) params.source = sourceFilter;
+        if (stateFilter) params.state = stateFilter;
+        if (nameFilter) params.name = nameFilter;
+        if (timeframe !== "all") params.timeframe = timeframe;
+
+        const result = await api<EventListResponse>("/events/list", params);
+        setData(result);
+      } catch {
+        setData(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [seasonFilter, sourceFilter, stateFilter, nameFilter, timeframe],
+  );
+
+  useEffect(() => {
+    loadEvents(1);
+  }, [loadEvents]);
+
+  const totalPages = data ? Math.ceil(data.total / (data.page_size || 25)) : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Stats cards */}
+      {stats && (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+          <StatCard title="Total Events" value={stats.total_events.toLocaleString()} />
+          <StatCard title="Seasons" value={String(stats.total_seasons)} />
+          <StatCard title="Upcoming" value={stats.upcoming_events.toLocaleString()} />
+          <StatCard title="Past" value={stats.past_events.toLocaleString()} />
+          <StatCard title="Team Entries" value={stats.total_teams.toLocaleString()} />
+        </div>
+      )}
+
+      {/* Season breakdown */}
+      {stats && stats.by_season.length > 0 && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Events by Season</CardTitle>
+              <CardDescription>Event and team counts per season</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {stats.by_season.map((s) => (
+                  <div key={s.season} className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{s.season}</span>
+                    <div className="flex items-center gap-3">
+                      <Badge variant="secondary" className="text-xs">
+                        {s.event_count} events
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        {s.team_count.toLocaleString()} teams
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Events by Source</CardTitle>
+              <CardDescription>Platform distribution</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {stats.by_source.map((s) => (
+                  <div key={s.source} className="flex items-center justify-between">
+                    <SourceBadge source={s.source} />
+                    <span className="text-xs text-muted-foreground">
+                      {s.event_count} events
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <Separator />
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-end">
+        <Input
+          placeholder="Search events..."
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && loadEvents(1)}
+          className="max-w-xs"
+        />
+        <Input
+          placeholder="State (e.g. GA)"
+          value={stateFilter}
+          onChange={(e) => setStateFilter(e.target.value.toUpperCase())}
+          onKeyDown={(e) => e.key === "Enter" && loadEvents(1)}
+          className="max-w-[100px]"
+        />
+        {data?.filters.seasons && data.filters.seasons.length > 0 && (
+          <Select value={seasonFilter} onValueChange={(v) => setSeasonFilter(v === "__all__" ? "" : v)}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="All seasons" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All seasons</SelectItem>
+              {data.filters.seasons.map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {data?.filters.sources && data.filters.sources.length > 0 && (
+          <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v === "__all__" ? "" : v)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="All sources" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All sources</SelectItem>
+              {data.filters.sources.map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <Select value={timeframe} onValueChange={setTimeframe}>
+          <SelectTrigger className="w-[130px]">
+            <SelectValue placeholder="Timeframe" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All time</SelectItem>
+            <SelectItem value="upcoming">Upcoming</SelectItem>
+            <SelectItem value="past">Past</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button onClick={() => loadEvents(1)} disabled={loading} size="sm">
+          {loading ? <Spinner className="mr-2" /> : null}
+          Search
+        </Button>
+      </div>
+
+      {/* Results count */}
+      {data && (
+        <p className="text-sm text-muted-foreground">
+          {data.total.toLocaleString()} event{data.total !== 1 ? "s" : ""}
+        </p>
+      )}
+
+      {/* Events table */}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Event</TableHead>
+            <TableHead>Dates</TableHead>
+            <TableHead>Location</TableHead>
+            <TableHead>Source</TableHead>
+            <TableHead>Season</TableHead>
+            <TableHead className="text-right">Teams</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {loading && !data?.events.length ? (
+            Array.from({ length: 8 }).map((_, i) => (
+              <TableRow key={i}>
+                {Array.from({ length: 6 }).map((__, j) => (
+                  <TableCell key={j}>
+                    <Skeleton className="h-4 w-full" />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          ) : !data?.events.length ? (
+            <TableRow>
+              <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                No events found
+              </TableCell>
+            </TableRow>
+          ) : (
+            data.events.map((ev) => (
+              <TableRow key={ev.id}>
+                <TableCell>
+                  <div className="space-y-1">
+                    <div className="font-medium text-sm leading-tight">{ev.name}</div>
+                    <div className="flex gap-1.5 items-center">
+                      {ev.league_name && (
+                        <span className="text-xs text-muted-foreground">{ev.league_name}</span>
+                      )}
+                      <TimeframeBadge startDate={ev.start_date} />
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="text-sm whitespace-nowrap">
+                  {formatDateRange(ev.start_date, ev.end_date)}
+                </TableCell>
+                <TableCell className="text-sm">
+                  {[ev.location_city, ev.location_state].filter(Boolean).join(", ") || "-"}
+                </TableCell>
+                <TableCell>
+                  <SourceBadge source={ev.source} />
+                </TableCell>
+                <TableCell className="text-sm">{ev.season ?? "-"}</TableCell>
+                <TableCell className="text-right">
+                  {ev.team_count > 0 ? (
+                    <Badge variant="secondary" className="text-xs">
+                      {ev.team_count}
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page <= 1 || loading}
+            onClick={() => loadEvents(page - 1)}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages || loading}
+            onClick={() => loadEvents(page + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Shared components
 // ---------------------------------------------------------------------------
 
@@ -840,6 +1206,7 @@ function App() {
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="clubs">Clubs</TabsTrigger>
             <TabsTrigger value="leagues">Leagues</TabsTrigger>
+            <TabsTrigger value="events">Events</TabsTrigger>
             <TabsTrigger value="coaches">Coaches</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
@@ -852,6 +1219,9 @@ function App() {
           </TabsContent>
           <TabsContent value="leagues">
             <LeaguesTab />
+          </TabsContent>
+          <TabsContent value="events">
+            <EventsTab />
           </TabsContent>
           <TabsContent value="coaches">
             <CoachesTab />
