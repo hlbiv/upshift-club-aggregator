@@ -624,6 +624,7 @@ def run_cli(dry_run: bool = False, limit: Optional[int] = None) -> int:
     Returns the process exit code (0 on success, 1 on DB unavailable).
     """
     from scrape_run_logger import ScrapeRunLogger, FailureKind
+    from alerts import alert_scraper_failure
 
     if psycopg2 is None:
         log.error("psycopg2 not installed")
@@ -656,6 +657,13 @@ def run_cli(dry_run: bool = False, limit: Optional[int] = None) -> int:
         log.error("Linker failed: %s", exc)
         if run_log is not None:
             run_log.finish_failed(FailureKind.UNKNOWN, str(exc))
+        alert_scraper_failure(
+            scraper_key="link-canonical-clubs",
+            failure_kind=FailureKind.UNKNOWN.value,
+            error_message=str(exc),
+            source_url="derived:canonical_clubs",
+            league_name="canonical-club-resolution",
+        )
         return 1
 
     print(

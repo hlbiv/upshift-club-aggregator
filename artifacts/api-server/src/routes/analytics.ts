@@ -384,23 +384,36 @@ router.get(
 
       const globalRun = globalRunRows[0] ?? {};
 
-      const domains = Array.from(domainMap.entries()).map(([et, d]) => ({
-        entity_type: et,
-        total: d.total,
-        ok: d.ok,
-        stale: d.stale,
-        failed: d.failed,
-        never: d.never,
-        freshness_pct:
+      // SLA thresholds per entity type (mirrors scraper/config/freshness_sla.py)
+      const SLA_HOURS: Record<string, number> = {
+        club: 168, league: 720, college: 168, coach: 168,
+        event: 24, match: 24, tryout: 168,
+      };
+      const DEFAULT_SLA = 168;
+
+      const domains = Array.from(domainMap.entries()).map(([et, d]) => {
+        const freshness_pct =
           d.total > 0
             ? Math.round((d.ok / d.total) * 1000) / 10
-            : 0,
-        last_successful_run: domainSuccessMap.get(et) ?? null,
-        runs_24h: Number(globalRun.runs_24h ?? 0),
-        runs_7d: Number(globalRun.runs_7d ?? 0),
-        records_touched_24h: Number(globalRun.records_touched_24h ?? 0),
-        records_touched_7d: Number(globalRun.records_touched_7d ?? 0),
-      }));
+            : 0;
+        const sla_hours = SLA_HOURS[et] ?? DEFAULT_SLA;
+        return {
+          entity_type: et,
+          total: d.total,
+          ok: d.ok,
+          stale: d.stale,
+          failed: d.failed,
+          never: d.never,
+          freshness_pct,
+          sla_hours,
+          sla_breached: freshness_pct < 100,
+          last_successful_run: domainSuccessMap.get(et) ?? null,
+          runs_24h: Number(globalRun.runs_24h ?? 0),
+          runs_7d: Number(globalRun.runs_7d ?? 0),
+          records_touched_24h: Number(globalRun.records_touched_24h ?? 0),
+          records_touched_7d: Number(globalRun.records_touched_7d ?? 0),
+        };
+      });
 
       // 2. Per-scraper run history
       const scraperRows = await execRows(sql`

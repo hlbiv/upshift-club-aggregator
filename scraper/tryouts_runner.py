@@ -28,6 +28,7 @@ from scrape_run_logger import (  # noqa: E402
     ScrapeRunLogger,
     classify_exception,
 )
+from alerts import alert_scraper_failure  # noqa: E402
 
 logger = logging.getLogger("tryouts_runner")
 
@@ -75,6 +76,13 @@ def run_tryouts_wordpress(
         logger.error("[tryouts-wordpress] scraping failed: %s", exc)
         if run_log is not None:
             run_log.finish_failed(kind, error_message=str(exc))
+        alert_scraper_failure(
+            scraper_key=scraper_key,
+            failure_kind=kind.value,
+            error_message=str(exc),
+            source_url="seed:TRYOUTS_WORDPRESS_SEED",
+            league_name="WordPress tryouts",
+        )
         return outcomes
 
     outcome.row_count = len(rows)
@@ -94,6 +102,13 @@ def run_tryouts_wordpress(
         logger.error("[tryouts-wordpress] write failed: %s", exc)
         if run_log is not None:
             run_log.finish_failed(kind, error_message=str(exc))
+        alert_scraper_failure(
+            scraper_key=scraper_key,
+            failure_kind=kind.value,
+            error_message=str(exc),
+            source_url="seed:TRYOUTS_WORDPRESS_SEED",
+            league_name="WordPress tryouts",
+        )
         return outcomes
 
     outcome.counts = counts
