@@ -10,6 +10,7 @@ import collegesRouter from "./colleges";
 import matchesRouter from "./matches";
 import rostersRouter from "./rosters";
 import standingsRouter from "./standings";
+import tryoutsRouter from "./tryouts";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(collegesRouter);
 router.use(matchesRouter);
 router.use(rostersRouter);
 router.use(standingsRouter);
+router.use(tryoutsRouter);
 
 export default router;

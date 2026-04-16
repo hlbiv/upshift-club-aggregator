@@ -825,3 +825,71 @@ export const CollegeRostersResponse = zod.object({
   page: zod.number(),
   page_size: zod.number(),
 });
+
+// ---------------------------------------------------------------------------
+// D7 — Tryout listings
+// ---------------------------------------------------------------------------
+
+/** Shape of a single tryout row returned by the API. */
+export const TryoutItem = zod.object({
+  id: zod.number(),
+  club_id: zod.number().nullable().optional(),
+  club_name_raw: zod.string(),
+  age_group: zod.string().nullable().optional(),
+  gender: zod.string().nullable().optional(),
+  division: zod.string().nullable().optional(),
+  tryout_date: zod.string().nullable().optional(),
+  registration_deadline: zod.string().nullable().optional(),
+  location_name: zod.string().nullable().optional(),
+  location_address: zod.string().nullable().optional(),
+  location_city: zod.string().nullable().optional(),
+  location_state: zod.string().nullable().optional(),
+  cost: zod.string().nullable().optional(),
+  url: zod.string().nullable().optional(),
+  notes: zod.string().nullable().optional(),
+  source: zod.string(),
+  status: zod.string(),
+  detected_at: zod.string().optional(),
+  scraped_at: zod.string().optional(),
+  expires_at: zod.string().nullable().optional(),
+});
+
+/** Query parameters for GET /api/tryouts/search. */
+export const TryoutSearchParams = zod.object({
+  club_name: zod.string().optional(),
+  age_group: zod.string().optional(),
+  gender: zod.string().optional(),
+  state: zod.string().optional(),
+  status: zod.string().optional(),
+  source: zod.string().optional(),
+  page: zod.coerce.number().optional(),
+  page_size: zod.coerce.number().optional(),
+});
+
+/** Paginated response for tryout search / listing endpoints. */
+export const TryoutSearchResponse = zod.object({
+  items: zod.array(TryoutItem),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/** Body for POST /api/tryouts/submit (manual tryout submission). */
+export const TryoutSubmitBody = zod.object({
+  club_name_raw: zod.string().min(1),
+  age_group: zod.string().optional(),
+  gender: zod.string().optional(),
+  tryout_date: zod.string().optional(),
+  location_name: zod.string().optional(),
+  location_city: zod.string().optional(),
+  location_state: zod.string().optional(),
+  url: zod.string().optional(),
+  notes: zod.string().optional(),
+});
+
+/** Response for GET /api/tryouts/stats. */
+export const TryoutStatsResponse = zod.object({
+  total: zod.number(),
+  by_status: zod.record(zod.string(), zod.number()),
+  by_source: zod.record(zod.string(), zod.number()),
+});

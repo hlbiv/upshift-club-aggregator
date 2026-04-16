@@ -439,6 +439,16 @@ def _run_source(args) -> None:
         outcomes = run_tryouts_wordpress(dry_run=args.dry_run, limit=args.limit)
         print_summary(outcomes)
         return
+    if key in ("tryouts-gotsport", "tryouts_gotsport"):
+        from tryouts_runner import run_tryouts_gotsport, print_summary
+        outcomes = run_tryouts_gotsport(dry_run=args.dry_run, limit=args.limit)
+        print_summary(outcomes)
+        return
+    if key == "tryouts":
+        from tryouts_runner import run_tryouts, print_summary
+        outcomes = run_tryouts(dry_run=args.dry_run, limit=args.limit)
+        print_summary(outcomes)
+        return
     if key in ("youth-coaches", "youth_coaches"):
         from youth_coach_runner import run_youth_coaches, print_summary as _yc_print_summary
         result = run_youth_coaches(
@@ -622,6 +632,8 @@ def main() -> None:
                              "'sincsports-events' (populates events + event_teams), "
                              "'sincsports-rosters' (populates club_roster_snapshots + roster_diffs), "
                              "'tryouts-wordpress' (populates tryouts from WordPress sites), "
+                             "'tryouts-gotsport' (populates tryouts from GotSport events), "
+                             "'tryouts' (all tryout sources + status expiry), "
                              "'youth-coaches' (scrapes youth club staff pages into coach_discoveries), "
                              "'link-canonical-clubs' (resolves event_teams.canonical_club_id), "
                              "'club-enrichment' (enrich canonical_clubs with logo/socials/status), "
