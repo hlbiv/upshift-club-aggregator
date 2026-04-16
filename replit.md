@@ -19,10 +19,17 @@ scraper/
 ├── scraper_js.py          # Playwright (headless Chromium) for JS-rendered pages
 ├── normalizer.py          # Club name normalization + RapidFuzz deduplication (threshold=88)
 ├── storage.py             # Per-league CSV and master CSV writer; COLUMNS includes website, source_type
-├── run.py                 # CLI entry point; FailureKind enum + structured failure reporting
+├── run.py                 # CLI entry point; FailureKind enum + --source dispatch
 ├── enrich_clubs.py        # Extracts website URLs from scraped league directory pages
 ├── enrich_websites.py     # Brave Search API enrichment for clubs missing a website
+├── merge_websites.py      # Merge discovered websites back into master.csv (DB + CSV + JSON sources)
 ├── scrape_staff.py        # Staff page scraper (SportsEngine, LeagueApps, WordPress, generic)
+├── scrape_run_logger.py   # Persists scraper invocation outcomes to scrape_run_logs; no-ops if no DB
+├── canonical_club_linker.py  # 4-pass FK linker: exact alias → canonical name → fuzzy → NULL
+├── events_runner.py       # Orchestrates SincSports events scraper; --source sincsports-events
+├── events_writer.py       # Upserts events + event_teams to Postgres (idempotent)
+├── rosters_runner.py      # Orchestrates SincSports rosters scraper; --source sincsports-rosters
+├── tryouts_runner.py      # Orchestrates WordPress tryouts scraper; --source tryouts-wordpress
 ├── requirements.txt       # Python package list
 ├── utils/
 │   └── retry.py          # retry_with_backoff() + TransientError sentinel; exp. backoff cap 60s
@@ -35,9 +42,14 @@ scraper/
 │   ├── dpl.py                 # DPL (WordPress pages)
 │   ├── edp.py                 # EDP Soccer (Wix static crawl)
 │   ├── mls_next.py            # MLS NEXT (patterns A+B, website extraction)
-│   ├── gotsport.py            # GotSport event roster scraper (shared helper, with retry)
-│   ├── sincsports.py          # SincSports TTTeamList.aspx extractor (static HTML)
+│   ├── gotsport.py            # GotSport club roster scraper (shared helper, with retry)
+│   ├── gotsport_matches.py    # GotSport per-event schedule/results extractor → matches table
+│   ├── sincsports.py          # SincSports TTTeamList.aspx extractor (static HTML, club ingest)
+│   ├── sincsports_events.py   # SincSports events + event_teams extractor (Path A D4)
+│   ├── sincsports_rosters.py  # SincSports TTRoster.aspx per-team roster extractor (Path A D6)
 │   ├── soccerwire.py          # SoccerWire WP REST API + individual club page extractor
+│   ├── tryouts_wordpress.py   # WordPress club-site tryout page scraper (Path A D7)
+│   ├── tryouts_wordpress_seed.py  # Seed list of WordPress club sites for tryout scraping
 │   ├── state_assoc.py         # All 54 USYS tier-4 state associations (GotSport + Maps KML + SoccerWire)
 │   ├── npl_extra.py           # NPL regional leagues + additional GotSport-backed directories
 │   ├── socal.py               # SOCAL Soccer League via GotSport
@@ -54,7 +66,17 @@ scraper/
 │   ├── mountain_west.py       # Mountain West Soccer League
 │   ├── mapl.py                # Mid-Atlantic Premier League
 │   ├── tcsl.py                # Texas Club Soccer League
-│   └── sssl.py                # Sunshine State Soccer League
+│   ├── sssl.py                # Sunshine State Soccer League
+│   ├── north_dakota_clubs.py  # North Dakota clubs (no GotSport; static HTML)
+│   ├── south_dakota_clubs.py  # South Dakota clubs (no GotSport; static HTML)
+│   └── utah_clubs.py          # Utah clubs (no GotSport; static HTML)
+├── ingest/
+│   ├── roster_snapshot_writer.py  # Upserts club_roster_snapshots + materializes roster_diffs
+│   └── tryouts_writer.py          # Upserts tryouts rows (natural-key unique index)
+├── reconcilers/
+│   └── scrape_health.py       # Fills scrape_health rollup from each entity table's freshness ts
+├── rollups/
+│   └── club_results.py        # Full-recompute rollup: DELETE + INSERT club_results from matches
 ├── data/
 │   ├── leagues_master.csv              # 127-row league inventory (source of truth)
 │   ├── league_sources_seed.csv         # Official scrape source registry
@@ -91,7 +113,7 @@ club_name, canonical_name, league_name, city, state, source_url, website, source
 ```bash
 cd scraper
 
-# Scraping
+# Scraping — league club directories
 python3 run.py                          # scrape all 115 scrapeable leagues
 python3 run.py --tier 1                 # Tier 1 national elite only (7 leagues)
 python3 run.py --priority high          # high-priority leagues
@@ -101,10 +123,22 @@ python3 run.py --league "ECNL"          # single league by name (partial match)
 python3 run.py --dry-run                # run without writing files
 python3 run.py --list                   # print full league inventory and exit
 
+# Scraping — Path A pipeline sources (--source dispatch)
+python3 run.py --source sincsports-events              # events + event_teams (D4)
+python3 run.py --source sincsports-rosters             # club_roster_snapshots + roster_diffs (D6)
+python3 run.py --source tryouts-wordpress              # tryouts table (D7)
+python3 run.py --source gotsport-matches --event-id N  # matches for one GotSport event (D5)
+python3 run.py --source link-canonical-clubs           # FK linker pass (run after any scrape)
+python3 run.py --source link-canonical-clubs --dry-run # preview only
+python3 run.py --rollup club-results                   # recompute club_results from matches (D5)
+python3 run.py --rollup scrape-health                  # refresh scrape_health rollup (D8)
+
 # Website enrichment
 python3 enrich_clubs.py                 # extract websites from scraped directory pages
 python3 enrich_websites.py --limit 100  # Brave Search API for clubs missing websites
 python3 enrich_websites.py --dry-run    # preview only (no API calls, no writes)
+python3 merge_websites.py               # merge discovered websites back into master.csv
+python3 merge_websites.py --dry-run     # preview merge (no writes)
 
 # Coach/staff discovery
 python3 scrape_staff.py --limit 50      # scrape staff pages for clubs with websites
@@ -182,6 +216,16 @@ Install: `pip install -r scraper/requirements.txt && python3 -m playwright insta
 ### Scrape telemetry (`schema/scrape-health.ts`)
 
 `scrape_run_logs` (per-run log; `failure_kind` ∈ `timeout | network | parse_error | zero_results | unknown`; `records_touched` is a STORED generated column), `scrape_health` (rolling rollups).
+
+### Hand-rolled migrations
+
+Some constraints can't be expressed in Drizzle and live as raw SQL in `scripts/src/migrations/`:
+
+| File | Purpose |
+|---|---|
+| `0001_rosters_tryouts_linker_columns.sql` | Adds `canonical_club_id` FK columns to `event_teams`, `matches`, `club_roster_snapshots`, `roster_diffs`, `tryouts`; creates partial-unique indexes using COALESCE for nullable key columns |
+
+Run with: `psql "$DATABASE_URL" -f scripts/src/migrations/0001_rosters_tryouts_linker_columns.sql`
 
 ### Contract invariants
 
