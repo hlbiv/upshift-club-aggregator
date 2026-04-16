@@ -419,6 +419,16 @@ def _run_source(args) -> None:
         outcomes = run_tryouts_wordpress(dry_run=args.dry_run, limit=args.limit)
         print_summary(outcomes)
         return
+    if key in ("youth-coaches", "youth_coaches"):
+        from youth_coach_runner import run_youth_coaches, print_summary as _yc_print_summary
+        result = run_youth_coaches(
+            dry_run=args.dry_run,
+            limit=args.limit,
+            state=args.state,
+            platform_family=args.platform_family,
+        )
+        _yc_print_summary(result)
+        return
     logger.error("Unknown --source key: %s", key)
     sys.exit(2)
 
@@ -571,6 +581,7 @@ def main() -> None:
                              "'sincsports-events' (populates events + event_teams), "
                              "'sincsports-rosters' (populates club_roster_snapshots + roster_diffs), "
                              "'tryouts-wordpress' (populates tryouts from WordPress sites), "
+                             "'youth-coaches' (scrapes youth club staff pages into coach_discoveries), "
                              "'link-canonical-clubs' (resolves event_teams.canonical_club_id).")
     parser.add_argument("--event-id", metavar="ID",
                         help="GotSport event id for --source gotsport-matches or gotsport-events.")
@@ -583,7 +594,13 @@ def main() -> None:
                              "of iterating the full seed list.")
     parser.add_argument("--limit", type=int, metavar="N",
                         help="Cap the number of rows processed by --source jobs that "
-                             "support it (e.g. link-canonical-clubs).")
+                             "support it (e.g. link-canonical-clubs, youth-coaches).")
+    parser.add_argument("--state", metavar="ST",
+                        help="State filter for --source youth-coaches (e.g. GA, CA).")
+    parser.add_argument("--platform-family",
+                        choices=["sportsengine", "leagueapps", "wordpress", "unknown"],
+                        dest="platform_family",
+                        help="Platform family filter for --source youth-coaches.")
     parser.add_argument("--rollup", choices=["club-results"],
                         help="Run a derived-data rollup over existing DB rows.")
     args = parser.parse_args()
