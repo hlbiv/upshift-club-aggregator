@@ -73,9 +73,11 @@ def _tournament_to_meta(t: DiscoveredTournament, season: str = "2025-26") -> Eve
         platform_id = t.sincsports_tid
         source = "sincsports"
     else:
-        # For "other" platform, use a stable hash of name + URL
+        # For "other" platform, use a stable hash of name + URL.
+        # Source must be a value accepted by the events_source_enum CHECK
+        # constraint: gotsport | sincsports | manual | other | NULL.
         platform_id = f"usclub-{hash(t.name) & 0xFFFFFFFF:08x}"
-        source = "usclub-sanctioned"
+        source = "other"
 
     slug = re.sub(r"[^a-z0-9]+", "-", t.name.lower()).strip("-")[:100]
 
