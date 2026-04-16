@@ -478,6 +478,23 @@ def _run_source(args) -> None:
         )
         print_report(pairs)
         return
+    if key in ("usclub-sanctioned", "usclub_sanctioned"):
+        from usclub_events_runner import run_usclub_events, print_summary as _uc_print_summary
+        outcomes = run_usclub_events(
+            dry_run=args.dry_run,
+            season=args.season or "2025-26",
+        )
+        _uc_print_summary(outcomes)
+        return
+    if key in ("usclub-seeds", "usclub_seeds"):
+        from usclub_events_runner import run_usclub_events, print_summary as _uc_print_summary
+        outcomes = run_usclub_events(
+            dry_run=args.dry_run,
+            skip_discovery=True,
+            season=args.season or "2025-26",
+        )
+        _uc_print_summary(outcomes)
+        return
     logger.error("Unknown --source key: %s", key)
     sys.exit(2)
 
@@ -637,7 +654,9 @@ def main() -> None:
                              "'youth-coaches' (scrapes youth club staff pages into coach_discoveries), "
                              "'link-canonical-clubs' (resolves event_teams.canonical_club_id), "
                              "'club-enrichment' (enrich canonical_clubs with logo/socials/status), "
-                             "'club-dedup' (fuzzy dedup report for canonical_clubs).")
+                             "'club-dedup' (fuzzy dedup report for canonical_clubs), "
+                             "'usclub-sanctioned' (discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events), "
+                             "'usclub-seeds' (seed only — National Cup + NPL Finals GotSport events, skip discovery).")
     parser.add_argument("--event-id", metavar="ID",
                         help="GotSport event id for --source gotsport-matches or gotsport-events.")
     parser.add_argument("--season", metavar="SEASON",
