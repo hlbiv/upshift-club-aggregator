@@ -5,7 +5,7 @@ Scrapes the public tournament list at:
     https://usclubsoccer.org/list-of-sanctioned-tournaments/
 
 The page renders a month-grouped HTML table with columns:
-    Tournament Name (linked) | Dates | State | Host Club | Age Groups
+    Dates | Tournament (linked) | State | Host Club | Age Groups
 
 For each row we:
   1. Extract tournament metadata (name, dates, state, host, ages).
@@ -66,12 +66,25 @@ class DiscoveredTournament:
 # Platform classification
 # ---------------------------------------------------------------------------
 
+# GotSport URL patterns:
+#   - /org_event/events/{numeric_id}/teams  (admin/teams view — has usable event ID)
+#   - /event_regs/{hex_hash}               (registration link — no numeric ID)
 _GOTSPORT_EVENT_RE = re.compile(
     r"gotsport\.com/org_event/events/(\d+)", re.IGNORECASE
 )
+_GOTSPORT_REG_RE = re.compile(
+    r"gotsport\.com/event_regs/([a-f0-9]+)", re.IGNORECASE
+)
 _GOTSPORT_DOMAIN_RE = re.compile(r"gotsport\.com|gotsoccer\.com", re.IGNORECASE)
+
+# SincSports URL patterns:
+#   - /details.aspx?tid=GULFC&tab=1
+#   - /TTTeamList.aspx?tid=NASASCCS
+#   - /TTIntro.aspx?tid=REVADC
+#   - /TTApply0.aspx?tid=UFAXTR&tab=2&sub=1
+#   - /dash.aspx?tid=NASASCCS&sinc=N&sic=N
 _SINCSPORTS_TID_RE = re.compile(
-    r"sincsports\.com/[^?]*\?.*tid=([A-Za-z0-9_-]+)", re.IGNORECASE
+    r"sincsports\.com/[^?]*\?.*?tid=([A-Za-z0-9_-]+)", re.IGNORECASE
 )
 _SINCSPORTS_DOMAIN_RE = re.compile(r"sincsports\.com", re.IGNORECASE)
 
@@ -80,11 +93,15 @@ def classify_platform(url: str) -> Tuple[str, Optional[str], Optional[str]]:
     """Classify a tournament URL by platform.
 
     Returns (platform, gotsport_event_id, sincsports_tid).
+
+    GotSport registration links (/event_regs/{hash}) don't contain a
+    numeric event ID, so we return gotsport_event_id=None but still
+    classify the platform as "gotsport" for downstream tracking.
     """
     m = _GOTSPORT_EVENT_RE.search(url)
     if m:
         return "gotsport", m.group(1), None
-    if _GOTSPORT_DOMAIN_RE.search(url):
+    if _GOTSPORT_REG_RE.search(url) or _GOTSPORT_DOMAIN_RE.search(url):
         return "gotsport", None, None
 
     m = _SINCSPORTS_TID_RE.search(url)
@@ -168,11 +185,25 @@ def _parse_date_range(
 # HTML parsing
 # ---------------------------------------------------------------------------
 
+# Header-row keywords to skip.  The page has header rows like
+# "Dates | Tournament | State | Club | Age Groups" and month dividers
+# like "April 2026".
+_HEADER_KEYWORDS_RE = re.compile(
+    r"^(dates?|tournament\s*name?|coming\s*soon|state|club|age\s*groups?)$",
+    re.IGNORECASE,
+)
+_MONTH_HEADER_RE = re.compile(
+    r"^(january|february|march|april|may|june|july|august|"
+    r"september|october|november|december)\s*\d{0,4}$",
+    re.IGNORECASE,
+)
+
+
 def parse_tournament_table(html: str) -> List[DiscoveredTournament]:
     """Parse the sanctioned tournaments page HTML.
 
     The page uses WordPress tables organized by month. Each row has 4-5
-    columns: Name (linked), Dates, State, Host Club, Age Groups.
+    columns:  Dates | Tournament (linked) | State | Host Club | Age Groups
     """
     soup = BeautifulSoup(html, "html.parser")
     tournaments: List[DiscoveredTournament] = []
@@ -187,22 +218,27 @@ def parse_tournament_table(html: str) -> List[DiscoveredTournament]:
             if len(cells) < 4:
                 continue
 
-            # Cell 0: Tournament name (possibly with <a> link)
-            name_cell = cells[0]
+            # Actual column order: Dates | Tournament | State | Club [| Age Groups]
+            dates_raw = cells[0].get_text(strip=True)
+            name_cell = cells[1]
+            state = cells[2].get_text(strip=True) if len(cells) > 2 else None
+            host_club = cells[3].get_text(strip=True) if len(cells) > 3 else None
+            age_groups = cells[4].get_text(strip=True) if len(cells) > 4 else None
+
+            # Extract tournament name and link from the name cell
             link_tag = name_cell.find("a")
             url = link_tag["href"].strip() if link_tag and link_tag.get("href") else None
             name = name_cell.get_text(strip=True)
 
-            # Skip header-like rows
-            if not name or re.match(r"tournament\s*name", name, re.IGNORECASE):
+            # Skip header-like rows (column headers or month dividers)
+            if not name:
                 continue
-            if re.match(r"coming\s*soon", name, re.IGNORECASE):
+            if _HEADER_KEYWORDS_RE.match(name):
                 continue
-
-            dates_raw = cells[1].get_text(strip=True) if len(cells) > 1 else ""
-            state = cells[2].get_text(strip=True) if len(cells) > 2 else None
-            host_club = cells[3].get_text(strip=True) if len(cells) > 3 else None
-            age_groups = cells[4].get_text(strip=True) if len(cells) > 4 else None
+            if _HEADER_KEYWORDS_RE.match(dates_raw):
+                continue
+            if _MONTH_HEADER_RE.match(name):
+                continue
 
             # Normalize empty strings to None
             state = state or None
