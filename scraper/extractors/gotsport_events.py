@@ -77,6 +77,8 @@ _HEADERS = {
 }
 _BASE = "https://system.gotsport.com"
 _TEAMS_PATH = "/org_event/events/{event_id}/teams"
+_CLUBS_PATH = "/org_event/events/{event_id}/clubs"
+_CLUB_DETAIL_PATH = "/org_event/events/{event_id}/clubs/{club_id}"
 _RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
 
 # Placeholder team names to skip.
@@ -371,5 +373,214 @@ def scrape_gotsport_event(
 
         # Polite delay between division fetches.
         time.sleep(0.4)
+
+    return meta, all_teams
+
+
+# ---------------------------------------------------------------------------
+# League-style scraper (via /clubs endpoint)
+# ---------------------------------------------------------------------------
+# GotSport league events (NPL sub-leagues, GA, DPL, etc.) expose club
+# rosters at /clubs instead of /teams. The /clubs page lists clubs with
+# links to /clubs/{club_id}, where team tables appear.
+
+_CLUB_LINK_RE = re.compile(
+    r"/org_event/events/\d+/clubs/(\d+)[^\"]*\"[^>]*>([^<]+)", re.IGNORECASE,
+)
+
+
+def parse_clubs_page(html: str) -> List[Tuple[str, str]]:
+    """Parse the /clubs page to extract (club_id, club_name) pairs."""
+    clubs: List[Tuple[str, str]] = []
+    seen: set = set()
+    for m in _CLUB_LINK_RE.finditer(html):
+        club_id = m.group(1)
+        name = decode_html_entities(m.group(2))
+        if name.lower() in ("schedule", "teams", "") or len(name) < 2:
+            continue
+        if club_id not in seen:
+            seen.add(club_id)
+            clubs.append((club_id, name))
+    return clubs
+
+
+def parse_club_detail_page(
+    html: str, club_name: str, event_id: str,
+) -> List[TeamRow]:
+    """Parse a club's team table from /clubs/{club_id}.
+
+    Returns TeamRow list.  The table has columns like:
+    Team | Gender | Age Group | Division  (or similar).
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    teams: List[TeamRow] = []
+
+    for table in soup.find_all("table"):
+        trs = table.find_all("tr")
+        if not trs:
+            continue
+
+        header_cells = [
+            c.get_text(strip=True).lower()
+            for c in trs[0].find_all(["td", "th"])
+        ]
+
+        # Try to find key columns — different events may have different headers
+        team_idx = None
+        gender_idx = None
+        age_idx = None
+        div_idx = None
+        state_idx = None
+
+        for i, h in enumerate(header_cells):
+            if h in ("team", "team name"):
+                team_idx = i
+            elif h in ("gender", "sex"):
+                gender_idx = i
+            elif h in ("age group", "age", "age_group"):
+                age_idx = i
+            elif h in ("division", "div", "group"):
+                div_idx = i
+            elif h in ("state", "st"):
+                state_idx = i
+
+        if team_idx is None:
+            # If no "team" header, try Club | Team | State fallback
+            try:
+                club_idx = header_cells.index("club")
+                team_idx = header_cells.index("team") if "team" in header_cells else club_idx
+            except ValueError:
+                continue
+
+        for tr in trs[1:]:
+            cells = tr.find_all(["td", "th"])
+            if len(cells) <= team_idx:
+                continue
+
+            team_name = decode_html_entities(cells[team_idx].get_text(" ", strip=True))
+            if not team_name or team_name.lower() in _SKIP_NAMES:
+                continue
+
+            gender_raw = ""
+            if gender_idx is not None and gender_idx < len(cells):
+                gender_raw = cells[gender_idx].get_text(strip=True).lower()
+
+            gender = None
+            if gender_raw in ("male", "m", "boys", "boy"):
+                gender = "M"
+            elif gender_raw in ("female", "f", "girls", "girl"):
+                gender = "F"
+
+            age_group = None
+            if age_idx is not None and age_idx < len(cells):
+                raw_age = cells[age_idx].get_text(strip=True)
+                if raw_age:
+                    # Normalize: "12" → "U12", "U-14" → "U14"
+                    raw_age = raw_age.replace("-", "").strip()
+                    if raw_age.isdigit():
+                        age_group = f"U{raw_age}"
+                    elif raw_age.upper().startswith("U"):
+                        age_group = raw_age.upper()
+
+            division = None
+            if div_idx is not None and div_idx < len(cells):
+                division = cells[div_idx].get_text(strip=True) or None
+
+            state = None
+            if state_idx is not None and state_idx < len(cells):
+                st = cells[state_idx].get_text(strip=True)
+                if len(st) == 2 and st.isalpha():
+                    state = st.upper()
+
+            teams.append(TeamRow(
+                team_name_raw=team_name,
+                club_name=club_name,
+                state=state,
+                age_group=age_group,
+                gender=gender,
+                division_code=division,
+                birth_year=None,
+            ))
+
+    # If no table found, just return one entry for the club itself
+    if not teams:
+        teams.append(TeamRow(
+            team_name_raw=club_name,
+            club_name=club_name,
+            state=None,
+            age_group=None,
+            gender=None,
+            division_code=None,
+            birth_year=None,
+        ))
+
+    return teams
+
+
+def scrape_gotsport_league_event(
+    event_id: int | str,
+    league_name: Optional[str] = None,
+    timeout: int = 20,
+) -> Tuple[EventMeta, List[TeamRow]]:
+    """Scrape a GotSport league event via the /clubs endpoint.
+
+    League events (NPL sub-leagues, GA, DPL) don't expose /teams.
+    Instead:
+      1. Fetch /clubs → list of club links
+      2. For each club, fetch /clubs/{id} → team table
+
+    Returns ``(EventMeta, [TeamRow...])``.
+    """
+    clubs_url = f"{_BASE}{_CLUBS_PATH.format(event_id=event_id)}"
+    logger.info("[gotsport-league] fetching clubs page %s", clubs_url)
+
+    r = _get_with_retry(clubs_url, timeout=timeout)
+
+    # Extract event name from clubs page
+    event_name = extract_event_name(r.text, str(event_id))
+    clubs = parse_clubs_page(r.text)
+
+    source_url = clubs_url
+    meta = EventMeta(
+        tid=str(event_id),
+        name=event_name,
+        slug=f"gotsport-{event_id}",
+        source="gotsport",
+        platform_event_id=str(event_id),
+        league_name=league_name,
+        source_url=source_url,
+    )
+
+    if not clubs:
+        logger.warning("[gotsport-league] event %s — no clubs found", event_id)
+        return meta, []
+
+    logger.info(
+        "[gotsport-league] event %s — %d clubs found", event_id, len(clubs),
+    )
+
+    all_teams: List[TeamRow] = []
+    for club_id, club_name in clubs:
+        detail_url = (
+            f"{_BASE}{_CLUB_DETAIL_PATH.format(event_id=event_id, club_id=club_id)}"
+        )
+
+        try:
+            dr = _get_with_retry(detail_url, timeout=timeout)
+            teams = parse_club_detail_page(dr.text, club_name, str(event_id))
+            all_teams.extend(teams)
+        except Exception as exc:
+            logger.warning(
+                "[gotsport-league] club %s (%s) fetch failed: %s",
+                club_id, club_name, exc,
+            )
+
+        # Polite delay between club fetches.
+        time.sleep(0.3)
+
+    logger.info(
+        "[gotsport-league] event %s — %d total team entries from %d clubs",
+        event_id, len(all_teams), len(clubs),
+    )
 
     return meta, all_teams

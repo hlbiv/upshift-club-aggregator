@@ -30,6 +30,7 @@ from extractors.gotsport_events import (
     EventMeta,
     TeamRow,
     scrape_gotsport_event,
+    scrape_gotsport_league_event,
 )
 from events_writer import WriteResult, upsert_event_and_teams, _connect
 from scrape_run_logger import (
@@ -183,12 +184,29 @@ def run_gotsport_events(
                 ))
                 continue
 
+            # Fallback: league events expose clubs via /clubs, not /teams.
+            # If /teams returned 0 results, try the /clubs endpoint.
             if not teams:
-                logger.warning("[gotsport-events] event %s returned 0 teams", event_id)
+                logger.info(
+                    "[gotsport-events] event %s — /teams empty, trying /clubs fallback",
+                    event_id,
+                )
+                try:
+                    meta, teams = scrape_gotsport_league_event(
+                        event_id, league_name=league_name,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[gotsport-events] event %s /clubs fallback failed: %s",
+                        event_id, exc,
+                    )
+
+            if not teams:
+                logger.warning("[gotsport-events] event %s returned 0 teams (both /teams and /clubs)", event_id)
                 if run_log is not None:
                     run_log.finish_partial(
                         records_failed=0,
-                        error_message="0 teams parsed from GotSport teams page",
+                        error_message="0 teams parsed from GotSport teams and clubs pages",
                     )
                 outcomes.append(EventRunOutcome(
                     event_id=event_id, league_name=league_name,
