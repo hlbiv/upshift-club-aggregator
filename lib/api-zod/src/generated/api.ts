@@ -485,3 +485,114 @@ export const OverlapResponse = zod.object({
   page: zod.number(),
   page_size: zod.number(),
 });
+
+// ---------------------------------------------------------------------------
+// Coach detail, career, movements, effectiveness, leaderboard (D3.2)
+// ---------------------------------------------------------------------------
+
+const CoachCareerHistoryItem = zod.object({
+  id: zod.number(),
+  coach_id: zod.number(),
+  entity_type: zod.string(),
+  entity_id: zod.number(),
+  entity_name: zod.string().nullable().optional(),
+  role: zod.string(),
+  start_year: zod.number().nullable().optional(),
+  end_year: zod.number().nullable().optional(),
+  is_current: zod.boolean(),
+  source: zod.string().nullable().optional(),
+  source_url: zod.string().nullable().optional(),
+  confidence: zod.number().nullable().optional(),
+});
+
+const CoachEffectivenessItem = zod.object({
+  id: zod.number(),
+  coach_id: zod.number(),
+  players_placed_d1: zod.number(),
+  players_placed_d2: zod.number(),
+  players_placed_d3: zod.number(),
+  players_placed_naia: zod.number(),
+  players_placed_njcaa: zod.number(),
+  players_placed_total: zod.number(),
+  clubs_coached: zod.number(),
+  seasons_tracked: zod.number(),
+  last_calculated_at: zod.string().nullable().optional(),
+});
+
+const CoachMovementItem = zod.object({
+  id: zod.number(),
+  coach_id: zod.number(),
+  event_type: zod.string(),
+  from_entity_type: zod.string().nullable().optional(),
+  from_entity_id: zod.number().nullable().optional(),
+  from_entity_name: zod.string().nullable().optional(),
+  to_entity_type: zod.string().nullable().optional(),
+  to_entity_id: zod.number().nullable().optional(),
+  to_entity_name: zod.string().nullable().optional(),
+  from_role: zod.string().nullable().optional(),
+  to_role: zod.string().nullable().optional(),
+  detected_at: zod.string(),
+  confidence: zod.number().nullable().optional(),
+});
+
+/**
+ * @summary Single coach with career history and effectiveness
+ */
+export const CoachDetailResponse = zod.object({
+  id: zod.number(),
+  person_hash: zod.string(),
+  display_name: zod.string(),
+  primary_email: zod.string().nullable().optional(),
+  first_seen_at: zod.string().nullable().optional(),
+  last_seen_at: zod.string().nullable().optional(),
+  career: zod.array(CoachCareerHistoryItem),
+  effectiveness: CoachEffectivenessItem.nullable().optional(),
+});
+
+/**
+ * @summary Paginated career history for a coach
+ */
+export const CoachCareerResponse = zod.object({
+  career: zod.array(CoachCareerHistoryItem),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
+ * @summary Paginated movement events for a coach
+ */
+export const CoachMovementsResponse = zod.object({
+  movements: zod.array(CoachMovementItem),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
+ * @summary Single effectiveness record for a coach
+ */
+export const CoachEffectivenessResponse = CoachEffectivenessItem;
+
+/**
+ * @summary Top coaches by placements
+ */
+export const CoachLeaderboardResponse = zod.object({
+  coaches: zod.array(
+    zod.object({
+      id: zod.number(),
+      display_name: zod.string(),
+      players_placed_total: zod.number(),
+      players_placed_d1: zod.number(),
+      players_placed_d2: zod.number(),
+      players_placed_d3: zod.number(),
+      players_placed_naia: zod.number(),
+      players_placed_njcaa: zod.number(),
+      clubs_coached: zod.number(),
+      seasons_tracked: zod.number(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
