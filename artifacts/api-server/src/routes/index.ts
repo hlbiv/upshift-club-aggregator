@@ -7,6 +7,9 @@ import eventsRouter from "./events";
 import coachesRouter from "./coaches";
 import analyticsRouter from "./analytics";
 import collegesRouter from "./colleges";
+import matchesRouter from "./matches";
+import rostersRouter from "./rosters";
+import standingsRouter from "./standings";
 
 const router: IRouter = Router();
 
@@ -18,5 +21,8 @@ router.use(eventsRouter);
 router.use(coachesRouter);
 router.use(analyticsRouter);
 router.use(collegesRouter);
+router.use(matchesRouter);
+router.use(rostersRouter);
+router.use(standingsRouter);
 
 export default router;

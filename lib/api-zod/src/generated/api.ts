@@ -596,3 +596,144 @@ export const CoachLeaderboardResponse = zod.object({
   page: zod.number(),
   page_size: zod.number(),
 });
+
+// ---------------------------------------------------------------------------
+// Matches (D5.2)
+// ---------------------------------------------------------------------------
+
+const MatchItem = zod.object({
+  id: zod.number(),
+  event_id: zod.number().nullable().optional(),
+  home_club_id: zod.number().nullable().optional(),
+  away_club_id: zod.number().nullable().optional(),
+  home_team_name: zod.string(),
+  away_team_name: zod.string(),
+  home_club_name: zod.string().nullable().optional(),
+  away_club_name: zod.string().nullable().optional(),
+  home_score: zod.number().nullable().optional(),
+  away_score: zod.number().nullable().optional(),
+  match_date: zod.string().nullable().optional(),
+  age_group: zod.string().nullable().optional(),
+  gender: zod.string().nullable().optional(),
+  division: zod.string().nullable().optional(),
+  season: zod.string().nullable().optional(),
+  league: zod.string().nullable().optional(),
+  status: zod.string(),
+  source: zod.string().nullable().optional(),
+  source_url: zod.string().nullable().optional(),
+  platform_match_id: zod.string().nullable().optional(),
+  scraped_at: zod.string(),
+});
+
+/**
+ * @summary Paginated match search
+ */
+export const MatchSearchResponse = zod.object({
+  matches: zod.array(MatchItem),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
+ * @summary Single match detail
+ */
+export const MatchDetailResponse = MatchItem;
+
+/**
+ * @summary Batch match lookup
+ */
+export const MatchBatchResponse = zod.object({
+  matches: zod.array(MatchItem),
+  total: zod.number(),
+});
+
+// ---------------------------------------------------------------------------
+// Rosters (D5.2)
+// ---------------------------------------------------------------------------
+
+const RosterSnapshotItem = zod.object({
+  id: zod.number(),
+  club_id: zod.number().nullable().optional(),
+  club_name_raw: zod.string(),
+  season: zod.string(),
+  age_group: zod.string(),
+  gender: zod.string(),
+  division: zod.string().nullable().optional(),
+  player_name: zod.string(),
+  jersey_number: zod.string().nullable().optional(),
+  position: zod.string().nullable().optional(),
+  source_url: zod.string().nullable().optional(),
+  snapshot_date: zod.string().nullable().optional(),
+  scraped_at: zod.string(),
+  source: zod.string().nullable().optional(),
+  event_id: zod.number().nullable().optional(),
+});
+
+/**
+ * @summary Paginated roster snapshot search
+ */
+export const RosterSnapshotSearchResponse = zod.object({
+  snapshots: zod.array(RosterSnapshotItem),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+const RosterDiffItem = zod.object({
+  id: zod.number(),
+  club_id: zod.number().nullable().optional(),
+  club_name_raw: zod.string(),
+  season: zod.string().nullable().optional(),
+  age_group: zod.string().nullable().optional(),
+  gender: zod.string().nullable().optional(),
+  player_name: zod.string(),
+  diff_type: zod.string(),
+  from_jersey_number: zod.string().nullable().optional(),
+  to_jersey_number: zod.string().nullable().optional(),
+  from_position: zod.string().nullable().optional(),
+  to_position: zod.string().nullable().optional(),
+  detected_at: zod.string(),
+});
+
+/**
+ * @summary Paginated roster diff search
+ */
+export const RosterDiffSearchResponse = zod.object({
+  diffs: zod.array(RosterDiffItem),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+// ---------------------------------------------------------------------------
+// Standings (D5.2)
+// ---------------------------------------------------------------------------
+
+const StandingItem = zod.object({
+  id: zod.number(),
+  club_id: zod.number(),
+  club_name: zod.string().nullable().optional(),
+  season: zod.string(),
+  league: zod.string().nullable().optional(),
+  division: zod.string().nullable().optional(),
+  age_group: zod.string().nullable().optional(),
+  gender: zod.string().nullable().optional(),
+  wins: zod.number(),
+  losses: zod.number(),
+  draws: zod.number(),
+  goals_for: zod.number(),
+  goals_against: zod.number(),
+  matches_played: zod.number(),
+  last_calculated_at: zod.string(),
+});
+
+/**
+ * @summary Paginated standings search
+ */
+export const StandingsSearchResponse = zod.object({
+  standings: zod.array(StandingItem),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
