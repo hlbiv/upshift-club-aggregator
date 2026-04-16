@@ -53,6 +53,7 @@ class WriteResult:
     teams_created: int = 0
     teams_updated: int = 0  # existing row whose bracket fields changed
     teams_skipped: int = 0  # existing (event_id, team_name_raw), no change
+    teams_failed: int = 0   # per-team upsert raised; row-level rollback applied
 
 
 def _connect(dsn: Optional[str] = None):
@@ -178,32 +179,46 @@ def upsert_event_and_teams(
                 result.events_updated += 1
 
             for t in teams:
-                cur.execute(
-                    _UPSERT_TEAM_SQL,
-                    (
-                        event_id,
-                        t.team_name_raw,
-                        _canonical_for_team(t),
-                        t.age_group,
-                        t.gender,
-                        t.division_code,
-                        meta.source_url,
-                        meta.source,
-                    ),
-                )
-                # Three outcomes given the DO UPDATE ... WHERE clause:
-                #   rowcount == 0   → conflict hit, all fields unchanged → skip
-                #   rowcount == 1 + inserted=True  → brand-new row
-                #   rowcount == 1 + inserted=False → existing row, bracket changed
-                if cur.rowcount == 0:
-                    result.teams_skipped += 1
-                else:
-                    row = cur.fetchone()
-                    inserted = bool(row[0]) if row is not None else False
-                    if inserted:
-                        result.teams_created += 1
+                # SAVEPOINT per-team: a single bad row (malformed bracket,
+                # constraint check tripped by an extractor bug) must not
+                # poison the whole event transaction. We count failures
+                # into `teams_failed` for `records_failed` on the run log.
+                cur.execute("SAVEPOINT team_upsert")
+                try:
+                    cur.execute(
+                        _UPSERT_TEAM_SQL,
+                        (
+                            event_id,
+                            t.team_name_raw,
+                            _canonical_for_team(t),
+                            t.age_group,
+                            t.gender,
+                            t.division_code,
+                            meta.source_url,
+                            meta.source,
+                        ),
+                    )
+                    # Three outcomes given the DO UPDATE ... WHERE clause:
+                    #   rowcount == 0   → conflict hit, all fields unchanged → skip
+                    #   rowcount == 1 + inserted=True  → brand-new row
+                    #   rowcount == 1 + inserted=False → existing row, bracket changed
+                    if cur.rowcount == 0:
+                        result.teams_skipped += 1
                     else:
-                        result.teams_updated += 1
+                        row = cur.fetchone()
+                        inserted = bool(row[0]) if row is not None else False
+                        if inserted:
+                            result.teams_created += 1
+                        else:
+                            result.teams_updated += 1
+                    cur.execute("RELEASE SAVEPOINT team_upsert")
+                except Exception as team_exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT team_upsert")
+                    result.teams_failed += 1
+                    log.warning(
+                        "events_writer: team upsert failed tid=%s team=%s — %s",
+                        meta.platform_event_id, t.team_name_raw, team_exc,
+                    )
 
         conn.commit()
     except Exception as exc:
