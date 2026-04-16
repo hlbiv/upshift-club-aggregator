@@ -449,6 +449,25 @@ def _run_source(args) -> None:
         )
         _yc_print_summary(result)
         return
+    if key in ("club-enrichment", "club_enrichment"):
+        from enrichment_runner import run_club_enrichment, print_summary as _ce_print_summary
+        outcome = run_club_enrichment(
+            dry_run=args.dry_run,
+            only_club_id=int(args.event_id) if args.event_id else None,
+            force=getattr(args, "force", False),
+            limit=args.limit,
+        )
+        _ce_print_summary(outcome)
+        return
+    if key in ("club-dedup", "club_dedup"):
+        from dedup.club_dedup import run_club_dedup, print_report
+        pairs = run_club_dedup(
+            threshold=0.85,
+            dry_run=args.dry_run,
+            state=args.state if hasattr(args, "state") else None,
+        )
+        print_report(pairs)
+        return
     logger.error("Unknown --source key: %s", key)
     sys.exit(2)
 
@@ -604,7 +623,9 @@ def main() -> None:
                              "'sincsports-rosters' (populates club_roster_snapshots + roster_diffs), "
                              "'tryouts-wordpress' (populates tryouts from WordPress sites), "
                              "'youth-coaches' (scrapes youth club staff pages into coach_discoveries), "
-                             "'link-canonical-clubs' (resolves event_teams.canonical_club_id).")
+                             "'link-canonical-clubs' (resolves event_teams.canonical_club_id), "
+                             "'club-enrichment' (enrich canonical_clubs with logo/socials/status), "
+                             "'club-dedup' (fuzzy dedup report for canonical_clubs).")
     parser.add_argument("--event-id", metavar="ID",
                         help="GotSport event id for --source gotsport-matches or gotsport-events.")
     parser.add_argument("--season", metavar="SEASON",
@@ -618,7 +639,9 @@ def main() -> None:
                         help="Cap the number of rows processed by --source jobs that "
                              "support it (e.g. link-canonical-clubs, youth-coaches).")
     parser.add_argument("--state", metavar="ST",
-                        help="State filter for --source youth-coaches (e.g. GA, CA).")
+                        help="State filter for --source youth-coaches or club-dedup (e.g. GA, CA).")
+    parser.add_argument("--force", action="store_true",
+                        help="For --source club-enrichment: re-enrich clubs that already have data.")
     parser.add_argument("--platform-family",
                         choices=["sportsengine", "leagueapps", "wordpress", "unknown"],
                         dest="platform_family",

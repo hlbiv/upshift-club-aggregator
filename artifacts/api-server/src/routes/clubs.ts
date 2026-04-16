@@ -192,6 +192,99 @@ router.get("/clubs/search", async (req, res, next): Promise<void> => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// D1: Club enrichment endpoints (non-parameterized — must precede :id)
+// ---------------------------------------------------------------------------
+
+router.get("/clubs/enrichment-coverage", async (req, res, next): Promise<void> => {
+  try {
+    const [stats] = await db
+      .select({
+        total: sql<number>`count(*)::int`,
+        with_logo: sql<number>`count(logo_url)::int`,
+        with_instagram: sql<number>`count(instagram)::int`,
+        with_facebook: sql<number>`count(facebook)::int`,
+        with_twitter: sql<number>`count(twitter)::int`,
+        with_website_status: sql<number>`count(website_status)::int`,
+        with_staff_page: sql<number>`count(staff_page_url)::int`,
+        avg_confidence: sql<number>`round(avg(scrape_confidence)::numeric, 1)`,
+      })
+      .from(canonicalClubs);
+
+    res.json({
+      total_clubs: stats?.total ?? 0,
+      with_logo: stats?.with_logo ?? 0,
+      with_socials: {
+        instagram: stats?.with_instagram ?? 0,
+        facebook: stats?.with_facebook ?? 0,
+        twitter: stats?.with_twitter ?? 0,
+      },
+      with_website_status: stats?.with_website_status ?? 0,
+      with_staff_page: stats?.with_staff_page ?? 0,
+      avg_scrape_confidence: stats?.avg_confidence ?? null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/clubs/needing-enrichment", async (req, res, next): Promise<void> => {
+  try {
+    const { page, pageSize, offset } = parsePagination(
+      req.query.page,
+      req.query.page_size,
+    );
+
+    const where = buildWhere([
+      isNotNull(canonicalClubs.website),
+      ne(canonicalClubs.website, ""),
+      sql`(${canonicalClubs.logoUrl} IS NULL OR ${canonicalClubs.scrapeConfidence} IS NULL)`,
+    ]);
+
+    const [countRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(canonicalClubs)
+      .where(where);
+
+    const total = countRow?.count ?? 0;
+
+    const rows = await db
+      .select({
+        id: canonicalClubs.id,
+        clubNameCanonical: canonicalClubs.clubNameCanonical,
+        state: canonicalClubs.state,
+        website: canonicalClubs.website,
+        websiteStatus: canonicalClubs.websiteStatus,
+        logoUrl: canonicalClubs.logoUrl,
+        scrapeConfidence: canonicalClubs.scrapeConfidence,
+      })
+      .from(canonicalClubs)
+      .where(where)
+      .orderBy(asc(canonicalClubs.clubNameCanonical))
+      .limit(pageSize)
+      .offset(offset);
+
+    res.json({
+      clubs: rows.map((r) => ({
+        id: r.id,
+        club_name_canonical: r.clubNameCanonical,
+        state: r.state ?? "",
+        website: r.website ?? null,
+        website_status: r.websiteStatus ?? null,
+        logo_url: r.logoUrl ?? null,
+        scrape_confidence: r.scrapeConfidence ?? null,
+      })),
+      total,
+      page,
+      page_size: pageSize,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+
 router.get("/clubs/:id", async (req, res, next): Promise<void> => {
   try {
     const id = Number(req.params.id);
@@ -373,6 +466,60 @@ router.get("/clubs/:id/staff", async (req, res, next): Promise<void> => {
         })),
       }),
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/clubs/:id/enrichment", async (req, res, next): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+
+    const [club] = await db
+      .select({
+        id: canonicalClubs.id,
+        logoUrl: canonicalClubs.logoUrl,
+        foundedYear: canonicalClubs.foundedYear,
+        instagram: canonicalClubs.instagram,
+        facebook: canonicalClubs.facebook,
+        twitter: canonicalClubs.twitter,
+        staffPageUrl: canonicalClubs.staffPageUrl,
+        websiteStatus: canonicalClubs.websiteStatus,
+        scrapeConfidence: canonicalClubs.scrapeConfidence,
+        websiteLastCheckedAt: canonicalClubs.websiteLastCheckedAt,
+        lastScrapedAt: canonicalClubs.lastScrapedAt,
+      })
+      .from(canonicalClubs)
+      .where(eq(canonicalClubs.id, id));
+
+    if (!club) {
+      res.status(404).json({ error: "Club not found" });
+      return;
+    }
+
+    res.json({
+      id: club.id,
+      logo_url: club.logoUrl ?? null,
+      founded_year: club.foundedYear ?? null,
+      socials: {
+        instagram: club.instagram ?? null,
+        facebook: club.facebook ?? null,
+        twitter: club.twitter ?? null,
+      },
+      staff_page_url: club.staffPageUrl ?? null,
+      website_status: club.websiteStatus ?? null,
+      scrape_confidence: club.scrapeConfidence ?? null,
+      website_last_checked_at: club.websiteLastCheckedAt
+        ? club.websiteLastCheckedAt.toISOString()
+        : null,
+      last_scraped_at: club.lastScrapedAt
+        ? club.lastScrapedAt.toISOString()
+        : null,
+    });
   } catch (err) {
     next(err);
   }
