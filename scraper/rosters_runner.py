@@ -134,6 +134,14 @@ def run_sincsports_rosters(
             )
         outcomes.append(outcome)
 
+    # Post-run scrape_health reconcile — soft failure only.
+    if not dry_run:
+        try:
+            from reconcilers import end_of_run_reconcile
+            end_of_run_reconcile()
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.warning("end_of_run_reconcile skipped: %s", exc)
+
     return outcomes
 
 
