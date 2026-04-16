@@ -37,14 +37,23 @@ app.use(express.urlencoded({ extended: true }));
 // operator has had a chance to create a key and distribute it to callers.
 // Bootstrap sequence: run scripts/create-api-key → set API_KEY_AUTH_ENABLED=true
 // in Replit Secrets → restart server.
-if (process.env.API_KEY_AUTH_ENABLED === "true") {
-  app.use("/api", apiKeyAuth);
+//
+// Auth is always skipped in development so the Replit preview pane works
+// without needing a key. /api/healthz is always public regardless of mode.
+const _authEnabled =
+  process.env.API_KEY_AUTH_ENABLED === "true" &&
+  process.env.NODE_ENV !== "development";
+
+if (_authEnabled) {
+  app.use(/^\/api(?!\/healthz)/, apiKeyAuth);
   // eslint-disable-next-line no-console
   console.log("[api-key-auth] enabled");
 } else {
   // eslint-disable-next-line no-console
   console.log(
-    "[api-key-auth] DISABLED (set API_KEY_AUTH_ENABLED=true to enable)",
+    process.env.NODE_ENV === "development"
+      ? "[api-key-auth] DISABLED in development mode"
+      : "[api-key-auth] DISABLED (set API_KEY_AUTH_ENABLED=true to enable)",
   );
 }
 
