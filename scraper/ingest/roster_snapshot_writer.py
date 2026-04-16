@@ -66,27 +66,49 @@ INSERT INTO club_roster_snapshots (
     club_id, club_name_raw, source_url, snapshot_date,
     season, age_group, gender, division,
     player_name, jersey_number, position,
+    grad_year, hometown, state, country, nationality,
+    college_commitment, academic_year, prev_club, league,
     event_id, scraped_at
 )
 VALUES (
     NULL, %(club_name_raw)s, %(source_url)s, %(snapshot_date)s,
     %(season)s, %(age_group)s, %(gender)s, %(division)s,
     %(player_name)s, %(jersey_number)s, %(position)s,
+    %(grad_year)s, %(hometown)s, %(state)s, %(country)s, %(nationality)s,
+    %(college_commitment)s, %(academic_year)s, %(prev_club)s, %(league)s,
     %(event_id)s, now()
 )
 ON CONFLICT ON CONSTRAINT club_roster_snapshots_name_season_age_gender_player_uq
 DO UPDATE SET
-    jersey_number = EXCLUDED.jersey_number,
-    position      = EXCLUDED.position,
-    snapshot_date = EXCLUDED.snapshot_date,
-    source_url    = COALESCE(EXCLUDED.source_url, club_roster_snapshots.source_url),
-    division      = COALESCE(EXCLUDED.division, club_roster_snapshots.division),
-    event_id      = COALESCE(EXCLUDED.event_id, club_roster_snapshots.event_id),
-    scraped_at    = now()
-WHERE club_roster_snapshots.jersey_number IS DISTINCT FROM EXCLUDED.jersey_number
-   OR club_roster_snapshots.position      IS DISTINCT FROM EXCLUDED.position
-   OR club_roster_snapshots.source_url    IS DISTINCT FROM EXCLUDED.source_url
-   OR club_roster_snapshots.division      IS DISTINCT FROM EXCLUDED.division
+    jersey_number      = EXCLUDED.jersey_number,
+    position           = EXCLUDED.position,
+    snapshot_date      = EXCLUDED.snapshot_date,
+    source_url         = COALESCE(EXCLUDED.source_url, club_roster_snapshots.source_url),
+    division           = COALESCE(EXCLUDED.division, club_roster_snapshots.division),
+    grad_year          = COALESCE(EXCLUDED.grad_year, club_roster_snapshots.grad_year),
+    hometown           = COALESCE(EXCLUDED.hometown, club_roster_snapshots.hometown),
+    state              = COALESCE(EXCLUDED.state, club_roster_snapshots.state),
+    country            = COALESCE(EXCLUDED.country, club_roster_snapshots.country),
+    nationality        = COALESCE(EXCLUDED.nationality, club_roster_snapshots.nationality),
+    college_commitment = COALESCE(EXCLUDED.college_commitment, club_roster_snapshots.college_commitment),
+    academic_year      = COALESCE(EXCLUDED.academic_year, club_roster_snapshots.academic_year),
+    prev_club          = COALESCE(EXCLUDED.prev_club, club_roster_snapshots.prev_club),
+    league             = COALESCE(EXCLUDED.league, club_roster_snapshots.league),
+    event_id           = COALESCE(EXCLUDED.event_id, club_roster_snapshots.event_id),
+    scraped_at         = now()
+WHERE club_roster_snapshots.jersey_number      IS DISTINCT FROM EXCLUDED.jersey_number
+   OR club_roster_snapshots.position           IS DISTINCT FROM EXCLUDED.position
+   OR club_roster_snapshots.source_url         IS DISTINCT FROM EXCLUDED.source_url
+   OR club_roster_snapshots.division           IS DISTINCT FROM EXCLUDED.division
+   OR club_roster_snapshots.grad_year          IS DISTINCT FROM EXCLUDED.grad_year
+   OR club_roster_snapshots.hometown           IS DISTINCT FROM EXCLUDED.hometown
+   OR club_roster_snapshots.state              IS DISTINCT FROM EXCLUDED.state
+   OR club_roster_snapshots.country            IS DISTINCT FROM EXCLUDED.country
+   OR club_roster_snapshots.nationality        IS DISTINCT FROM EXCLUDED.nationality
+   OR club_roster_snapshots.college_commitment IS DISTINCT FROM EXCLUDED.college_commitment
+   OR club_roster_snapshots.academic_year      IS DISTINCT FROM EXCLUDED.academic_year
+   OR club_roster_snapshots.prev_club          IS DISTINCT FROM EXCLUDED.prev_club
+   OR club_roster_snapshots.league             IS DISTINCT FROM EXCLUDED.league
 RETURNING (xmax = 0) AS inserted
 """
 
@@ -162,6 +184,15 @@ def _normalize_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "player_name": row["player_name"],
         "jersey_number": row.get("jersey_number"),
         "position": row.get("position"),
+        "grad_year": row.get("grad_year"),
+        "hometown": row.get("hometown"),
+        "state": row.get("state"),
+        "country": row.get("country"),
+        "nationality": row.get("nationality"),
+        "college_commitment": row.get("college_commitment"),
+        "academic_year": row.get("academic_year"),
+        "prev_club": row.get("prev_club"),
+        "league": row.get("league"),
         "event_id": row.get("event_id"),
     }
 

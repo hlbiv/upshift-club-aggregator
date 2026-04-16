@@ -42,7 +42,7 @@ import os
 import re
 import sys
 import time
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -82,6 +82,31 @@ _OPTION_VALUE_RE = re.compile(r'value="([mf]_\d+)"', re.IGNORECASE)
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
+
+def _grad_year_from_dob(raw: str) -> Optional[int]:
+    """Compute high-school graduation year from a DOB string.
+
+    Convention: a player born in year Y graduates in May of Y+18.
+    If born Aug 1 or later, they graduate in Y+19 (fall cutoff).
+    """
+    if not raw:
+        return None
+    # Try common date formats: MM/DD/YYYY, YYYY-MM-DD, MM-DD-YYYY
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y", "%d/%m/%Y"):
+        try:
+            dt = datetime.strptime(raw, fmt)
+            # Fall birthday cutoff: Aug 1
+            if dt.month >= 8:
+                return dt.year + 19
+            return dt.year + 18
+        except ValueError:
+            continue
+    # Try year-only (e.g., "2008")
+    m = re.match(r"^(19|20)\d{2}$", raw)
+    if m:
+        return int(raw) + 18
+    return None
+
 
 def _is_retryable(exc: Exception) -> bool:
     if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
@@ -228,6 +253,9 @@ def parse_roster_page(html: str) -> List[Dict[str, Optional[str]]]:
         name_idx = _find_header_index(headers, ("name", "player"))
         num_idx = _find_header_index(headers, ("no", "num", "number", "#", "jersey"))
         pos_idx = _find_header_index(headers, ("pos", "position"))
+        dob_idx = _find_header_index(headers, ("dob", "date of birth", "birth", "birthday"))
+        ht_idx = _find_header_index(headers, ("hometown", "home town", "city"))
+        state_idx = _find_header_index(headers, ("state", "st"))
 
         if name_idx is None:
             continue
@@ -256,10 +284,29 @@ def parse_roster_page(html: str) -> List[Dict[str, Optional[str]]]:
                 if raw_pos:
                     position = raw_pos
 
+            grad_year = None
+            if dob_idx is not None and dob_idx < len(texts):
+                grad_year = _grad_year_from_dob(texts[dob_idx].strip())
+
+            hometown = None
+            if ht_idx is not None and ht_idx < len(texts):
+                raw_ht = texts[ht_idx].strip()
+                if raw_ht:
+                    hometown = raw_ht
+
+            state = None
+            if state_idx is not None and state_idx < len(texts):
+                raw_st = texts[state_idx].strip()
+                if raw_st and len(raw_st) <= 3:
+                    state = raw_st.upper()
+
             players.append({
                 "player_name": player_name,
                 "jersey_number": jersey_number,
                 "position": position,
+                "grad_year": grad_year,
+                "hometown": hometown,
+                "state": state,
             })
 
         if players:
@@ -353,6 +400,9 @@ def scrape_gotsport_rosters(
                     "player_name": p["player_name"],
                     "jersey_number": p.get("jersey_number"),
                     "position": p.get("position"),
+                    "grad_year": p.get("grad_year"),
+                    "hometown": p.get("hometown"),
+                    "state": p.get("state"),
                     "snapshot_date": snap_date,
                     "season": default_season,
                     "age_group": age_group,
