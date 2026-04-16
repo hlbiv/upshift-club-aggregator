@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { events, eventTeams } from "@workspace/db/schema";
-import { eq, ilike, gte, lte, sql, asc, inArray } from "drizzle-orm";
+import { eq, ilike, gte, lte, sql, asc, desc, inArray } from "drizzle-orm";
 import {
   EventSearchResponse,
   EventDetailResponse,
@@ -29,6 +29,187 @@ const router: IRouter = Router();
  * single-bracket events store the value on `events` while multi-bracket
  * events store the per-team value on `event_teams`.
  */
+
+// ---------------------------------------------------------------------------
+// GET /api/events/list — paginated event list for the Explorer panel
+// ---------------------------------------------------------------------------
+
+router.get("/events/list", async (req, res, next): Promise<void> => {
+  try {
+    const season = req.query.season as string | undefined;
+    const source = req.query.source as string | undefined;
+    const league = req.query.league as string | undefined;
+    const state = req.query.state as string | undefined;
+    const nameQuery = req.query.name as string | undefined;
+    const timeframe = req.query.timeframe as string | undefined; // "past" | "upcoming" | "all"
+
+    const { page, pageSize, offset } = parsePagination(
+      req.query.page,
+      req.query.page_size,
+    );
+
+    const conditions = [];
+
+    if (season) conditions.push(eq(events.season, season));
+    if (source) conditions.push(eq(events.source, source));
+    if (state) conditions.push(ilike(events.locationState, state));
+    if (league) conditions.push(ilike(events.leagueName, `%${league.replace(/%/g, "\\%")}%`));
+    if (nameQuery) conditions.push(ilike(events.name, `%${nameQuery.replace(/%/g, "\\%")}%`));
+
+    if (timeframe === "past") {
+      conditions.push(lte(events.startDate, new Date()));
+    } else if (timeframe === "upcoming") {
+      conditions.push(gte(events.startDate, new Date()));
+    }
+
+    const where = buildWhere(conditions);
+
+    // Count + team counts in parallel
+    const [countRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(events)
+      .where(where);
+
+    const total = countRow?.count ?? 0;
+
+    const rows = await db
+      .select({
+        id: events.id,
+        name: events.name,
+        slug: events.slug,
+        leagueName: events.leagueName,
+        season: events.season,
+        ageGroup: events.ageGroup,
+        gender: events.gender,
+        division: events.division,
+        locationCity: events.locationCity,
+        locationState: events.locationState,
+        startDate: events.startDate,
+        endDate: events.endDate,
+        source: events.source,
+        platformEventId: events.platformEventId,
+        sourceUrl: events.sourceUrl,
+        teamCount: sql<number>`(
+          SELECT count(*)::int FROM event_teams et WHERE et.event_id = ${events.id}
+        )`,
+      })
+      .from(events)
+      .where(where)
+      .orderBy(desc(events.startDate), asc(events.name))
+      .limit(pageSize)
+      .offset(offset);
+
+    // Get distinct seasons + sources for filter dropdowns
+    const [seasonRows, sourceRows] = await Promise.all([
+      db
+        .selectDistinct({ season: events.season })
+        .from(events)
+        .where(sql`${events.season} IS NOT NULL`)
+        .orderBy(desc(events.season)),
+      db
+        .selectDistinct({ source: events.source })
+        .from(events)
+        .where(sql`${events.source} IS NOT NULL`)
+        .orderBy(asc(events.source)),
+    ]);
+
+    res.json({
+      events: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        slug: r.slug,
+        league_name: r.leagueName ?? null,
+        season: r.season ?? null,
+        age_group: r.ageGroup ?? null,
+        gender: r.gender ?? null,
+        division: r.division ?? null,
+        location_city: r.locationCity ?? null,
+        location_state: r.locationState ?? null,
+        start_date: r.startDate ? r.startDate.toISOString() : null,
+        end_date: r.endDate ? r.endDate.toISOString() : null,
+        source: r.source ?? null,
+        platform_event_id: r.platformEventId ?? null,
+        source_url: r.sourceUrl ?? null,
+        team_count: r.teamCount ?? 0,
+      })),
+      filters: {
+        seasons: seasonRows.map((r) => r.season).filter(Boolean) as string[],
+        sources: sourceRows.map((r) => r.source).filter(Boolean) as string[],
+      },
+      total,
+      page,
+      page_size: pageSize,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/events/stats — summary stats for the Events panel header
+// ---------------------------------------------------------------------------
+
+router.get("/events/stats", async (_req, res, next): Promise<void> => {
+  try {
+    const rows = await db.execute(sql`
+      SELECT
+        count(*)::int AS total_events,
+        count(DISTINCT season)::int AS total_seasons,
+        count(CASE WHEN start_date >= NOW() THEN 1 END)::int AS upcoming_events,
+        count(CASE WHEN start_date < NOW() THEN 1 END)::int AS past_events,
+        (SELECT count(*)::int FROM event_teams) AS total_teams
+      FROM events
+    `);
+
+    const row = Array.isArray(rows) ? rows[0] : (rows as any).rows?.[0];
+
+    const bySeason = await db.execute(sql`
+      SELECT
+        COALESCE(season, 'Unknown') AS season,
+        count(*)::int AS event_count,
+        (
+          SELECT count(*)::int FROM event_teams et
+          JOIN events e2 ON e2.id = et.event_id
+          WHERE COALESCE(e2.season, 'Unknown') = COALESCE(events.season, 'Unknown')
+        ) AS team_count
+      FROM events
+      GROUP BY season
+      ORDER BY season DESC
+    `);
+
+    const seasonData = Array.isArray(bySeason) ? bySeason : (bySeason as any).rows ?? [];
+
+    const bySource = await db.execute(sql`
+      SELECT
+        COALESCE(source, 'unknown') AS source,
+        count(*)::int AS event_count
+      FROM events
+      GROUP BY source
+      ORDER BY event_count DESC
+    `);
+
+    const sourceData = Array.isArray(bySource) ? bySource : (bySource as any).rows ?? [];
+
+    res.json({
+      total_events: Number(row?.total_events ?? 0),
+      total_seasons: Number(row?.total_seasons ?? 0),
+      upcoming_events: Number(row?.upcoming_events ?? 0),
+      past_events: Number(row?.past_events ?? 0),
+      total_teams: Number(row?.total_teams ?? 0),
+      by_season: seasonData.map((r: any) => ({
+        season: r.season,
+        event_count: Number(r.event_count),
+        team_count: Number(r.team_count),
+      })),
+      by_source: sourceData.map((r: any) => ({
+        source: r.source,
+        event_count: Number(r.event_count),
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 function escapeLike(raw: string): string {
   return raw.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
