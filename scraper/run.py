@@ -457,10 +457,13 @@ def _run_source(args) -> None:
         print_summary(outcomes)
         return
     if key in ("tryouts-gotsport", "tryouts_gotsport"):
-        from tryouts_runner import run_tryouts_gotsport, print_summary
-        outcomes = run_tryouts_gotsport(dry_run=args.dry_run, limit=args.limit)
-        print_summary(outcomes)
-        return
+        logger.error(
+            "--source tryouts-gotsport is no longer supported. GotSport "
+            "disallows automated event discovery via robots.txt and the "
+            "public Rankings API does not include tryouts. See "
+            "tryouts_runner.py module docstring for details."
+        )
+        sys.exit(2)
     if key == "tryouts":
         from tryouts_runner import run_tryouts, print_summary
         outcomes = run_tryouts(dry_run=args.dry_run, limit=args.limit)
@@ -666,9 +669,8 @@ def main() -> None:
                              "'gotsport-rosters' (populates club_roster_snapshots from GotSport rosters), "
                              "'sincsports-events' (populates events + event_teams), "
                              "'sincsports-rosters' (populates club_roster_snapshots + roster_diffs), "
-                             "'tryouts-wordpress' (populates tryouts from WordPress sites), "
-                             "'tryouts-gotsport' (populates tryouts from GotSport events), "
-                             "'tryouts' (all tryout sources + status expiry), "
+                             "'tryouts-wordpress' (populates tryouts from WordPress club sites), "
+                             "'tryouts' (wordpress source + status expiry; see tryouts_runner.py for why GotSport tryout discovery is not supported), "
                              "'youth-coaches' (scrapes youth club staff pages into coach_discoveries), "
                              "'link-canonical-clubs' (resolves event_teams.canonical_club_id), "
                              "'club-enrichment' (enrich canonical_clubs with logo/socials/status), "
