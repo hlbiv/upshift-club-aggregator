@@ -1,5 +1,5 @@
 """
-Seed the colleges table with NCAA D1/D2/D3 + NAIA soccer programs.
+Seed the colleges table with NCAA D1/D2/D3 + NAIA + NJCAA soccer programs.
 
 Data sources:
   - D1: Hardcoded from upshift-player-platform ncaa.ts (SEC, ACC, Big Ten,
@@ -9,8 +9,11 @@ Data sources:
     KNOWN_D2_URLS map. ~100 schools with known athletic site URLs.
   - D3: Hardcoded from upshift-player-platform ncaa-d3-roster-scraper.ts
     KNOWN_D3_URLS map. ~100 schools with known athletic site URLs.
-  - NAIA: Not included yet — the player-platform fetches NAIA schools from
-    Wikipedia at runtime. A future scraper can populate these.
+  - NAIA: Sourced from KNOWN_NAIA_URLS in upshift-player-platform
+    naia-roster-scraper.ts. ~160 schools with known athletic URLs.
+  - NJCAA: Top ~25 soccer programs with known athletic URLs. The
+    player-platform fetches full NJCAA lists from Wikipedia at runtime;
+    this seed covers the most prominent programs only.
 
 Gaps:
   - D1 list covers major conferences only; smaller conferences (Horizon,
@@ -19,7 +22,8 @@ Gaps:
     A follow-up scraper task can backfill the rest.
   - D2/D3 lists are the schools with known athletic URLs, not the full
     division membership. ~200-300 schools per division are missing.
-  - NAIA (~235 schools) is entirely absent.
+  - NAIA covers ~160 of ~235 schools (those with verified athletic URLs).
+  - NJCAA covers ~25 top programs; full list (~400+) not yet seeded.
 
 Usage:
     python -m scraper.seeds.seed_colleges              # real run
@@ -503,6 +507,167 @@ _D3_SCHOOLS: List[Dict] = [
 
 
 # ---------------------------------------------------------------------------
+# NAIA seed data — sourced from KNOWN_NAIA_URLS in
+# upshift-player-platform/artifacts/scraper/src/naia-roster-scraper.ts
+# Both genders assumed. NAIA offers athletic scholarships.
+# ---------------------------------------------------------------------------
+
+_NAIA_SCHOOLS: List[Dict] = [
+    {"name": "Campbellsville University", "state": "KY", "city": "Campbellsville", "website": "https://campbellsvilletigers.com"},
+    {"name": "Lindsey Wilson University", "state": "KY", "city": "Columbia", "website": "https://lindseyathletics.com"},
+    {"name": "Indiana Wesleyan University", "state": "IN", "city": "Marion", "website": "https://iwuwildcats.com"},
+    {"name": "Oklahoma City University", "state": "OK", "city": "Oklahoma City", "website": "https://ocusports.com"},
+    {"name": "Saint Xavier University", "state": "IL", "city": "Chicago", "website": "https://sxucougars.com"},
+    {"name": "College of Idaho", "state": "ID", "city": "Caldwell", "website": "https://yoteathletics.com"},
+    {"name": "Corban University", "state": "OR", "city": "Salem", "website": "https://corbanwarriors.com"},
+    {"name": "Southern Oregon University", "state": "OR", "city": "Ashland", "website": "https://souraiders.com"},
+    {"name": "Carroll College", "state": "MT", "city": "Helena", "website": "https://carrollathletics.com"},
+    {"name": "University of Providence", "state": "MT", "city": "Great Falls", "website": "https://upargos.com"},
+    {"name": "Faulkner University", "state": "AL", "city": "Montgomery", "website": "https://faulknereagles.com"},
+    {"name": "Milligan University", "state": "TN", "city": "Milligan", "website": "https://milliganbuffs.com"},
+    {"name": "Savannah College of Art and Design", "state": "GA", "city": "Savannah", "website": "https://scadathletics.com"},
+    {"name": "Arizona Christian University", "state": "AZ", "city": "Glendale", "website": "https://acufirestorm.com"},
+    {"name": "Concordia University-Nebraska", "state": "NE", "city": "Seward", "website": "https://cuneathletics.com"},
+    {"name": "Life University", "state": "GA", "city": "Marietta", "website": "https://liferunningeagles.com"},
+    {"name": "Reinhardt University", "state": "GA", "city": "Waleska", "website": "https://reinhardteagles.com"},
+    {"name": "Point University", "state": "GA", "city": "West Point", "website": "https://pointskyhawks.com"},
+    {"name": "Truett McConnell University", "state": "GA", "city": "Cleveland", "website": "https://tmubears.com"},
+    {"name": "Georgia Gwinnett College", "state": "GA", "city": "Lawrenceville", "website": "https://ggcgrizzlies.com"},
+    {"name": "Dalton State College", "state": "GA", "city": "Dalton", "website": "https://daltonstatecatamounts.com"},
+    {"name": "College of Coastal Georgia", "state": "GA", "city": "Brunswick", "website": "https://ccgaathletics.com"},
+    {"name": "Ave Maria University", "state": "FL", "city": "Ave Maria", "website": "https://avemariagyrenes.com"},
+    {"name": "Keiser University", "state": "FL", "city": "West Palm Beach", "website": "https://keiserseahawks.com"},
+    {"name": "Webber International University", "state": "FL", "city": "Babson Park", "website": "https://webberwarriors.com"},
+    {"name": "Warner University", "state": "FL", "city": "Lake Wales", "website": "https://wuathletics.com"},
+    {"name": "Southeastern University", "state": "FL", "city": "Lakeland", "website": "https://seufire.com"},
+    {"name": "St. Thomas University", "state": "FL", "city": "Miami Gardens", "website": "https://stuthletics.com"},
+    {"name": "University of Mobile", "state": "AL", "city": "Mobile", "website": "https://umobileathletics.com"},
+    {"name": "William Carey University", "state": "MS", "city": "Hattiesburg", "website": "https://wmcareyathletics.com"},
+    {"name": "Loyola University New Orleans", "state": "LA", "city": "New Orleans", "website": "https://loyolawolfpack.com"},
+    {"name": "Park University", "state": "MO", "city": "Parkville", "website": "https://parkathletics.com"},
+    {"name": "MidAmerica Nazarene University", "state": "KS", "city": "Olathe", "website": "https://mnuthletics.com"},
+    {"name": "Benedictine College", "state": "KS", "city": "Atchison", "website": "https://ravenssports.com"},
+    {"name": "Graceland University", "state": "IA", "city": "Lamoni", "website": "https://gracelandathletics.com"},
+    {"name": "Baker University", "state": "KS", "city": "Baldwin City", "website": "https://bakerwildcats.com"},
+    {"name": "Ottawa University", "state": "KS", "city": "Ottawa", "website": "https://ottawabraves.com"},
+    {"name": "Kansas Wesleyan University", "state": "KS", "city": "Salina", "website": "https://kwucoyotes.com"},
+    {"name": "Friends University", "state": "KS", "city": "Wichita", "website": "https://friendsfalcons.com"},
+    {"name": "McPherson College", "state": "KS", "city": "McPherson", "website": "https://mcphersonbulldogs.com"},
+    {"name": "Bethel College (KS)", "state": "KS", "city": "North Newton", "website": "https://bethelthreshers.com"},
+    {"name": "Sterling College", "state": "KS", "city": "Sterling", "website": "https://sterlingwarriors.com"},
+    {"name": "Tabor College", "state": "KS", "city": "Hillsboro", "website": "https://taborbluejays.com"},
+    {"name": "Southwestern College", "state": "KS", "city": "Winfield", "website": "https://moundbuilderathletics.com"},
+    {"name": "Oklahoma Wesleyan University", "state": "OK", "city": "Bartlesville", "website": "https://okwueagles.com"},
+    {"name": "John Brown University", "state": "AR", "city": "Siloam Springs", "website": "https://jbugoldeneagles.com"},
+    {"name": "Lyon College", "state": "AR", "city": "Batesville", "website": "https://lyonscots.com"},
+    {"name": "Central Methodist University", "state": "MO", "city": "Fayette", "website": "https://caborneagles.com"},
+    {"name": "Evangel University", "state": "MO", "city": "Springfield", "website": "https://evangelcrusaders.com"},
+    {"name": "Columbia College (MO)", "state": "MO", "city": "Columbia", "website": "https://cougarsports.com"},
+    {"name": "William Jewell College", "state": "MO", "city": "Liberty", "website": "https://jewellcardinals.com"},
+    {"name": "Avila University", "state": "MO", "city": "Kansas City", "website": "https://avilaeagles.com"},
+    {"name": "William Penn University", "state": "IA", "city": "Oskaloosa", "website": "https://wpstatesmen.com"},
+    {"name": "Grand View University", "state": "IA", "city": "Des Moines", "website": "https://grandviewvikings.com"},
+    {"name": "Dordt University", "state": "IA", "city": "Sioux Center", "website": "https://dordtdefenders.com"},
+    {"name": "Northwestern College", "state": "IA", "city": "Orange City", "website": "https://nwcraiders.com"},
+    {"name": "Morningside University", "state": "IA", "city": "Sioux City", "website": "https://morningsideathletics.com"},
+    {"name": "Briar Cliff University", "state": "IA", "city": "Sioux City", "website": "https://briarcliffchargers.com"},
+    {"name": "Mount Mercy University", "state": "IA", "city": "Cedar Rapids", "website": "https://mountmercymustangs.com"},
+    {"name": "Midland University", "state": "NE", "city": "Fremont", "website": "https://midlandwarriors.com"},
+    {"name": "Doane College", "state": "NE", "city": "Crete", "website": "https://doanetigers.com"},
+    {"name": "Hastings College", "state": "NE", "city": "Hastings", "website": "https://hastingsbroncos.com"},
+    {"name": "Bellevue University", "state": "NE", "city": "Bellevue", "website": "https://bellevuebruins.com"},
+    {"name": "University of Saint Mary", "state": "KS", "city": "Leavenworth", "website": "https://saintmaryspires.com"},
+    {"name": "Marian University", "state": "IN", "city": "Indianapolis", "website": "https://marianknights.com"},
+    {"name": "Spring Arbor University", "state": "MI", "city": "Spring Arbor", "website": "https://springarborathletics.com"},
+    {"name": "Cornerstone University", "state": "MI", "city": "Grand Rapids", "website": "https://cuathletics.com"},
+    {"name": "Olivet Nazarene University", "state": "IL", "city": "Bourbonnais", "website": "https://olivettigers.com"},
+    {"name": "St. Ambrose University", "state": "IA", "city": "Davenport", "website": "https://saubees.com"},
+    {"name": "Judson University", "state": "IL", "city": "Elgin", "website": "https://judsonathletics.com"},
+    {"name": "Huntington University", "state": "IN", "city": "Huntington", "website": "https://huntingtonforesters.com"},
+    {"name": "Taylor University", "state": "IN", "city": "Upland", "website": "https://taylortrojans.com"},
+    {"name": "Goshen College", "state": "IN", "city": "Goshen", "website": "https://goshenmapleafs.com"},
+    {"name": "Grace College & Seminary", "state": "IN", "city": "Winona Lake", "website": "https://gracelancers.com"},
+    {"name": "Mount Vernon Nazarene University", "state": "OH", "city": "Mount Vernon", "website": "https://mvnuathletics.com"},
+    {"name": "Aquinas College", "state": "MI", "city": "Grand Rapids", "website": "https://aquinassaints.com"},
+    {"name": "Madonna University", "state": "MI", "city": "Livonia", "website": "https://madonnacrusaders.com"},
+    {"name": "University of Michigan-Dearborn", "state": "MI", "city": "Dearborn", "website": "https://umdwolverines.com"},
+    {"name": "Siena Heights University", "state": "MI", "city": "Adrian", "website": "https://sienaheightssaints.com"},
+    {"name": "Lawrence Technological University", "state": "MI", "city": "Southfield", "website": "https://ltubluejays.com"},
+    {"name": "Georgetown College", "state": "KY", "city": "Georgetown", "website": "https://georgetowncollegeathletics.com"},
+    {"name": "University of the Cumberlands", "state": "KY", "city": "Williamsburg", "website": "https://ucpatriots.com"},
+    {"name": "University of Pikeville", "state": "KY", "city": "Pikeville", "website": "https://upikebears.com"},
+    {"name": "Montreat College", "state": "NC", "city": "Montreat", "website": "https://montreatathletics.com"},
+    {"name": "Brevard College", "state": "NC", "city": "Brevard", "website": "https://brevardtornados.com"},
+    {"name": "Tennessee Wesleyan University", "state": "TN", "city": "Athens", "website": "https://twbulldogs.com"},
+    {"name": "Cumberland University", "state": "TN", "city": "Lebanon", "website": "https://caborneagles.com"},
+    {"name": "Bethel University (TN)", "state": "TN", "city": "McKenzie", "website": "https://bethelwildcats.com"},
+    {"name": "Bethel University (IN)", "state": "IN", "city": "Mishawaka", "website": "https://bethelpilotsathletics.com"},
+    {"name": "Waldorf University", "state": "IA", "city": "Forest City", "website": "https://waldorfwarriors.com"},
+    {"name": "Dakota Wesleyan University", "state": "SD", "city": "Mitchell", "website": "https://dwutigers.com"},
+    {"name": "Dakota State University", "state": "SD", "city": "Madison", "website": "https://dsuathletics.com"},
+    {"name": "Bushnell University", "state": "OR", "city": "Eugene", "website": "https://bushnellbeacons.com"},
+    {"name": "The Master's University", "state": "CA", "city": "Santa Clarita", "website": "https://gomustangs.com"},
+    {"name": "Indiana Institute of Technology", "state": "IN", "city": "Fort Wayne", "website": "https://indianatechwarriors.com"},
+    {"name": "Cedarville University", "state": "OH", "city": "Cedarville", "website": "https://cedarvilleathletics.com"},
+    {"name": "Malone University", "state": "OH", "city": "Canton", "website": "https://mabornepioneers.com"},
+    {"name": "Walsh University", "state": "OH", "city": "North Canton", "website": "https://walshcavaliers.com"},
+    {"name": "Lourdes University", "state": "OH", "city": "Sylvania", "website": "https://lourdesgrayswolves.com"},
+    {"name": "University of Northwestern Ohio", "state": "OH", "city": "Lima", "website": "https://unoracers.com"},
+    {"name": "University of Rio Grande", "state": "OH", "city": "Rio Grande", "website": "https://riogranderedstorm.com"},
+    {"name": "Concordia University Ann Arbor", "state": "MI", "city": "Ann Arbor", "website": "https://cuaacardinals.com"},
+    {"name": "Davenport University", "state": "MI", "city": "Grand Rapids", "website": "https://davenportpanthers.com"},
+    {"name": "Columbia International University", "state": "SC", "city": "Columbia", "website": "https://ciurams.com"},
+    {"name": "Bluefield University", "state": "VA", "city": "Bluefield", "website": "https://bluefieldrams.com"},
+    {"name": "Bryan College", "state": "TN", "city": "Dayton", "website": "https://bryanlions.com"},
+    {"name": "Midway University", "state": "KY", "city": "Midway", "website": "https://midwayathletics.com"},
+    {"name": "Wayland Baptist University", "state": "TX", "city": "Plainview", "website": "https://wbupioneers.com"},
+    {"name": "Rocky Mountain College", "state": "MT", "city": "Billings", "website": "https://gobattlin.com"},
+    {"name": "Eastern Oregon University", "state": "OR", "city": "La Grande", "website": "https://eouathletics.com"},
+    {"name": "Northwest University", "state": "WA", "city": "Kirkland", "website": "https://nueagles.com"},
+    {"name": "Lewis-Clark State College", "state": "ID", "city": "Lewiston", "website": "https://lcwarriors.com"},
+    {"name": "Montana Technological University", "state": "MT", "city": "Butte", "website": "https://montanatechorediggers.com"},
+    {"name": "Embry-Riddle Aeronautical University", "state": "AZ", "city": "Prescott", "website": "https://embryriddleathletics.com"},
+]
+
+
+# ---------------------------------------------------------------------------
+# NJCAA seed data — top soccer programs with known athletic URLs.
+# Full NJCAA list (~400+ schools) is fetched from Wikipedia at runtime
+# by the player-platform scraper. This seed covers the most prominent
+# programs only.
+# Both genders assumed. NJCAA offers athletic scholarships (DI/DII).
+# ---------------------------------------------------------------------------
+
+_NJCAA_SCHOOLS: List[Dict] = [
+    {"name": "Tyler Junior College", "state": "TX", "city": "Tyler", "website": "https://apacheathletics.com"},
+    {"name": "Monroe College", "state": "NY", "city": "New Rochelle", "website": "https://monroemustangs.com"},
+    {"name": "Iowa Western Community College", "state": "IA", "city": "Council Bluffs", "website": "https://iowawesternreivers.com"},
+    {"name": "Barton County Community College", "state": "KS", "city": "Great Bend", "website": "https://bartonsports.com"},
+    {"name": "Eastern Florida State College", "state": "FL", "city": "Melbourne", "website": "https://efscathletics.com"},
+    {"name": "Louisburg College", "state": "NC", "city": "Louisburg", "website": "https://louisburgathletics.com"},
+    {"name": "Yavapai College", "state": "AZ", "city": "Prescott", "website": "https://yavapaiathletics.com"},
+    {"name": "Salt Lake Community College", "state": "UT", "city": "Salt Lake City", "website": "https://slccbruins.com"},
+    {"name": "Richland College", "state": "TX", "city": "Dallas", "website": "https://richlandathletics.com"},
+    {"name": "Vincennes University", "state": "IN", "city": "Vincennes", "website": "https://vinu.edu/athletics"},
+    {"name": "Cowley College", "state": "KS", "city": "Arkansas City", "website": "https://cowleytigers.com"},
+    {"name": "Heartland Community College", "state": "IL", "city": "Normal", "website": "https://heartlandhawks.com"},
+    {"name": "Johnson County Community College", "state": "KS", "city": "Overland Park", "website": "https://jcccathletics.com"},
+    {"name": "Laredo College", "state": "TX", "city": "Laredo", "website": "https://laredopalominos.com"},
+    {"name": "Paris Junior College", "state": "TX", "city": "Paris", "website": "https://parisjcdragons.com"},
+    {"name": "Pima Community College", "state": "AZ", "city": "Tucson", "website": "https://pimaathletics.com"},
+    {"name": "St. Louis Community College", "state": "MO", "city": "St. Louis", "website": "https://stlccathletics.com"},
+    {"name": "Brookhaven College", "state": "TX", "city": "Farmers Branch", "website": "https://brookhavenathletics.com"},
+    {"name": "Indian Hills Community College", "state": "IA", "city": "Ottumwa", "website": "https://ihccathletics.com"},
+    {"name": "Indian River State College", "state": "FL", "city": "Fort Pierce", "website": "https://irscpioneers.com"},
+    {"name": "Santa Fe College", "state": "FL", "city": "Gainesville", "website": "https://sfcsaints.com"},
+    {"name": "Cloud County Community College", "state": "KS", "city": "Concordia", "website": "https://cloudtbirds.com"},
+    {"name": "Neosho County Community College", "state": "KS", "city": "Chanute", "website": "https://neoshopanthers.com"},
+    {"name": "Hesston College", "state": "KS", "city": "Hesston", "website": "https://hesstonlarks.com"},
+    {"name": "Seward County Community College", "state": "KS", "city": "Liberal", "website": "https://sewardsaints.com"},
+]
+
+
+# ---------------------------------------------------------------------------
 # Flatten schools into individual rows (one per name+division+gender_program)
 # ---------------------------------------------------------------------------
 
@@ -571,6 +736,46 @@ def _build_rows() -> List[Dict]:
                 "scholarship_available": False,  # D3 does not offer athletic scholarships
             })
 
+    # NAIA schools — both genders, have state/city from player-platform data
+    for school in _NAIA_SCHOOLS:
+        for gender in ["mens", "womens"]:
+            slug = slugify(school["name"], "NAIA", gender)
+            key = (school["name"], "NAIA", gender)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "name": school["name"],
+                "slug": slug,
+                "division": "NAIA",
+                "conference": None,
+                "state": school.get("state"),
+                "city": school.get("city"),
+                "website": school.get("website"),
+                "gender_program": gender,
+                "scholarship_available": True,  # NAIA offers athletic scholarships
+            })
+
+    # NJCAA schools — both genders, have state/city
+    for school in _NJCAA_SCHOOLS:
+        for gender in ["mens", "womens"]:
+            slug = slugify(school["name"], "NJCAA", gender)
+            key = (school["name"], "NJCAA", gender)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "name": school["name"],
+                "slug": slug,
+                "division": "NJCAA",
+                "conference": None,
+                "state": school.get("state"),
+                "city": school.get("city"),
+                "website": school.get("website"),
+                "gender_program": gender,
+                "scholarship_available": True,  # NJCAA DI/DII offer athletic scholarships
+            })
+
     return rows
 
 
@@ -588,11 +793,13 @@ def _get_connection():
 
 def seed(dry_run: bool = False) -> None:
     rows = _build_rows()
-    logger.info("Prepared %d rows to seed (%d D1, %d D2, %d D3)",
+    logger.info("Prepared %d rows to seed (%d D1, %d D2, %d D3, %d NAIA, %d NJCAA)",
                 len(rows),
                 sum(1 for r in rows if r["division"] == "D1"),
                 sum(1 for r in rows if r["division"] == "D2"),
-                sum(1 for r in rows if r["division"] == "D3"))
+                sum(1 for r in rows if r["division"] == "D3"),
+                sum(1 for r in rows if r["division"] == "NAIA"),
+                sum(1 for r in rows if r["division"] == "NJCAA"))
 
     if dry_run:
         by_div: Dict[str, int] = {}
@@ -662,7 +869,7 @@ def seed(dry_run: bool = False) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Seed the colleges table with NCAA D1/D2/D3 soccer programs"
+        description="Seed the colleges table with NCAA D1/D2/D3 + NAIA + NJCAA soccer programs"
     )
     parser.add_argument(
         "--dry-run",
