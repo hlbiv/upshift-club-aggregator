@@ -1,8 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { events, eventTeams } from "@workspace/db/schema";
-import { eq, ilike, gte, lte, sql, asc } from "drizzle-orm";
-import { EventSearchResponse } from "@hlbiv/api-zod";
+import { eq, ilike, gte, lte, sql, asc, inArray } from "drizzle-orm";
+import {
+  EventSearchResponse,
+  EventDetailResponse,
+  EventBatchResponse,
+  EventTeamsResponse,
+} from "@hlbiv/api-zod";
 import { parsePagination, buildWhere } from "../lib/pagination";
 
 const router: IRouter = Router();
@@ -154,6 +159,201 @@ router.get("/events/search", async (req, res, next): Promise<void> => {
           end_date: r.eventEndDate ? r.eventEndDate.toISOString() : null,
           source_url: r.teamSourceUrl ?? r.eventSourceUrl ?? null,
         })),
+        total,
+        page,
+        page_size: pageSize,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Helper: map an events row to the flat event shape used in batch + detail
+// ---------------------------------------------------------------------------
+
+function mapEventRow(r: typeof events.$inferSelect) {
+  return {
+    id: r.id,
+    name: r.name,
+    slug: r.slug,
+    league_name: r.leagueName ?? null,
+    season: r.season ?? null,
+    age_group: r.ageGroup ?? null,
+    gender: r.gender ?? null,
+    division: r.division ?? null,
+    location_city: r.locationCity ?? null,
+    location_state: r.locationState ?? null,
+    start_date: r.startDate ? r.startDate.toISOString() : null,
+    end_date: r.endDate ? r.endDate.toISOString() : null,
+    registration_url: r.registrationUrl ?? null,
+    source_url: r.sourceUrl ?? null,
+    source: r.source ?? null,
+    platform_event_id: r.platformEventId ?? null,
+  };
+}
+
+function mapTeamRow(r: typeof eventTeams.$inferSelect) {
+  return {
+    id: r.id,
+    event_id: r.eventId,
+    canonical_club_id: r.canonicalClubId ?? null,
+    team_name_raw: r.teamNameRaw,
+    team_name_canonical: r.teamNameCanonical ?? null,
+    age_group: r.ageGroup ?? null,
+    gender: r.gender ?? null,
+    division_code: r.divisionCode ?? null,
+    source_url: r.sourceUrl ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/events/batch?ids=1,2,3
+// ---------------------------------------------------------------------------
+
+const MAX_BATCH_SIZE = 100;
+
+router.get("/events/batch", async (req, res, next): Promise<void> => {
+  try {
+    const idsRaw = req.query.ids as string | undefined;
+    if (!idsRaw || idsRaw.trim().length === 0) {
+      res.status(400).json({ error: "ids query parameter is required" });
+      return;
+    }
+
+    const parts = idsRaw.split(",").map((s) => s.trim());
+    const parsed: number[] = [];
+    for (const part of parts) {
+      const n = Number(part);
+      if (!Number.isInteger(n) || n < 0) {
+        res
+          .status(400)
+          .json({ error: `Invalid event id: "${part}". All IDs must be non-negative integers.` });
+        return;
+      }
+      parsed.push(n);
+    }
+
+    if (parsed.length > MAX_BATCH_SIZE) {
+      res
+        .status(400)
+        .json({ error: `Too many IDs. Maximum is ${MAX_BATCH_SIZE}, got ${parsed.length}.` });
+      return;
+    }
+
+    const rows = await db
+      .select()
+      .from(events)
+      .where(inArray(events.id, parsed))
+      .orderBy(asc(events.id));
+
+    res.json(
+      EventBatchResponse.parse({
+        events: rows.map(mapEventRow),
+        total: rows.length,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/events/:id
+// ---------------------------------------------------------------------------
+
+router.get("/events/:id", async (req, res, next): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+
+    const [event] = await db.select().from(events).where(eq(events.id, id));
+
+    if (!event) {
+      res.status(404).json({ error: "Event not found" });
+      return;
+    }
+
+    const teams = await db
+      .select()
+      .from(eventTeams)
+      .where(eq(eventTeams.eventId, id))
+      .orderBy(asc(eventTeams.id));
+
+    res.json(
+      EventDetailResponse.parse({
+        ...mapEventRow(event),
+        teams: teams.map(mapTeamRow),
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/events/:id/teams
+// ---------------------------------------------------------------------------
+
+router.get("/events/:id/teams", async (req, res, next): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+
+    // Verify event exists
+    const [event] = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(eq(events.id, id));
+
+    if (!event) {
+      res.status(404).json({ error: "Event not found" });
+      return;
+    }
+
+    const ageGroup = req.query.age_group as string | undefined;
+    const gender = req.query.gender as string | undefined;
+
+    const { page, pageSize, offset } = parsePagination(
+      req.query.page,
+      req.query.page_size,
+    );
+
+    const where = buildWhere([
+      eq(eventTeams.eventId, id),
+      ageGroup
+        ? ilike(eventTeams.ageGroup, `%${escapeLike(ageGroup)}%`)
+        : undefined,
+      gender
+        ? ilike(eventTeams.gender, `%${escapeLike(gender)}%`)
+        : undefined,
+    ]);
+
+    const [countRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(eventTeams)
+      .where(where);
+
+    const total = countRow?.count ?? 0;
+
+    const rows = await db
+      .select()
+      .from(eventTeams)
+      .where(where)
+      .orderBy(asc(eventTeams.id))
+      .limit(pageSize)
+      .offset(offset);
+
+    res.json(
+      EventTeamsResponse.parse({
+        teams: rows.map(mapTeamRow),
         total,
         page,
         page_size: pageSize,
