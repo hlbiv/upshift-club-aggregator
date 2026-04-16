@@ -7,27 +7,61 @@ set of common paths (``/tryouts/``, ``/register/``, etc.) and extract
 best-effort structured data from whatever the page contains.
 
 Rules:
-  - Permissive input, STRICT validation. A row without a parseable
-    date is dropped (and a WARNING is logged).
+  - Permissive input. Two emission modes:
+      1. DATED row — parseable date found → full row with ``tryout_date``
+      2. REGISTRATION-ONLY row — no date found but platform registration
+         link (LeagueApps, GotSport, TGS, SportsEngine) present on page
+         → row with ``tryout_date=None`` and ``url=registration_link``
   - No Playwright — static HTML only. WordPress sites render server-side.
-  - No partial writes: every row we emit has at least ``club_name_raw``
-    and ``tryout_date``.
+  - Backward-compatible — existing dated rows emit identically to before.
 
 Output rows match the ``tryouts`` writer contract:
 
     {
         "club_name_raw": str,         # required
-        "tryout_date":   datetime,    # required (first date if a range)
+        "tryout_date":   datetime|None,  # may be None for registration-only
         "age_group":     str | None,  # "U12"
         "gender":        str | None,  # "M" | "F" | None
         "location":      str | None,  # becomes `location_name` at the writer
-        "source_url":    str | None,
-        "notes":         str | None,
+        "source_url":    str | None,  # the tryout page URL
+        "url":           str | None,  # registration link (preferred over source_url)
+        "notes":         str | None,  # JSON blob of platform IDs when captured
     }
+
+COVERAGE & LIMITATIONS (April 2026)
+-------------------------------------
+The registration-link capture relies on clubs embedding public URLs to
+third-party registration platforms. Known limitations:
+
+  * LeagueApps API is auth-walled — we capture URLs but cannot fetch
+    dates/age groups from LA directly. The row carries the URL for the
+    user to click through.
+
+  * SportsEngine widget API is auth-walled. Same tradeoff.
+
+  * GotSport event IDs captured from /events/{id}/ URLs CAN be
+    resolved later by an offline linker against the events table
+    populated by gotsport_events_runner. The capture here just
+    records the ID; correlation is a downstream pass.
+
+  * Clubs using non-WordPress platforms entirely (pure SportsEngine,
+    Webflow, Wix, Squarespace, custom CMSs) are NOT covered by this
+    scraper. They need dedicated extractors if coverage matters.
+
+  * Registration-only rows have no date → they unique-collapse to one
+    row per (club, age, gender) via the
+    ``tryouts_name_date_bracket_uq`` index (NULL dates coalesce to
+    'epoch'). Re-runs overwrite cleanly; no unbounded growth.
+
+  * Clubs that don't list tryouts at any ``/tryout*`` path are
+    invisible — a generic "look at the homepage for links" fallback
+    was intentionally NOT added because the false-positive rate
+    swamps the signal.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -47,14 +81,139 @@ _HEADERS = {
 }
 
 # Common URL suffixes WordPress clubs put tryout info under.
+# Ordered from most-specific to most-generic; the loop stops on first
+# HTTP 200 that yields ANY output (dated or registration-only).
 _TRYOUT_PATHS = (
     "/tryouts/",
     "/tryouts",
+    "/tryout/",
+    "/tryout",
+    "/try-outs/",
+    "/try-outs",
+    "/competitive-registration/",
+    "/academy-registration/",
     "/register/",
     "/registration/",
     "/join/",
     "/join",
 )
+
+# ---------------------------------------------------------------------------
+# Registration platform detectors
+# ---------------------------------------------------------------------------
+
+# GotSport event URLs: system.gotsport.com/org_event/events/{event_id}/...
+_GOTSPORT_EVENT_URL = re.compile(
+    r"system\.gotsport\.com/(?:org_event/)?events/(\d+)\b",
+    re.IGNORECASE,
+)
+# TGS event URLs: public.totalglobalsports.com/events/{event_id}
+# or match the events/{id} path on any subdomain to be safe.
+_TGS_EVENT_URL = re.compile(
+    r"(?:public\.)?totalglobalsports\.com/events/(\d+)\b",
+    re.IGNORECASE,
+)
+# LeagueApps: {club}.leagueapps.com/* or members.leagueapps.com/clubteams/{id}
+# or accounts.leagueapps.com/login — all count as registration entry points.
+_LEAGUEAPPS_URL = re.compile(
+    r'https?://[a-z0-9.-]*leagueapps\.com[^\s"\'<>]*',
+    re.IGNORECASE,
+)
+
+# LeagueApps marketing / documentation URLs to exclude from the
+# captured registration links (noise).
+_LEAGUEAPPS_NOISE_PATHS = (
+    "/products/",
+    "/pricing",
+    "/blog",
+    "/resources",
+    "/partners",
+    "/about",
+    "/contact",
+    "/demo",
+    "/case-studies",
+    "/integrations",
+)
+# SportsEngine: *.sportngin.com/* or sportsengine.com/*
+_SPORTNGIN_URL = re.compile(
+    r'https?://[a-z0-9.-]*(?:sportngin|sportsengine)\.com[^\s"\'<>]*',
+    re.IGNORECASE,
+)
+# Generic platforms we don't dedicate handlers to but capture as fallback:
+# Eventbrite, TeamSnap, Jotform, SignUpGenius.
+_GENERIC_REG_URL = re.compile(
+    r'https?://[a-z0-9.-]*(?:eventbrite\.com|teamsnap\.com|jotform\.com|signupgenius\.com)[^\s"\'<>]*',
+    re.IGNORECASE,
+)
+
+
+def extract_registration_links(html: str) -> Dict[str, object]:
+    """Pure function — scan HTML for third-party registration URLs.
+
+    Returns a dict with platform-indexed ID lists + a best-guess
+    primary URL. Empty lists / None when no match.
+
+    Shape::
+
+        {
+            "gotsport_event_ids": ["45123", "50231"],
+            "tgs_event_ids":      ["3979"],
+            "leagueapps_urls":    ["https://solar.leagueapps.com/clubteams/3167131"],
+            "sportngin_urls":     [...],
+            "generic_urls":       [...],  # eventbrite, teamsnap, jotform, etc.
+            "primary_url":        str | None,  # first captured URL across categories
+        }
+    """
+    if not html:
+        return {
+            "gotsport_event_ids": [],
+            "tgs_event_ids": [],
+            "leagueapps_urls": [],
+            "sportngin_urls": [],
+            "generic_urls": [],
+            "primary_url": None,
+        }
+
+    # Dedup while preserving first-seen order.
+    def _uniq(items: Iterable[str]) -> List[str]:
+        return list(dict.fromkeys(items))
+
+    gs_ids = _uniq(_GOTSPORT_EVENT_URL.findall(html))
+    tgs_ids = _uniq(_TGS_EVENT_URL.findall(html))
+    la_urls_raw = _uniq(_LEAGUEAPPS_URL.findall(html))
+    # Filter LeagueApps marketing / documentation URLs — these appear
+    # in club site footers and aren't registration entry points.
+    la_urls = [
+        u for u in la_urls_raw
+        if not any(noise in u.lower() for noise in _LEAGUEAPPS_NOISE_PATHS)
+    ]
+    se_urls = _uniq(_SPORTNGIN_URL.findall(html))
+    generic_urls = _uniq(_GENERIC_REG_URL.findall(html))
+
+    # Pick the first URL across platforms as the primary. Preference order:
+    # GotSport > TGS > LeagueApps > SportsEngine > generic. We prefer
+    # platforms we can correlate to internal data (GotSport/TGS events)
+    # over auth-walled platforms (LA/SE) over generic embeds.
+    primary_url: Optional[str] = None
+    if gs_ids:
+        primary_url = f"https://system.gotsport.com/org_event/events/{gs_ids[0]}"
+    elif tgs_ids:
+        primary_url = f"https://public.totalglobalsports.com/events/{tgs_ids[0]}"
+    elif la_urls:
+        primary_url = la_urls[0]
+    elif se_urls:
+        primary_url = se_urls[0]
+    elif generic_urls:
+        primary_url = generic_urls[0]
+
+    return {
+        "gotsport_event_ids": gs_ids,
+        "tgs_event_ids": tgs_ids,
+        "leagueapps_urls": la_urls,
+        "sportngin_urls": se_urls,
+        "generic_urls": generic_urls,
+        "primary_url": primary_url,
+    }
 
 _MONTHS = (
     "january|february|march|april|may|june|july|august|september|"
@@ -191,37 +350,83 @@ def parse_tryouts_page_html(
 ) -> List[Dict]:
     """Extract zero-or-more tryout rows from a single page's HTML.
 
-    Pure function — fixture-driven. Only emits rows that have a
-    parseable date; otherwise logs a WARNING.
-    """
-    soup = BeautifulSoup(html, "lxml")
+    Pure function — fixture-driven. Two-mode emission:
 
-    # Kill site chrome noise.
+      * DATED row  — a parseable date was found in the text → emit a
+                     full row with all parsed fields.
+      * REGISTRATION-ONLY row — no date found BUT a third-party
+                     registration platform link was found → emit a
+                     single row with ``tryout_date=None`` carrying the
+                     registration URL and a JSON ``notes`` blob of
+                     captured platform IDs.
+      * Neither    — log WARNING and return [].
+    """
+    # Extract registration links from the RAW HTML before we decompose
+    # site chrome (some anchors live in header/footer CTAs).
+    reg = extract_registration_links(html)
+
+    soup = BeautifulSoup(html, "lxml")
     for tag in soup.find_all(["script", "style", "nav", "header", "footer"]):
         tag.decompose()
 
     text = soup.get_text("\n", strip=True)
     tryout_date = parse_date(text)
-    if tryout_date is None:
-        logger.warning(
-            "[tryouts-wordpress] no date parsed for %s @ %s",
-            club_name_raw, source_url,
-        )
-        return []
-
     age_group = parse_age_group(text)
     gender = parse_gender(text)
     location = parse_location(soup)
 
-    return [{
-        "club_name_raw": club_name_raw,
-        "tryout_date": tryout_date,
-        "age_group": age_group,
-        "gender": gender,
-        "location": location,
-        "source_url": source_url,
-        "notes": None,
-    }]
+    # Build platform-IDs payload for notes JSON.
+    has_any_link = bool(
+        reg["gotsport_event_ids"] or reg["tgs_event_ids"]
+        or reg["leagueapps_urls"] or reg["sportngin_urls"]
+        or reg["generic_urls"]
+    )
+    notes_payload: Optional[str] = None
+    if has_any_link:
+        compact = {
+            k: v for k, v in reg.items()
+            if k != "primary_url" and v
+        }
+        if compact:
+            notes_payload = json.dumps({"registration": compact}, sort_keys=True)
+
+    # Mode 1: dated row (current behavior).
+    if tryout_date is not None:
+        return [{
+            "club_name_raw": club_name_raw,
+            "tryout_date": tryout_date,
+            "age_group": age_group,
+            "gender": gender,
+            "location": location,
+            "source_url": source_url,
+            "url": reg["primary_url"] or source_url,
+            "notes": notes_payload,
+        }]
+
+    # Mode 2: registration-only row (NEW behavior).
+    if has_any_link:
+        logger.info(
+            "[tryouts-wordpress] registration-only row for %s @ %s "
+            "(no date parsed, but platform link captured)",
+            club_name_raw, source_url,
+        )
+        return [{
+            "club_name_raw": club_name_raw,
+            "tryout_date": None,
+            "age_group": age_group,
+            "gender": gender,
+            "location": location,
+            "source_url": source_url,
+            "url": reg["primary_url"],
+            "notes": notes_payload,
+        }]
+
+    # Neither a date nor a registration link — drop.
+    logger.warning(
+        "[tryouts-wordpress] no date or registration link for %s @ %s",
+        club_name_raw, source_url,
+    )
+    return []
 
 
 def _fetch(url: str, timeout: int = 20) -> Optional[str]:

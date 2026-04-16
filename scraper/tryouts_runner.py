@@ -118,6 +118,15 @@ def run_tryouts_wordpress(
         return outcomes
 
     outcome.row_count = len(rows)
+    # Count dated vs registration-only rows for operator visibility.
+    dated_rows = sum(1 for r in rows if r.get("tryout_date") is not None)
+    reg_only_rows = sum(
+        1 for r in rows
+        if r.get("tryout_date") is None and r.get("url")
+    )
+    outcome.counts["dated_rows"] = dated_rows
+    outcome.counts["registration_only_rows"] = reg_only_rows
+
     if not rows:
         logger.warning("[tryouts-wordpress] 0 rows extracted from %d site(s)", len(sites))
         if run_log is not None:
@@ -143,10 +152,17 @@ def run_tryouts_wordpress(
         )
         return outcomes
 
-    outcome.counts = counts
+    # Preserve the dated/registration-only breakdown in outcome.counts
+    # alongside the insert_tryouts return values.
+    outcome.counts = {
+        **counts,
+        "dated_rows": dated_rows,
+        "registration_only_rows": reg_only_rows,
+    }
     logger.info(
-        "[tryouts-wordpress] sites=%d rows=%d inserted=%d updated=%d skipped=%d",
-        len(sites), len(rows),
+        "[tryouts-wordpress] sites=%d rows=%d (dated=%d, registration-only=%d) "
+        "inserted=%d updated=%d skipped=%d",
+        len(sites), len(rows), dated_rows, reg_only_rows,
         counts.get("inserted", 0), counts.get("updated", 0), counts.get("skipped", 0),
     )
     if run_log is not None:
@@ -216,6 +232,10 @@ def print_summary(outcomes: List[TryoutsRunOutcome]) -> None:
 
     total_sites = sum(o.site_count for o in outcomes)
     total_rows = sum(o.row_count for o in outcomes)
+    total_dated = sum(o.counts.get("dated_rows", 0) for o in outcomes)
+    total_reg_only = sum(
+        o.counts.get("registration_only_rows", 0) for o in outcomes
+    )
     total_inserted = sum(o.counts.get("inserted", 0) for o in outcomes)
     total_updated = sum(o.counts.get("updated", 0) for o in outcomes)
     total_skipped = sum(o.counts.get("skipped", 0) for o in outcomes)
@@ -227,6 +247,8 @@ def print_summary(outcomes: List[TryoutsRunOutcome]) -> None:
     print(f"  Sources processed : {len(outcomes)}")
     print(f"  Sites probed      : {total_sites}")
     print(f"  Rows extracted    : {total_rows}")
+    print(f"    dated           : {total_dated}")
+    print(f"    registration    : {total_reg_only}")
     print(f"  Inserted          : {total_inserted}")
     print(f"  Updated           : {total_updated}")
     print(f"  Skipped           : {total_skipped}")
