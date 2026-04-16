@@ -377,6 +377,8 @@ def scrape_sincsports_rosters(
             )
             continue
         for player_name, jersey in players:
+            # Compute grad_year from birth_year if available
+            grad_year = (td.birth_year + 18) if td.birth_year else None
             rows.append({
                 "club_name_raw": td.club_name,
                 "source_url": url,
@@ -388,6 +390,8 @@ def scrape_sincsports_rosters(
                 "player_name": player_name,
                 "jersey_number": jersey,
                 "position": None,
+                "grad_year": grad_year,
+                "state": td.state,
                 "event_id": None,
             })
 
