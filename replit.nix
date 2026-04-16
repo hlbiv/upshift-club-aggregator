@@ -1,5 +1,6 @@
 {pkgs}: {
   deps = [
+    pkgs.python312Packages.pytest
     pkgs.libGL
     pkgs.freetype
     pkgs.fontconfig

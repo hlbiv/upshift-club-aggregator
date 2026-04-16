@@ -70,7 +70,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendDist = path.resolve(__dirname, "../../mockup-sandbox/dist");
 
 app.use(express.static(frontendDist));
-app.get("*", (_req, res, next) => {
+app.get("/{*path}", (_req, res, next) => {
   // Don't intercept /api routes that didn't match
   if (_req.path.startsWith("/api")) return next();
   res.sendFile(path.join(frontendDist, "index.html"), (err) => {

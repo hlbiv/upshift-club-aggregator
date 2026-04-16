@@ -257,4 +257,74 @@ router.get("/analytics/overlap", async (req, res, next): Promise<void> => {
   }
 });
 
+router.get("/analytics/summary", async (_req, res, next): Promise<void> => {
+  try {
+    const safeCount = async (table: string): Promise<number> => {
+      try {
+        const rows = await execRows(
+          sql.raw(`SELECT COUNT(*)::int AS n FROM ${table}`),
+        );
+        return Number(rows[0]?.n ?? 0);
+      } catch {
+        return 0;
+      }
+    };
+
+    const [
+      canonicalClubs,
+      clubAffiliations,
+      clubAliases,
+      coachDiscoveries,
+      leagues,
+      events,
+      eventTeams,
+      matches,
+      clubResults,
+      rosterSnapshots,
+      rosterDiffs,
+      tryouts,
+      colleges,
+      collegeCoaches,
+      scrapeRunLogs,
+      scrapeHealth,
+    ] = await Promise.all([
+      execRows(
+        sql`SELECT COUNT(*)::int AS n FROM canonical_clubs WHERE status = 'active' OR status IS NULL`,
+      ).then((r) => Number(r[0]?.n ?? 0)),
+      safeCount("club_affiliations"),
+      safeCount("club_aliases"),
+      safeCount("coach_discoveries"),
+      safeCount("leagues_master"),
+      safeCount("events"),
+      safeCount("event_teams"),
+      safeCount("matches"),
+      safeCount("club_results"),
+      safeCount("club_roster_snapshots"),
+      safeCount("roster_diffs"),
+      safeCount("tryouts"),
+      safeCount("colleges"),
+      safeCount("college_coaches"),
+      safeCount("scrape_run_logs"),
+      safeCount("scrape_health"),
+    ]);
+
+    res.json({
+      generated_at: new Date().toISOString(),
+      domains: {
+        d1_clubs: { canonical_clubs: canonicalClubs, club_affiliations: clubAffiliations, club_aliases: clubAliases },
+        d2_colleges: { colleges, college_coaches: collegeCoaches },
+        d3_coaches: { coach_discoveries: coachDiscoveries },
+        d4_events: { events, event_teams: eventTeams },
+        d5_matches: { matches, club_results: clubResults },
+        d6_rosters: { roster_snapshots: rosterSnapshots, roster_diffs: rosterDiffs },
+        d7_tryouts: { tryouts },
+        d8_scrape_health: { scrape_run_logs: scrapeRunLogs, scrape_health: scrapeHealth },
+      },
+      totals: { leagues },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
