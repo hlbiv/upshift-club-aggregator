@@ -53,6 +53,18 @@ export const clubRosterSnapshots = pgTable(
     playerName: text("player_name").notNull(),
     jerseyNumber: text("jersey_number"),
     position: text("position"),
+    // --- Enrichment columns (Phase 1 scraper migration) ---
+    // These fields enable Player to materialize shadow_players from
+    // Data's roster API instead of running its own 40+ scrapers.
+    gradYear: integer("grad_year"),
+    hometown: text("hometown"),
+    state: text("state"),
+    country: text("country"),
+    nationality: text("nationality"),
+    collegeCommitment: text("college_commitment"),
+    academicYear: text("academic_year"),
+    prevClub: text("prev_club"),
+    league: text("league"),
     scrapedAt: timestamp("scraped_at").defaultNow().notNull(),
     source: text("source"),
     eventId: integer("event_id").references(() => events.id, {

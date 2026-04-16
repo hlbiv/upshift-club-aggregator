@@ -14,6 +14,36 @@ function escapeLike(raw: string): string {
   return raw.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
+/** Map Drizzle camelCase → API snake_case for roster snapshot rows. */
+function mapSnapshotRow(r: typeof clubRosterSnapshots.$inferSelect) {
+  return {
+    id: r.id,
+    club_id: r.clubId ?? null,
+    club_name_raw: r.clubNameRaw,
+    season: r.season,
+    age_group: r.ageGroup,
+    gender: r.gender,
+    division: r.division ?? null,
+    player_name: r.playerName,
+    jersey_number: r.jerseyNumber ?? null,
+    position: r.position ?? null,
+    grad_year: r.gradYear ?? null,
+    hometown: r.hometown ?? null,
+    state: r.state ?? null,
+    country: r.country ?? null,
+    nationality: r.nationality ?? null,
+    college_commitment: r.collegeCommitment ?? null,
+    academic_year: r.academicYear ?? null,
+    prev_club: r.prevClub ?? null,
+    league: r.league ?? null,
+    source_url: r.sourceUrl ?? null,
+    snapshot_date: r.snapshotDate ? r.snapshotDate.toISOString() : null,
+    scraped_at: r.scrapedAt.toISOString(),
+    source: r.source ?? null,
+    event_id: r.eventId ?? null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/rosters/snapshots — Search roster snapshots
 // ---------------------------------------------------------------------------
@@ -62,23 +92,7 @@ router.get("/rosters/snapshots", async (req, res, next): Promise<void> => {
     const total = countRow?.count ?? 0;
 
     const rows = await db
-      .select({
-        id: clubRosterSnapshots.id,
-        clubId: clubRosterSnapshots.clubId,
-        clubNameRaw: clubRosterSnapshots.clubNameRaw,
-        season: clubRosterSnapshots.season,
-        ageGroup: clubRosterSnapshots.ageGroup,
-        gender: clubRosterSnapshots.gender,
-        division: clubRosterSnapshots.division,
-        playerName: clubRosterSnapshots.playerName,
-        jerseyNumber: clubRosterSnapshots.jerseyNumber,
-        position: clubRosterSnapshots.position,
-        sourceUrl: clubRosterSnapshots.sourceUrl,
-        snapshotDate: clubRosterSnapshots.snapshotDate,
-        scrapedAt: clubRosterSnapshots.scrapedAt,
-        source: clubRosterSnapshots.source,
-        eventId: clubRosterSnapshots.eventId,
-      })
+      .select()
       .from(clubRosterSnapshots)
       .where(where)
       .orderBy(
@@ -90,23 +104,7 @@ router.get("/rosters/snapshots", async (req, res, next): Promise<void> => {
 
     res.json(
       RosterSnapshotSearchResponse.parse({
-        snapshots: rows.map((r) => ({
-          id: r.id,
-          club_id: r.clubId ?? null,
-          club_name_raw: r.clubNameRaw,
-          season: r.season,
-          age_group: r.ageGroup,
-          gender: r.gender,
-          division: r.division ?? null,
-          player_name: r.playerName,
-          jersey_number: r.jerseyNumber ?? null,
-          position: r.position ?? null,
-          source_url: r.sourceUrl ?? null,
-          snapshot_date: r.snapshotDate ? r.snapshotDate.toISOString() : null,
-          scraped_at: r.scrapedAt.toISOString(),
-          source: r.source ?? null,
-          event_id: r.eventId ?? null,
-        })),
+        snapshots: rows.map(mapSnapshotRow),
         total,
         page,
         page_size: pageSize,
@@ -155,23 +153,7 @@ router.get(
       const total = countRow?.count ?? 0;
 
       const rows = await db
-        .select({
-          id: clubRosterSnapshots.id,
-          clubId: clubRosterSnapshots.clubId,
-          clubNameRaw: clubRosterSnapshots.clubNameRaw,
-          season: clubRosterSnapshots.season,
-          ageGroup: clubRosterSnapshots.ageGroup,
-          gender: clubRosterSnapshots.gender,
-          division: clubRosterSnapshots.division,
-          playerName: clubRosterSnapshots.playerName,
-          jerseyNumber: clubRosterSnapshots.jerseyNumber,
-          position: clubRosterSnapshots.position,
-          sourceUrl: clubRosterSnapshots.sourceUrl,
-          snapshotDate: clubRosterSnapshots.snapshotDate,
-          scrapedAt: clubRosterSnapshots.scrapedAt,
-          source: clubRosterSnapshots.source,
-          eventId: clubRosterSnapshots.eventId,
-        })
+        .select()
         .from(clubRosterSnapshots)
         .where(where)
         .orderBy(asc(clubRosterSnapshots.playerName))
@@ -180,25 +162,7 @@ router.get(
 
       res.json(
         RosterSnapshotSearchResponse.parse({
-          snapshots: rows.map((r) => ({
-            id: r.id,
-            club_id: r.clubId ?? null,
-            club_name_raw: r.clubNameRaw,
-            season: r.season,
-            age_group: r.ageGroup,
-            gender: r.gender,
-            division: r.division ?? null,
-            player_name: r.playerName,
-            jersey_number: r.jerseyNumber ?? null,
-            position: r.position ?? null,
-            source_url: r.sourceUrl ?? null,
-            snapshot_date: r.snapshotDate
-              ? r.snapshotDate.toISOString()
-              : null,
-            scraped_at: r.scrapedAt.toISOString(),
-            source: r.source ?? null,
-            event_id: r.eventId ?? null,
-          })),
+          snapshots: rows.map(mapSnapshotRow),
           total,
           page,
           page_size: pageSize,
