@@ -414,6 +414,23 @@ def _run_source(args) -> None:
         )
         _gs_print_summary(outcomes)
         return
+    if key in (
+        "totalglobalsports-events", "totalglobalsports_events",
+        "tgs-events", "tgs_events",
+    ):
+        from totalglobalsports_events_runner import (
+            run_totalglobalsports_events,
+            print_summary as _tgs_print_summary,
+        )
+        event_ids = [args.event_id] if args.event_id else None
+        outcomes = run_totalglobalsports_events(
+            dry_run=args.dry_run,
+            event_ids=event_ids,
+            limit=args.limit,
+            season=args.season or "2025-26",
+        )
+        _tgs_print_summary(outcomes)
+        return
     if key in ("gotsport-matches-batch", "gotsport_matches_batch"):
         from gotsport_matches_runner import run_gotsport_matches_batch
         from gotsport_matches_runner import print_summary as _gmb_print_summary
@@ -645,6 +662,7 @@ def main() -> None:
                              "'gotsport-matches' (requires --event-id), "
                              "'gotsport-matches-batch' (batch matches for all GotSport events), "
                              "'gotsport-events' (populates events + event_teams from GotSport), "
+                             "'totalglobalsports-events' / 'tgs-events' (populates events + event_teams from TotalGlobalSports), "
                              "'gotsport-rosters' (populates club_roster_snapshots from GotSport rosters), "
                              "'sincsports-events' (populates events + event_teams), "
                              "'sincsports-rosters' (populates club_roster_snapshots + roster_diffs), "
