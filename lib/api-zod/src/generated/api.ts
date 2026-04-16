@@ -234,6 +234,70 @@ export const EventSearchResponse = zod.object({
 });
 
 /**
+ * @summary Single event detail with embedded teams
+ */
+export const EventDetailResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  slug: zod.string(),
+  league_name: zod.string().nullable().optional(),
+  season: zod.string().nullable().optional(),
+  age_group: zod.string().nullable().optional(),
+  gender: zod.string().nullable().optional(),
+  division: zod.string().nullable().optional(),
+  location_city: zod.string().nullable().optional(),
+  location_state: zod.string().nullable().optional(),
+  start_date: zod.string().nullable().optional(),
+  end_date: zod.string().nullable().optional(),
+  registration_url: zod.string().nullable().optional(),
+  source_url: zod.string().nullable().optional(),
+  source: zod.string().nullable().optional(),
+  platform_event_id: zod.string().nullable().optional(),
+  teams: zod.array(
+    zod.object({
+      id: zod.number(),
+      canonical_club_id: zod.number().nullable().optional(),
+      team_name_raw: zod.string(),
+      team_name_canonical: zod.string().nullable().optional(),
+      age_group: zod.string().nullable().optional(),
+      gender: zod.string().nullable().optional(),
+      division_code: zod.string().nullable().optional(),
+      source_url: zod.string().nullable().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Batch event lookup
+ */
+export const EventBatchResponse = zod.object({
+  events: zod.array(EventDetailResponse.omit({ teams: true })),
+  total: zod.number(),
+});
+
+/**
+ * @summary Paginated teams for a single event
+ */
+export const EventTeamItem = zod.object({
+  id: zod.number(),
+  event_id: zod.number(),
+  canonical_club_id: zod.number().nullable().optional(),
+  team_name_raw: zod.string(),
+  team_name_canonical: zod.string().nullable().optional(),
+  age_group: zod.string().nullable().optional(),
+  gender: zod.string().nullable().optional(),
+  division_code: zod.string().nullable().optional(),
+  source_url: zod.string().nullable().optional(),
+});
+
+export const EventTeamsResponse = zod.object({
+  teams: zod.array(EventTeamItem),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
  * @summary Search coaches
  */
 export const SearchCoachesQueryParams = zod.object({
