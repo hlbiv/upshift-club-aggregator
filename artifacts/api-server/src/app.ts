@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
@@ -58,5 +60,22 @@ if (_authEnabled) {
 }
 
 app.use("/api", router);
+
+// --------------------------------------------------------------------------
+// Serve the built mockup-sandbox frontend as static files.
+// In production the Vite build output lives at ../../mockup-sandbox/dist.
+// All non-API requests fall through to index.html (SPA client-side routing).
+// --------------------------------------------------------------------------
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const frontendDist = path.resolve(__dirname, "../../mockup-sandbox/dist");
+
+app.use(express.static(frontendDist));
+app.get("*", (_req, res, next) => {
+  // Don't intercept /api routes that didn't match
+  if (_req.path.startsWith("/api")) return next();
+  res.sendFile(path.join(frontendDist, "index.html"), (err) => {
+    if (err) next();
+  });
+});
 
 export default app;
