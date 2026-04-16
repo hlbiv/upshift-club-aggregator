@@ -151,6 +151,7 @@ def run_sincsports_events(
                         result.events_updated + result.events_created
                         + result.teams_updated
                     ),
+                    records_failed=result.teams_failed,
                 )
 
             outcomes.append(EventRunOutcome(
@@ -162,6 +163,15 @@ def run_sincsports_events(
                 conn.close()
             except Exception:
                 pass
+
+    # Post-run scrape_health reconcile. Opens its own short-lived conn;
+    # never raises.
+    if not dry_run:
+        try:
+            from reconcilers import end_of_run_reconcile
+            end_of_run_reconcile()
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.warning("end_of_run_reconcile skipped: %s", exc)
 
     return outcomes
 

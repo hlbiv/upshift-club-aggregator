@@ -108,6 +108,15 @@ def run_tryouts_wordpress(
             records_updated=counts.get("updated", 0),
             records_failed=counts.get("skipped", 0),
         )
+
+    # Post-run scrape_health reconcile — soft failure only.
+    if not dry_run:
+        try:
+            from reconcilers import end_of_run_reconcile
+            end_of_run_reconcile()
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.warning("end_of_run_reconcile skipped: %s", exc)
+
     return outcomes
 
 

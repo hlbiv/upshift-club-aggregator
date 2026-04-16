@@ -636,11 +636,15 @@ def run_cli(dry_run: bool = False, limit: Optional[int] = None) -> int:
 
     run_log: Optional[ScrapeRunLogger] = None
     if not dry_run:
+        # Non-null source_url + league_name so the run log row is useful
+        # for the `/analytics/scrape-health` per-source rollup. These are
+        # synthetic (derived job, not a scrape target), so we stamp a
+        # stable identifier rather than a real URL.
         run_log = ScrapeRunLogger(
             scraper_key="link-canonical-clubs",
-            league_name=None,
+            league_name="canonical-club-resolution",
         )
-        run_log.start(source_url=None)
+        run_log.start(source_url="derived:canonical_clubs")
 
     try:
         conn = psycopg2.connect(db_url)
@@ -680,5 +684,17 @@ def run_cli(dry_run: bool = False, limit: Optional[int] = None) -> int:
         )
         # Also emit a log line that captures the details for ops.
         log.info("linker-details: %s", details_json)
+
+    # Post-run scrape_health reconcile — soft failure only. The linker
+    # touches event_teams / matches / tryouts / roster rows; those entity
+    # tables' freshness columns don't move on a link, but running this
+    # here keeps the invariant "any runner finishing leaves
+    # scrape_health current" simple.
+    if not dry_run:
+        try:
+            from reconcilers import end_of_run_reconcile
+            end_of_run_reconcile()
+        except Exception as exc:  # pragma: no cover — defensive
+            log.warning("end_of_run_reconcile skipped: %s", exc)
 
     return 0
