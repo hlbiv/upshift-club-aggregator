@@ -405,6 +405,15 @@ def _run_source(args) -> None:
         outcomes = run_sincsports_rosters(dry_run=args.dry_run, only_tid=args.tid)
         print_summary(outcomes)
         return
+    if key in ("gotsport-events", "gotsport_events"):
+        from gotsport_events_runner import run_gotsport_events
+        from gotsport_events_runner import print_summary as _gs_print_summary
+        event_ids = [args.event_id] if args.event_id else None
+        outcomes = run_gotsport_events(
+            dry_run=args.dry_run, event_ids=event_ids, limit=args.limit,
+        )
+        _gs_print_summary(outcomes)
+        return
     if key in ("tryouts-wordpress", "tryouts_wordpress"):
         from tryouts_runner import run_tryouts_wordpress, print_summary
         outcomes = run_tryouts_wordpress(dry_run=args.dry_run, limit=args.limit)
@@ -558,12 +567,13 @@ def main() -> None:
     parser.add_argument("--source", metavar="KEY",
                         help="Run a non-league scraper by key. Supported: "
                              "'gotsport-matches' (requires --event-id), "
+                             "'gotsport-events' (populates events + event_teams from GotSport), "
                              "'sincsports-events' (populates events + event_teams), "
                              "'sincsports-rosters' (populates club_roster_snapshots + roster_diffs), "
                              "'tryouts-wordpress' (populates tryouts from WordPress sites), "
                              "'link-canonical-clubs' (resolves event_teams.canonical_club_id).")
     parser.add_argument("--event-id", metavar="ID",
-                        help="GotSport event id for --source gotsport-matches.")
+                        help="GotSport event id for --source gotsport-matches or gotsport-events.")
     parser.add_argument("--season", metavar="SEASON",
                         help="Season tag (e.g. '2025-26') to stamp on scraped/rollup rows.")
     parser.add_argument("--league-name", metavar="NAME",
