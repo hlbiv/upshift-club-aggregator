@@ -737,3 +737,91 @@ export const StandingsSearchResponse = zod.object({
   page: zod.number(),
   page_size: zod.number(),
 });
+
+// ---------------------------------------------------------------------------
+// Colleges (D2)
+// ---------------------------------------------------------------------------
+
+const CollegeItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  slug: zod.string(),
+  ncaa_id: zod.string().nullable().optional(),
+  division: zod.string(),
+  conference: zod.string().nullable().optional(),
+  state: zod.string().nullable().optional(),
+  city: zod.string().nullable().optional(),
+  website: zod.string().nullable().optional(),
+  soccer_program_url: zod.string().nullable().optional(),
+  gender_program: zod.string(),
+  enrollment: zod.number().nullable().optional(),
+  scholarship_available: zod.boolean().nullable().optional(),
+  logo_url: zod.string().nullable().optional(),
+  twitter: zod.string().nullable().optional(),
+  last_scraped_at: zod.string().nullable().optional(),
+  scrape_confidence: zod.number().nullable().optional(),
+});
+
+/**
+ * @summary Paginated college list
+ */
+export const CollegeListResponse = zod.object({
+  colleges: zod.array(CollegeItem),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
+ * @summary Single college detail
+ */
+export const CollegeDetailResponse = CollegeItem;
+
+const CollegeCoachItem = zod.object({
+  id: zod.number(),
+  college_id: zod.number(),
+  coach_id: zod.number().nullable().optional(),
+  name: zod.string(),
+  title: zod.string().nullable().optional(),
+  email: zod.string().nullable().optional(),
+  phone: zod.string().nullable().optional(),
+  twitter: zod.string().nullable().optional(),
+  linkedin: zod.string().nullable().optional(),
+  is_head_coach: zod.boolean(),
+  source: zod.string().nullable().optional(),
+  source_url: zod.string().nullable().optional(),
+  scraped_at: zod.string().nullable().optional(),
+  confidence: zod.number().nullable().optional(),
+  first_seen_at: zod.string().nullable().optional(),
+  last_seen_at: zod.string().nullable().optional(),
+});
+
+/**
+ * @summary Coaches for a college
+ */
+export const CollegeCoachesResponse = zod.object({
+  coaches: zod.array(CollegeCoachItem),
+});
+
+const CollegeRosterItem = zod.object({
+  id: zod.number(),
+  college_id: zod.number(),
+  player_name: zod.string(),
+  position: zod.string().nullable().optional(),
+  year: zod.string().nullable().optional(),
+  academic_year: zod.string(),
+  hometown: zod.string().nullable().optional(),
+  prev_club: zod.string().nullable().optional(),
+  jersey_number: zod.string().nullable().optional(),
+  scraped_at: zod.string().nullable().optional(),
+});
+
+/**
+ * @summary Paginated roster history for a college
+ */
+export const CollegeRostersResponse = zod.object({
+  roster: zod.array(CollegeRosterItem),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
