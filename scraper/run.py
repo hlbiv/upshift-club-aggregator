@@ -39,6 +39,7 @@ from scrape_run_logger import (
     FailureKind as DbFailureKind,
     classify_exception as _db_classify_exception,
 )
+from alerts import alert_scraper_failure
 
 logging.basicConfig(
     level=logging.INFO,
@@ -154,6 +155,13 @@ def scrape_league(
                 DbFailureKind(kind.value),
                 error_message=str(exc_or_msg),
             )
+        alert_scraper_failure(
+            scraper_key=_scraper_key_for(league),
+            failure_kind=kind.value,
+            error_message=str(exc_or_msg),
+            source_url=url,
+            league_name=name,
+        )
 
     # Check for a custom extractor first
     custom = _extractor_registry.get_extractor(url)
@@ -436,6 +444,13 @@ def _run_gotsport_matches(
         logger.error("[gotsport-matches] failed: %s", exc)
         if run_log is not None:
             run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+        alert_scraper_failure(
+            scraper_key=scraper_key,
+            failure_kind=kind.value,
+            error_message=str(exc),
+            source_url=f"https://system.gotsport.com/org_event/events/{event_id}/schedules",
+            league_name=league_name or f"gotsport-event-{event_id}",
+        )
         return
 
     if not rows:
@@ -489,6 +504,13 @@ def _run_rollup(args) -> None:
             logger.error("[rollup:club-results] failed: %s", exc)
             if run_log is not None:
                 run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+            alert_scraper_failure(
+                scraper_key=scraper_key,
+                failure_kind=kind.value,
+                error_message=str(exc),
+                source_url="derived:matches",
+                league_name="club_results rollup",
+            )
             return
 
         logger.info(

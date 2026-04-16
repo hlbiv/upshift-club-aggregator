@@ -38,6 +38,7 @@ from scrape_run_logger import (
     FailureKind,
     classify_exception,
 )
+from alerts import alert_scraper_failure
 
 logger = logging.getLogger("events_runner")
 
@@ -107,6 +108,13 @@ def run_sincsports_events(
                 logger.error("[sincsports-events] tid=%s failed: %s", tid, exc)
                 if run_log is not None:
                     run_log.finish_failed(kind, error_message=str(exc))
+                alert_scraper_failure(
+                    scraper_key=scraper_key,
+                    failure_kind=kind.value,
+                    error_message=str(exc),
+                    source_url=lg["url"],
+                    league_name=league_name,
+                )
                 outcomes.append(EventRunOutcome(
                     tid=tid, league_name=league_name, team_count=0,
                     write=WriteResult(), failure_kind=kind, error=str(exc),

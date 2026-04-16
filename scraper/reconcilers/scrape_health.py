@@ -31,6 +31,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from config.freshness_sla import FRESHNESS_SLA_HOURS, DEFAULT_SLA_HOURS
+
 log = logging.getLogger("reconcilers.scrape_health")
 
 
@@ -156,13 +158,13 @@ def reconcile_scrape_health(conn, window_hours: int = 168) -> dict:
             )
             refreshed = cur.rowcount or 0
 
-            # Demote stale rows for this entity type. We filter by
-            # entity_type so a short window on one entity doesn't demote
-            # fresh rows of another. The reconciler's window is the
-            # single SLA knob for now — SLA-per-entity lives in D8.5.
+            # Demote stale rows using per-entity-type SLA thresholds
+            # from freshness_sla.py. Falls back to ``window_hours`` for
+            # entity types not in the config.
+            sla_hours = FRESHNESS_SLA_HOURS.get(entity_type, window_hours)
             cur.execute(
                 _DEMOTE_SQL + " AND entity_type = %(entity_type)s",
-                {"entity_type": entity_type, "window_hours": window_hours},
+                {"entity_type": entity_type, "window_hours": sla_hours},
             )
             demoted = cur.rowcount or 0
 

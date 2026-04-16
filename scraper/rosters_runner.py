@@ -33,6 +33,7 @@ from scrape_run_logger import (  # noqa: E402
     ScrapeRunLogger,
     classify_exception,
 )
+from alerts import alert_scraper_failure  # noqa: E402
 
 logger = logging.getLogger("rosters_runner")
 
@@ -95,6 +96,13 @@ def run_sincsports_rosters(
             logger.error("[sincsports-rosters] tid=%s failed: %s", tid, exc)
             if run_log is not None:
                 run_log.finish_failed(kind, error_message=str(exc))
+            alert_scraper_failure(
+                scraper_key=scraper_key,
+                failure_kind=kind.value,
+                error_message=str(exc),
+                source_url=lg["url"],
+                league_name=league_name,
+            )
             outcomes.append(outcome)
             continue
 
@@ -116,6 +124,13 @@ def run_sincsports_rosters(
             logger.error("[sincsports-rosters] tid=%s write failed: %s", tid, exc)
             if run_log is not None:
                 run_log.finish_failed(kind, error_message=str(exc))
+            alert_scraper_failure(
+                scraper_key=scraper_key,
+                failure_kind=kind.value,
+                error_message=str(exc),
+                source_url=lg["url"],
+                league_name=league_name,
+            )
             outcomes.append(outcome)
             continue
 
