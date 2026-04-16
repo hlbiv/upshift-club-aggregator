@@ -62,7 +62,8 @@
     "type": "google_maps",
     "map_ids": [
       "1qbhtLKgowyEMKObPH4xsTwLAvW0ZOkA"
-    ]
+    ],
+    "_note": "AUDIT Apr 2026: KML live (HTTP 200, 152 placemarks, club-level). Sample clubs: AJAX Premier FC, etc."
   },
   "https://www.dysa.org": {
     "state": "Delaware",
@@ -85,7 +86,8 @@
     "type": "google_maps",
     "map_ids": [
       "1LEvbghoFLjxzt4z_UyuykmhEqm-n58g"
-    ]
+    ],
+    "_note": "AUDIT Apr 2026: KML live (HTTP 200, 813 placemarks, club-level). Largest Google Maps state directory. Sample clubs: AC United, etc."
   },
   "https://www.fysa.com": {
     "state": "Florida",
@@ -131,7 +133,8 @@
     "type": "google_maps",
     "map_ids": [
       "1Wolg1Q7juM55WP0VIGUXHRErDOpcMKo"
-    ]
+    ],
+    "_note": "AUDIT Apr 2026: KML live (HTTP 200, 122 placemarks, club-level). Sample clubs: Argos Youth Soccer, etc."
   },
   "https://www.iowasoccer.org": {
     "state": "Iowa",
@@ -211,7 +214,8 @@
     "type": "google_maps",
     "map_ids": [
       "1XP_u-ZpHdZHHLkIFX3JgTKOB9IlhxsA"
-    ]
+    ],
+    "_note": "AUDIT Apr 2026: KML live (HTTP 200, 92 placemarks, club-level). Sample clubs: St. Louis Scott Gallagher, etc."
   },
   "https://www.montanayouthsoccer.com": {
     "state": "Montana",
@@ -481,14 +485,16 @@
     "type": "google_maps",
     "map_ids": [
       "1WiBWUBnV577NYdbUb7K_apuMA98mOTE"
-    ]
+    ],
+    "_note": "AUDIT Apr 2026: KML live (HTTP 200, 29 placemarks) BUT placemarks are member associations (districts), not individual clubs. Examples: Alamo Area YSA (San Antonio district), Capitol Area YSA (Austin), Coastal Bend YSA (Corpus Christi), El Paso YSA, San Antonio Leagues SA. Each district contains 10-50 actual clubs. Current coverage is at district granularity only; ~400+ actual South TX clubs are not enumerated. Future work: two-stage enrichment fetching each district's member clubs, or find alt source (USYS Texas directory, GotSport state-wide event)."
   },
   "https://www.tnsoccer.org": {
     "state": "Tennessee",
     "type": "google_maps",
     "map_ids": [
       "1Fj_RfEv-z54NBLLPceDlqxr5SZyzqH0"
-    ]
+    ],
+    "_note": "AUDIT Apr 2026: KML live (HTTP 200, 102 placemarks, club-level). TSSA Club Directory. Sample clubs: Action Elite Soccer Club, etc."
   },
   "https://www.utahyouthsoccer.net": {
     "state": "Utah",
