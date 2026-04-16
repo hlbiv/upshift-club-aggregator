@@ -6,6 +6,12 @@ import {
   collegeRosterHistory,
 } from "@workspace/db/schema";
 import { eq, ilike, and, asc, sql } from "drizzle-orm";
+import {
+  CollegeListResponse,
+  CollegeDetailResponse,
+  CollegeCoachesResponse,
+  CollegeRostersResponse,
+} from "@hlbiv/api-zod";
 import { parsePagination, buildWhere } from "../lib/pagination";
 
 const router: IRouter = Router();
@@ -16,6 +22,68 @@ const router: IRouter = Router();
  */
 function escapeLike(raw: string): string {
   return raw.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+// ---------------------------------------------------------------------------
+// Row mappers — Drizzle camelCase → API snake_case
+// ---------------------------------------------------------------------------
+
+function mapCollegeRow(r: typeof colleges.$inferSelect) {
+  return {
+    id: r.id,
+    name: r.name,
+    slug: r.slug,
+    ncaa_id: r.ncaaId ?? null,
+    division: r.division,
+    conference: r.conference ?? null,
+    state: r.state ?? null,
+    city: r.city ?? null,
+    website: r.website ?? null,
+    soccer_program_url: r.soccerProgramUrl ?? null,
+    gender_program: r.genderProgram,
+    enrollment: r.enrollment ?? null,
+    scholarship_available: r.scholarshipAvailable ?? null,
+    logo_url: r.logoUrl ?? null,
+    twitter: r.twitter ?? null,
+    last_scraped_at: r.lastScrapedAt ? r.lastScrapedAt.toISOString() : null,
+    scrape_confidence: r.scrapeConfidence ?? null,
+  };
+}
+
+function mapCollegeCoachRow(r: typeof collegeCoaches.$inferSelect) {
+  return {
+    id: r.id,
+    college_id: r.collegeId,
+    coach_id: r.coachId ?? null,
+    name: r.name,
+    title: r.title ?? null,
+    email: r.email ?? null,
+    phone: r.phone ?? null,
+    twitter: r.twitter ?? null,
+    linkedin: r.linkedin ?? null,
+    is_head_coach: r.isHeadCoach,
+    source: r.source ?? null,
+    source_url: r.sourceUrl ?? null,
+    scraped_at: r.scrapedAt ? r.scrapedAt.toISOString() : null,
+    confidence: r.confidence ?? null,
+    first_seen_at: r.firstSeenAt ? r.firstSeenAt.toISOString() : null,
+    last_seen_at: r.lastSeenAt ? r.lastSeenAt.toISOString() : null,
+  };
+}
+
+function mapRosterRow(r: typeof collegeRosterHistory.$inferSelect) {
+  return {
+    id: r.id,
+    college_id: r.collegeId,
+    player_name: r.playerName,
+    position: r.position ?? null,
+    year: r.year ?? null,
+    academic_year: r.academicYear,
+    hometown: r.hometown ?? null,
+    prev_club: r.prevClub ?? null,
+    jersey_number: r.jerseyNumber ?? null,
+    scraped_at: r.scrapedAt ? r.scrapedAt.toISOString() : null,
+  };
 }
 
 router.get("/colleges", async (req, res, next): Promise<void> => {
@@ -66,12 +134,14 @@ router.get("/colleges", async (req, res, next): Promise<void> => {
       .limit(pageSize)
       .offset(offset);
 
-    res.json({
-      colleges: rows,
-      total,
-      page,
-      page_size: pageSize,
-    });
+    res.json(
+      CollegeListResponse.parse({
+        colleges: rows.map(mapCollegeRow),
+        total,
+        page,
+        page_size: pageSize,
+      }),
+    );
   } catch (err) {
     next(err);
   }
@@ -95,7 +165,7 @@ router.get("/colleges/:id", async (req, res, next): Promise<void> => {
       return;
     }
 
-    res.json(college);
+    res.json(CollegeDetailResponse.parse(mapCollegeRow(college)));
   } catch (err) {
     next(err);
   }
@@ -125,7 +195,7 @@ router.get("/colleges/:id/coaches", async (req, res, next): Promise<void> => {
       .where(eq(collegeCoaches.collegeId, id))
       .orderBy(asc(collegeCoaches.name));
 
-    res.json({ coaches: rows });
+    res.json(CollegeCoachesResponse.parse({ coaches: rows.map(mapCollegeCoachRow) }));
   } catch (err) {
     next(err);
   }
@@ -177,12 +247,14 @@ router.get("/colleges/:id/rosters", async (req, res, next): Promise<void> => {
       .limit(pageSize)
       .offset(offset);
 
-    res.json({
-      roster: rows,
-      total,
-      page,
-      page_size: pageSize,
-    });
+    res.json(
+      CollegeRostersResponse.parse({
+        roster: rows.map(mapRosterRow),
+        total,
+        page,
+        page_size: pageSize,
+      }),
+    );
   } catch (err) {
     next(err);
   }
