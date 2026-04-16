@@ -414,6 +414,26 @@ def _run_source(args) -> None:
         )
         _gs_print_summary(outcomes)
         return
+    if key in ("gotsport-matches-batch", "gotsport_matches_batch"):
+        from gotsport_matches_runner import run_gotsport_matches_batch
+        from gotsport_matches_runner import print_summary as _gmb_print_summary
+        outcomes = run_gotsport_matches_batch(
+            dry_run=args.dry_run,
+            event_id=args.event_id,
+            limit=args.limit,
+        )
+        _gmb_print_summary(outcomes)
+        return
+    if key in ("gotsport-rosters", "gotsport_rosters"):
+        from gotsport_rosters_runner import run_gotsport_rosters
+        from gotsport_rosters_runner import print_summary as _gr_print_summary
+        outcomes = run_gotsport_rosters(
+            dry_run=args.dry_run,
+            event_id=args.event_id,
+            limit=args.limit,
+        )
+        _gr_print_summary(outcomes)
+        return
     if key in ("tryouts-wordpress", "tryouts_wordpress"):
         from tryouts_runner import run_tryouts_wordpress, print_summary
         outcomes = run_tryouts_wordpress(dry_run=args.dry_run, limit=args.limit)
@@ -577,7 +597,9 @@ def main() -> None:
     parser.add_argument("--source", metavar="KEY",
                         help="Run a non-league scraper by key. Supported: "
                              "'gotsport-matches' (requires --event-id), "
+                             "'gotsport-matches-batch' (batch matches for all GotSport events), "
                              "'gotsport-events' (populates events + event_teams from GotSport), "
+                             "'gotsport-rosters' (populates club_roster_snapshots from GotSport rosters), "
                              "'sincsports-events' (populates events + event_teams), "
                              "'sincsports-rosters' (populates club_roster_snapshots + roster_diffs), "
                              "'tryouts-wordpress' (populates tryouts from WordPress sites), "
