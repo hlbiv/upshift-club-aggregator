@@ -202,8 +202,12 @@ def run_usclub_events(
                     tag = ""
                     if t.gotsport_event_id:
                         tag = f" [GotSport #{t.gotsport_event_id}]"
+                    elif t.platform == "gotsport":
+                        tag = " [GotSport (reg link)]"
                     elif t.sincsports_tid:
                         tag = f" [SincSports {t.sincsports_tid}]"
+                    elif t.platform == "sincsports":
+                        tag = " [SincSports]"
                     else:
                         tag = " [Other]"
                     logger.info("  [dry-run]%s %s | %s | %s | %s", tag, t.name, t.start_date or "?", t.state or "?", t.host_club or "?")
@@ -214,9 +218,9 @@ def run_usclub_events(
                     outcome.events_updated += result.events_updated
 
                 outcome.events_processed += 1
-                if t.gotsport_event_id:
+                if t.platform == "gotsport":
                     outcome.gotsport_ids_found += 1
-                if t.sincsports_tid:
+                if t.platform == "sincsports":
                     outcome.sincsports_tids_found += 1
 
             if run_log is not None:
