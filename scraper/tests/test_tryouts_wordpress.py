@@ -18,6 +18,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from extractors.tryouts_wordpress import (  # noqa: E402
+    extract_registration_links,
     parse_date,
     parse_tryouts_page_html,
 )
@@ -74,8 +75,8 @@ def test_parse_page_happy_path_extracts_all_fields():
 
 
 def test_parse_page_no_date_skips_and_warns(caplog):
-    """A page without a parseable date must produce zero rows and
-    emit a warning. Nothing is written downstream."""
+    """A page without a parseable date AND no registration platform
+    link must produce zero rows and emit a warning."""
     html = _read("no_date_tryouts.html")
     with caplog.at_level("WARNING"):
         rows = parse_tryouts_page_html(
@@ -84,7 +85,120 @@ def test_parse_page_no_date_skips_and_warns(caplog):
             source_url="https://ghost.example.com/tryouts/",
         )
     assert rows == []
-    assert any("no date parsed" in rec.message for rec in caplog.records)
+    # Warning text expanded — now mentions registration links too since
+    # we emit reg-only rows when a date is missing but links exist.
+    assert any(
+        "no date or registration link" in rec.message
+        for rec in caplog.records
+    )
+
+
+# --------------------------------------------------------------------------- registration link extraction
+
+
+def test_extract_registration_links_gotsport():
+    html = 'Register: <a href="https://system.gotsport.com/org_event/events/45123/teams">Click</a>'
+    reg = extract_registration_links(html)
+    assert reg["gotsport_event_ids"] == ["45123"]
+    assert reg["primary_url"] == "https://system.gotsport.com/org_event/events/45123"
+
+
+def test_extract_registration_links_tgs():
+    html = '<a href="https://public.totalglobalsports.com/events/3979">Register</a>'
+    reg = extract_registration_links(html)
+    assert reg["tgs_event_ids"] == ["3979"]
+    assert "totalglobalsports.com/events/3979" in reg["primary_url"]
+
+
+def test_extract_registration_links_leagueapps():
+    html = '<a href="https://myclub.leagueapps.com/clubteams/3167131-registration">Register</a>'
+    reg = extract_registration_links(html)
+    assert len(reg["leagueapps_urls"]) == 1
+    assert reg["primary_url"].startswith("https://myclub.leagueapps.com/")
+
+
+def test_extract_registration_links_filters_leagueapps_marketing():
+    """LeagueApps marketing URLs (/products/, /pricing, /blog) must be
+    filtered out — they're footer noise, not registration entry points."""
+    html = """
+    <a href="https://www.leagueapps.com/products/design/">LA Products</a>
+    <a href="https://www.leagueapps.com/pricing">Pricing</a>
+    <a href="https://myclub.leagueapps.com/clubteams/3167131">Real Registration</a>
+    """
+    reg = extract_registration_links(html)
+    assert len(reg["leagueapps_urls"]) == 1
+    assert "clubteams" in reg["leagueapps_urls"][0]
+
+
+def test_extract_registration_links_priority_order():
+    """Primary URL preference: GotSport > TGS > LeagueApps."""
+    html = """
+    <a href="https://myclub.leagueapps.com/clubteams/1">LA</a>
+    <a href="https://system.gotsport.com/events/45123">GS</a>
+    <a href="https://public.totalglobalsports.com/events/3979">TGS</a>
+    """
+    reg = extract_registration_links(html)
+    assert reg["primary_url"].endswith("/events/45123")
+
+
+def test_extract_registration_links_empty_html_returns_empty_lists():
+    reg = extract_registration_links("")
+    assert reg["gotsport_event_ids"] == []
+    assert reg["tgs_event_ids"] == []
+    assert reg["leagueapps_urls"] == []
+    assert reg["primary_url"] is None
+
+
+# --------------------------------------------------------------------------- registration-only row emission
+
+
+def test_parse_page_registration_only_emits_row_without_date():
+    """When no date is parseable but a registration platform link is
+    present, emit a single row with tryout_date=None and url set."""
+    html = """
+    <html><body>
+    <h1>Tryouts</h1>
+    <p>Join us! Register here:</p>
+    <a href="https://myclub.leagueapps.com/clubteams/3167131">Register</a>
+    </body></html>
+    """
+    rows = parse_tryouts_page_html(
+        html,
+        club_name_raw="Test FC",
+        source_url="https://testfc.example.com/tryouts/",
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["tryout_date"] is None
+    assert "leagueapps.com/clubteams/3167131" in row["url"]
+    # Notes is a JSON blob describing the captured registration links.
+    assert row["notes"] is not None
+    import json as _json
+    parsed = _json.loads(row["notes"])
+    assert "registration" in parsed
+    assert "leagueapps_urls" in parsed["registration"]
+
+
+def test_parse_page_dated_row_also_captures_notes_when_link_present():
+    """When BOTH a date AND a registration link are on the page, the
+    dated row includes the notes JSON and prefers the registration URL
+    over the source URL."""
+    html = """
+    <html><body>
+    <h1>August 5, 2026 - U12 Boys Tryouts</h1>
+    <a href="https://system.gotsport.com/org_event/events/45123/teams">Register</a>
+    </body></html>
+    """
+    rows = parse_tryouts_page_html(
+        html,
+        club_name_raw="Test FC",
+        source_url="https://testfc.example.com/tryouts/",
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["tryout_date"] == datetime(2026, 8, 5)
+    assert "gotsport" in row["url"]
+    assert row["notes"] is not None
 
 
 # --------------------------------------------------------------------------- writer with stubbed cursor
