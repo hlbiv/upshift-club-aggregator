@@ -7,24 +7,29 @@
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "test": "DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/apiKeyAuth.test.ts",
+    "test": "DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/apiKeyAuth.test.ts && DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/rateLimit.test.ts && DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/docs.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@hlbiv/api-zod": "workspace:*",
+    "@workspace/api-spec": "workspace:*",
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",
+    "express-rate-limit": "^8.3.2",
     "pino": "^9",
-    "pino-http": "^10"
+    "pino-http": "^10",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
+    "@types/swagger-ui-express": "^4.1.8",
     "esbuild": "^0.27.3",
     "esbuild-plugin-pino": "^2.3.3",
     "pino-pretty": "^13",

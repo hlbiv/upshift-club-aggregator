@@ -6,6 +6,8 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { apiKeyAuth } from "./middlewares/apiKeyAuth";
+import { buildRateLimiter } from "./middlewares/rateLimit";
+import { buildDocsRouter } from "./routes/docs";
 
 const app: Express = express();
 
@@ -47,7 +49,11 @@ const _authEnabled =
   process.env.NODE_ENV !== "development";
 
 if (_authEnabled) {
-  app.use(/^\/api(?!\/healthz)/, apiKeyAuth);
+  // Exempt /api/healthz (liveness) and /api/docs/* (OpenAPI UI) from auth.
+  // Docs are deliberately public so a browser can load the page without a
+  // key; "Try it out" calls from the UI hit authed routes and correctly
+  // 401 without a key.
+  app.use(/^\/api(?!\/healthz|\/docs)/, apiKeyAuth);
   // eslint-disable-next-line no-console
   console.log("[api-key-auth] enabled");
 } else {
@@ -57,6 +63,36 @@ if (_authEnabled) {
       ? "[api-key-auth] DISABLED in development mode"
       : "[api-key-auth] DISABLED (set API_KEY_AUTH_ENABLED=true to enable)",
   );
+}
+
+// Rate limiting. Runs AFTER apiKeyAuth so authenticated requests can be
+// keyed off req.apiKey.id (larger bucket), while unauthenticated routes
+// fall back to per-IP limiting (smaller bucket). Feature-flagged so a
+// fresh deploy doesn't throttle traffic before the operator has tuned the
+// limits. See middlewares/rateLimit.ts.
+const _rateLimitEnabled = process.env.API_RATE_LIMIT_ENABLED === "true";
+if (_rateLimitEnabled) {
+  app.use(/^\/api(?!\/docs)/, buildRateLimiter());
+  // eslint-disable-next-line no-console
+  console.log("[rate-limit] enabled");
+} else {
+  // eslint-disable-next-line no-console
+  console.log(
+    "[rate-limit] DISABLED (set API_RATE_LIMIT_ENABLED=true to enable)",
+  );
+}
+
+// Interactive OpenAPI documentation. Mounted BEFORE the main router so
+// `/api/docs` beats any accidental catch-all. Feature-flagged — if
+// disabled the router is null and the path naturally 404s.
+const docsRouter = buildDocsRouter();
+if (docsRouter) {
+  app.use("/api/docs", docsRouter);
+  // eslint-disable-next-line no-console
+  console.log("[api-docs] serving at /api/docs");
+} else {
+  // eslint-disable-next-line no-console
+  console.log("[api-docs] DISABLED (set API_DOCS_ENABLED=true to enable)");
 }
 
 app.use("/api", router);
