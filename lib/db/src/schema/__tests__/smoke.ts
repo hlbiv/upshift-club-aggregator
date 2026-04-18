@@ -344,6 +344,35 @@ assertTable(schema.scrapeHealth, "scrape_health", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain 10 — Player iD selections (US Club iD program)
+// ---------------------------------------------------------------------------
+
+assertTable(schema.playerIdSelections, "player_id_selections", {
+  cols: [
+    "player_name",
+    "selection_year",
+    "birth_year",
+    "gender",
+    "pool_tier",
+    "region",
+    "club_name_raw",
+    "club_id",
+    "state",
+    "position",
+    "source_url",
+    "source",
+    "announced_at",
+    "scraped_at",
+  ],
+  uniques: ["player_id_selections_player_year_birth_gender_tier_uq"],
+  indexes: [
+    "player_id_selections_year_tier_idx",
+    "player_id_selections_club_idx",
+  ],
+  checks: ["player_id_selections_source_enum"],
+});
+
+// ---------------------------------------------------------------------------
 // Domain 9 — API keys (M2M auth)
 // ---------------------------------------------------------------------------
 
