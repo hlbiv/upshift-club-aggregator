@@ -25,6 +25,11 @@ expertMode = true
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
 
+[[deployment.scheduledJobs]]
+name = "retention-prune"
+cron = "0 2 * * *"
+command = "cd scraper && python3 run.py --rollup retention-prune"
+
 [nix]
 channel = "stable-25_05"
 packages = ["gitFull", "glibcLocales", "playwright-driver", "rapidfuzz-cpp", "taskflow", "xcodebuild", "zlib"]
