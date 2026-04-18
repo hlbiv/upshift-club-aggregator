@@ -670,6 +670,51 @@ def _run_rollup(args) -> None:
             )
         return
 
+    if key == "retention-prune":
+        from rollups.retention import prune_retention
+
+        scraper_key = "rollup:retention-prune"
+        run_log: Optional[ScrapeRunLogger] = None
+        if not args.dry_run:
+            run_log = ScrapeRunLogger(
+                scraper_key=scraper_key,
+                league_name="retention prune",
+            )
+            run_log.start(source_url="derived:scrape_run_logs+coach_scrape_snapshots")
+
+        try:
+            result = prune_retention(dry_run=args.dry_run)
+        except Exception as exc:
+            kind = _classify_exception(exc)
+            logger.error("[rollup:retention-prune] failed: %s", exc)
+            if run_log is not None:
+                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+            alert_scraper_failure(
+                scraper_key=scraper_key,
+                failure_kind=kind.value,
+                error_message=str(exc),
+                source_url="derived:scrape_run_logs+coach_scrape_snapshots",
+                league_name="retention prune",
+            )
+            return
+
+        logger.info(
+            "[rollup:retention-prune] scrape_run_logs_deleted=%d "
+            "coach_scrape_snapshots_deleted=%d",
+            result["scrape_run_logs_deleted"],
+            result["coach_scrape_snapshots_deleted"],
+        )
+        if run_log is not None:
+            run_log.finish_ok(
+                records_created=0,
+                records_updated=(
+                    result["scrape_run_logs_deleted"]
+                    + result["coach_scrape_snapshots_deleted"]
+                ),
+                records_failed=0,
+            )
+        return
+
     logger.error("Unknown --rollup key: %s", key)
     sys.exit(2)
 
@@ -737,7 +782,7 @@ def main() -> None:
                         choices=["sportsengine", "leagueapps", "wordpress", "unknown"],
                         dest="platform_family",
                         help="Platform family filter for --source youth-coaches.")
-    parser.add_argument("--rollup", choices=["club-results", "scrape-health"],
+    parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune"],
                         help="Run a derived-data rollup over existing DB rows.")
     args = parser.parse_args()
 
