@@ -3,6 +3,7 @@ import path from "path";
 
 const root = path.resolve(__dirname, "..", "..");
 const apiClientReactSrc = path.resolve(root, "lib", "api-client-react", "src");
+const apiClientFetchSrc = path.resolve(root, "lib", "api-client-fetch", "src");
 const apiZodSrc = path.resolve(root, "lib", "api-zod", "src");
 
 // Our exports make assumptions about the title of the API being "Api" (i.e. generated output is `api.ts`).
@@ -35,6 +36,32 @@ export default defineConfig({
         },
         mutator: {
           path: path.resolve(apiClientReactSrc, "custom-fetch.ts"),
+          name: "customFetch",
+        },
+      },
+    },
+  },
+  "api-client-fetch": {
+    input: {
+      target: "./openapi.yaml",
+      override: {
+        transformer: titleTransformer,
+      },
+    },
+    output: {
+      workspace: apiClientFetchSrc,
+      target: "generated",
+      client: "fetch",
+      mode: "split",
+      baseUrl: "/api",
+      clean: true,
+      prettier: true,
+      override: {
+        fetch: {
+          includeHttpResponseReturnType: false,
+        },
+        mutator: {
+          path: path.resolve(apiClientFetchSrc, "custom-fetch.ts"),
           name: "customFetch",
         },
       },
