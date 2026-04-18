@@ -7,16 +7,32 @@
 
 import {
   pgTable,
+  pgEnum,
   serial,
   text,
   integer,
   timestamp,
   unique,
-  check,
   index,
 } from "drizzle-orm/pg-core";
-import { sql, relations } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import { canonicalClubs } from "./index";
+
+/**
+ * Shared `source` enum for the four tables that originate from the same
+ * scraper-platform vocabulary: events, event_teams, matches,
+ * club_roster_snapshots. Replaces the per-table CHECK constraints so the
+ * value set is enforced at the type level.
+ *
+ * `tryouts.source` and the various coach/college/alias `source` columns
+ * are intentionally kept as free-form text — different value sets.
+ */
+export const eventsSourceEnum = pgEnum("events_source_enum", [
+  "gotsport",
+  "sincsports",
+  "manual",
+  "other",
+]);
 
 export const events = pgTable(
   "events",
@@ -38,15 +54,11 @@ export const events = pgTable(
     endDate: timestamp("end_date"),
     registrationUrl: text("registration_url"),
     sourceUrl: text("source_url"),
-    source: text("source"),
+    source: eventsSourceEnum("source"),
     platformEventId: text("platform_event_id"),
     lastScrapedAt: timestamp("last_scraped_at"),
   },
   (t) => [
-    check(
-      "events_source_enum",
-      sql`${t.source} IS NULL OR ${t.source} IN ('gotsport','sincsports','manual','other')`,
-    ),
     unique("events_source_platform_id_uq").on(t.source, t.platformEventId),
     index("events_start_date_idx").on(t.startDate),
   ],
@@ -80,7 +92,7 @@ export const eventTeams = pgTable(
     divisionCode: text("division_code"),
     registeredAt: timestamp("registered_at"),
     sourceUrl: text("source_url"),
-    source: text("source"),
+    source: eventsSourceEnum("source"),
   },
   (t) => [
     unique("event_teams_event_team_name_uq").on(t.eventId, t.teamNameRaw),
