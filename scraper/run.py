@@ -515,6 +515,14 @@ def _run_source(args) -> None:
         )
         _uc_print_summary(outcomes)
         return
+    if key in ("usclub-id", "usclub_id"):
+        from usclub_id_runner import run_usclub_id, print_summary as _uid_print_summary
+        outcomes = run_usclub_id(
+            dry_run=args.dry_run,
+            limit=args.limit,
+        )
+        _uid_print_summary(outcomes)
+        return
     logger.error("Unknown --source key: %s", key)
     sys.exit(2)
 
@@ -775,7 +783,9 @@ def main() -> None:
                              "'club-enrichment' (enrich canonical_clubs with logo/socials/status), "
                              "'club-dedup' (fuzzy dedup report for canonical_clubs), "
                              "'usclub-sanctioned' (discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events), "
-                             "'usclub-seeds' (seed only — National Cup + NPL Finals GotSport events, skip discovery).")
+                             "'usclub-seeds' (seed only — National Cup + NPL Finals GotSport events, skip discovery), "
+                             "'usclub-id' (discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API; "
+                             "scaffold only — body parsing + player_id_selections rows arrive in a follow-up PR).")
     parser.add_argument("--event-id", metavar="ID",
                         help="GotSport event id for --source gotsport-matches or gotsport-events.")
     parser.add_argument("--season", metavar="SEASON",
