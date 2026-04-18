@@ -37,7 +37,7 @@ def detect_cms(response) -> Optional[str]:
 
     Possible return values:
       ``"squarespace"`` | ``"sportsengine"`` | ``"duda"`` |
-      ``"wordpress"`` | ``"wix"`` | ``None``
+      ``"wordpress"`` | ``"wix"`` | ``"360player"`` | ``None``
     """
     headers = _safe_headers(response)
     body = _safe_body(response)
@@ -103,6 +103,23 @@ def detect_cms(response) -> Optional[str]:
     # Source: observed on *.wixsite.com and custom Wix domains.
     if "static.wixstatic.com" in body_lower or "static.parastorage.com" in body_lower:
         return "wix"
+
+    # 360Player is a soccer-specific club management SaaS. Public club
+    # pages are served at ``360player.com/<club-slug>`` or embedded into
+    # a club's own marketing site via a widget script. Two HTML
+    # signatures we have observed:
+    #   * Direct: anchor / canonical pointing at app.360player.com or
+    #     360player.com (the SaaS's public club URL).
+    #   * Embedded: a <script> tag referencing ``cdn.360player.com`` —
+    #     their widget bundle host.
+    # Either signature is conclusive; both flag the same downstream
+    # extractor because both surface the same JSON shape.
+    if (
+        "360player.com" in body_lower
+        or "cdn.360player.com" in body_lower
+        or "app.360player.com" in body_lower
+    ):
+        return "360player"
 
     return None
 

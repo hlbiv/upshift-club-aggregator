@@ -523,6 +523,17 @@ def _run_source(args) -> None:
         )
         _uid_print_summary(outcomes)
         return
+    if key in ("duda-360player-clubs", "duda_360player_clubs"):
+        from duda_360player_clubs_runner import (
+            run_duda_360player_clubs,
+            print_summary as _d360_print_summary,
+        )
+        outcome = run_duda_360player_clubs(
+            dry_run=args.dry_run,
+            limit=args.limit,
+        )
+        _d360_print_summary(outcome)
+        return
     logger.error("Unknown --source key: %s", key)
     sys.exit(2)
 
@@ -785,7 +796,9 @@ def main() -> None:
                              "'usclub-sanctioned' (discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events), "
                              "'usclub-seeds' (seed only — National Cup + NPL Finals GotSport events, skip discovery), "
                              "'usclub-id' (discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API; "
-                             "scaffold only — body parsing + player_id_selections rows arrive in a follow-up PR).")
+                             "scaffold only — body parsing + player_id_selections rows arrive in a follow-up PR), "
+                             "'duda-360player-clubs' (probe Duda CMS + 360Player club sites; "
+                             "writes Event JSON-LD into tryouts; coach_discoveries collected but not written this PR).")
     parser.add_argument("--event-id", metavar="ID",
                         help="GotSport event id for --source gotsport-matches or gotsport-events.")
     parser.add_argument("--season", metavar="SEASON",
