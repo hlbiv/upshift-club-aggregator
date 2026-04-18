@@ -25,6 +25,16 @@ expertMode = true
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
 
+[[deployment.scheduledJobs]]
+name = "nightly-canonical-club-linker"
+cron = "0 3 * * *"
+command = "cd scraper && python3 run.py --source link-canonical-clubs"
+
+[[deployment.scheduledJobs]]
+name = "daily-club-results-rollup"
+cron = "0 4 * * *"
+command = "cd scraper && python3 run.py --rollup club-results"
+
 [nix]
 channel = "stable-25_05"
 packages = ["gitFull", "glibcLocales", "playwright-driver", "rapidfuzz-cpp", "taskflow", "xcodebuild", "zlib"]
