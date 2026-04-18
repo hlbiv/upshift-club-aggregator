@@ -593,17 +593,31 @@ def _run_rollup(args) -> None:
     if key == "club-results":
         from rollups.club_results import recompute_club_results
 
+        # Build scope label for the run-log row so an operator
+        # browsing scrape_run_logs can tell scoped reruns apart from
+        # the nightly full recompute.
+        scope_parts = []
+        if args.season:
+            scope_parts.append(f"season={args.season}")
+        if args.league:
+            scope_parts.append(f"league={args.league}")
+        scope_label = " ".join(scope_parts) if scope_parts else "all"
+
         scraper_key = "rollup:club-results"
         run_log: Optional[ScrapeRunLogger] = None
         if not args.dry_run:
             run_log = ScrapeRunLogger(
                 scraper_key=scraper_key,
-                league_name="club_results rollup",
+                league_name=f"club_results rollup ({scope_label})",
             )
             run_log.start(source_url="derived:matches")
 
         try:
-            result = recompute_club_results(dry_run=args.dry_run)
+            result = recompute_club_results(
+                dry_run=args.dry_run,
+                season=args.season,
+                league=args.league,
+            )
         except Exception as exc:
             kind = _classify_exception(exc)
             logger.error("[rollup:club-results] failed: %s", exc)
