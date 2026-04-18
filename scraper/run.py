@@ -630,6 +630,46 @@ def _run_rollup(args) -> None:
             )
         return
 
+    if key == "scrape-health":
+        from rollups.scrape_health import recompute_scrape_health
+
+        scraper_key = "rollup:scrape-health"
+        run_log: Optional[ScrapeRunLogger] = None
+        if not args.dry_run:
+            run_log = ScrapeRunLogger(
+                scraper_key=scraper_key,
+                league_name="scrape_health rollup",
+            )
+            run_log.start(source_url="derived:scrape_run_logs")
+
+        try:
+            result = recompute_scrape_health(dry_run=args.dry_run)
+        except Exception as exc:
+            kind = _classify_exception(exc)
+            logger.error("[rollup:scrape-health] failed: %s", exc)
+            if run_log is not None:
+                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+            alert_scraper_failure(
+                scraper_key=scraper_key,
+                failure_kind=kind.value,
+                error_message=str(exc),
+                source_url="derived:scrape_run_logs",
+                league_name="scrape_health rollup",
+            )
+            return
+
+        logger.info(
+            "[rollup:scrape-health] rows_written=%d by_status=%s",
+            result["rows_written"], result["by_status"],
+        )
+        if run_log is not None:
+            run_log.finish_ok(
+                records_created=result["rows_written"],
+                records_updated=0,
+                records_failed=0,
+            )
+        return
+
     logger.error("Unknown --rollup key: %s", key)
     sys.exit(2)
 
@@ -697,7 +737,7 @@ def main() -> None:
                         choices=["sportsengine", "leagueapps", "wordpress", "unknown"],
                         dest="platform_family",
                         help="Platform family filter for --source youth-coaches.")
-    parser.add_argument("--rollup", choices=["club-results"],
+    parser.add_argument("--rollup", choices=["club-results", "scrape-health"],
                         help="Run a derived-data rollup over existing DB rows.")
     args = parser.parse_args()
 
