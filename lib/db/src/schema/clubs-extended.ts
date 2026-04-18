@@ -24,7 +24,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 import { canonicalClubs } from "./index";
-import { events } from "./events";
+import { events, eventsSourceEnum } from "./events";
 
 export const clubRosterSnapshots = pgTable(
   "club_roster_snapshots",
@@ -66,7 +66,7 @@ export const clubRosterSnapshots = pgTable(
     prevClub: text("prev_club"),
     league: text("league"),
     scrapedAt: timestamp("scraped_at").defaultNow().notNull(),
-    source: text("source"),
+    source: eventsSourceEnum("source"),
     eventId: integer("event_id").references(() => events.id, {
       onDelete: "set null",
     }),

@@ -210,7 +210,6 @@ assertTable(schema.coachEffectiveness, "coach_effectiveness", {
 assertTable(schema.events, "events", {
   cols: ["name", "slug", "source", "platform_event_id", "age_group", "gender"],
   uniques: ["events_source_platform_id_uq"],
-  checks: ["events_source_enum"],
 });
 
 assertTable(schema.eventTeams, "event_teams", {
