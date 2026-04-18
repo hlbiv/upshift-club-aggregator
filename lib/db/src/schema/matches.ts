@@ -19,7 +19,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 import { canonicalClubs } from "./index";
-import { events } from "./events";
+import { events, eventsSourceEnum } from "./events";
 
 export const matches = pgTable(
   "matches",
@@ -45,7 +45,7 @@ export const matches = pgTable(
     season: text("season"),
     league: text("league"),
     status: text("status").default("scheduled").notNull(),
-    source: text("source"),
+    source: eventsSourceEnum("source"),
     sourceUrl: text("source_url"),
     platformMatchId: text("platform_match_id"),
     scrapedAt: timestamp("scraped_at").defaultNow().notNull(),

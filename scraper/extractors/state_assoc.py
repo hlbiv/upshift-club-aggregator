@@ -268,6 +268,13 @@ def _scrape_state(url: str, league_name: str) -> List[Dict]:
         logger.warning("No state_assoc_config entry for URL: %s — skipping", url)
         return []
 
+    if cfg.get("disabled"):
+        logger.info(
+            "State assoc seed %s is disabled in state_assoc_config.json — skipping",
+            url,
+        )
+        return []
+
     state = cfg.get("state", "")
     src_type = cfg.get("type", "unknown")
     logger.info("State: %s | source: %s", state, src_type)

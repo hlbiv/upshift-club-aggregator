@@ -34,10 +34,27 @@ const router: IRouter = Router();
 // GET /api/events/list — paginated event list for the Explorer panel
 // ---------------------------------------------------------------------------
 
+// Allowed `source` values, mirrored from the `events_source_enum` pgEnum
+// declared in lib/db/src/schema/events.ts. Used to narrow request-query
+// strings into the enum-typed column.
+const EVENTS_SOURCE_VALUES = [
+  "gotsport",
+  "sincsports",
+  "manual",
+  "other",
+] as const;
+type EventsSource = (typeof EVENTS_SOURCE_VALUES)[number];
+function asEventsSource(raw: string | undefined): EventsSource | undefined {
+  if (!raw) return undefined;
+  return (EVENTS_SOURCE_VALUES as readonly string[]).includes(raw)
+    ? (raw as EventsSource)
+    : undefined;
+}
+
 router.get("/events/list", async (req, res, next): Promise<void> => {
   try {
     const season = req.query.season as string | undefined;
-    const source = req.query.source as string | undefined;
+    const source = asEventsSource(req.query.source as string | undefined);
     const league = req.query.league as string | undefined;
     const state = req.query.state as string | undefined;
     const nameQuery = req.query.name as string | undefined;
