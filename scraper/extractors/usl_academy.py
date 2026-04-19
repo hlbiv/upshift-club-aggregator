@@ -69,6 +69,61 @@ _MIN_CLUBS_MEN = 30
 _MIN_CLUBS_WOMEN = 5
 
 
+def _parse_live_html(html: str) -> List[str]:
+    """
+    Pure parser: extract unique club names from a Modular11 standings
+    HTML snippet. Division-heading `data-title` values (containing
+    "Male"/"Female"/"Men"/"Women") are skipped.
+
+    No HTTP, no logging side-effects beyond caller context — the caller
+    tracks which gender this HTML came from.
+    """
+    if not html or len(html) < 500:
+        return []
+
+    soup = BeautifulSoup(html, "lxml")
+    clubs: List[str] = []
+    for p in soup.find_all("p", attrs={"data-title": True}):
+        title = p.get("data-title", "").strip()
+        if not title or _DIVISION_RE.search(title):
+            continue
+        clubs.append(title)
+    return clubs
+
+
+def parse_html(
+    html: str,
+    source_url: str | None = None,
+    league_name: str | None = None,
+) -> List[Dict]:
+    """
+    Pure-function entry point for ``--source replay-html``.
+
+    Given a single archived Modular11 standings HTML response, returns
+    canonical club records (one per unique club name found in the
+    snippet). The live scrape at :func:`scrape_usl_academy` fetches
+    both gender divisions and deduplicates across them — replay here
+    operates on exactly one HTML body at a time, so the caller replays
+    each archived URL (men's + women's) independently and the dedup
+    happens at the aggregation layer.
+    """
+    names = _parse_live_html(html)
+    if not names:
+        return []
+    effective_league = league_name or "USL Academy League"
+    effective_url = source_url or "https://www.usl-academy.com/league-standings"
+    return [
+        {
+            "club_name": name,
+            "league_name": effective_league,
+            "city": "",
+            "state": "",
+            "source_url": effective_url,
+        }
+        for name in sorted(set(names))
+    ]
+
+
 def _fetch_clubs_by_gender(uid_gender: int) -> List[str]:
     """
     Fetch the standings HTML for one gender and extract unique club names.
@@ -91,14 +146,7 @@ def _fetch_clubs_by_gender(uid_gender: int) -> List[str]:
         logger.warning("[USL Academy] Suspiciously short response for gender=%d", uid_gender)
         return []
 
-    soup = BeautifulSoup(r.text, "lxml")
-    clubs: List[str] = []
-
-    for p in soup.find_all("p", attrs={"data-title": True}):
-        title = p.get("data-title", "").strip()
-        if not title or _DIVISION_RE.search(title):
-            continue
-        clubs.append(title)
+    clubs = _parse_live_html(r.text)
 
     logger.info("[USL Academy] Gender=%s → %d clubs", gender_label, len(clubs))
 

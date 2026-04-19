@@ -58,6 +58,62 @@ NWSL_ACADEMY_CLUBS: List[tuple[str, str, str]] = [
 _SOURCE_URL = "https://www.nwslsoccer.com/nwsl-academy"
 
 
+def _parse_live_html(
+    html: str,
+    league_name: str,
+    source_url: str,
+) -> List[Dict]:
+    """
+    Build NWSL Academy club records.
+
+    The official nwslsoccer.com/nwsl-academy page returns a Next.js
+    shell (often a 404 for server-side fetches) and exposes no public
+    club-directory API, so this extractor does not actually parse HTML
+    content. The ``html`` argument is accepted so the function shares
+    the ``parse_html`` signature expected by ``--source replay-html``
+    and so archived HTML stays associated with the produced rows; the
+    records themselves are emitted from the curated ``NWSL_ACADEMY_CLUBS``
+    seed list (maintained manually from NWSL press releases).
+
+    Returning the seed even when the archived HTML is empty is correct
+    for this source: replay is supposed to reproduce the scheduled
+    scrape's output, and the scheduled scrape ignores the live page too.
+    """
+    # html is intentionally unused — see docstring.
+    del html
+    return [
+        {
+            "club_name": club_name,
+            "league_name": league_name,
+            "city": city,
+            "state": state,
+            "source_url": source_url,
+        }
+        for club_name, city, state in NWSL_ACADEMY_CLUBS
+    ]
+
+
+def parse_html(
+    html: str,
+    source_url: str = _SOURCE_URL,
+    league_name: str | None = None,
+) -> List[Dict]:
+    """
+    Pure-function entry point for ``--source replay-html``.
+
+    Because NWSL Academy has no machine-readable public directory (see
+    module docstring), this returns the curated seed list regardless of
+    the archived HTML content. Callers that want to diff the archive
+    against future schema changes should inspect the HTML separately —
+    what this function guarantees is parity with the scheduled scrape.
+    """
+    return _parse_live_html(
+        html,
+        league_name or "NWSL Academy",
+        source_url,
+    )
+
+
 @register(r"nwslsoccer\.com/nwsl-academy")
 def scrape_nwsl_academy(url: str, league_name: str) -> List[Dict]:
     """
@@ -68,14 +124,6 @@ def scrape_nwsl_academy(url: str, league_name: str) -> List[Dict]:
     maintained manually in NWSL_ACADEMY_CLUBS.
     """
     logger.info("[NWSL Academy] Using curated seed list (%d clubs)", len(NWSL_ACADEMY_CLUBS))
-    records: List[Dict] = []
-    for club_name, city, state in NWSL_ACADEMY_CLUBS:
-        records.append({
-            "club_name": club_name,
-            "league_name": league_name,
-            "city": city,
-            "state": state,
-            "source_url": _SOURCE_URL,
-        })
+    records = _parse_live_html(html="", league_name=league_name, source_url=_SOURCE_URL)
     logger.info("[NWSL Academy] Returning %d records", len(records))
     return records
