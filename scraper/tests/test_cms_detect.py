@@ -113,6 +113,33 @@ def test_wix_via_html_signature():
     assert detect_cms(FakeResponse(text=body)) == "wix"
 
 
+def test_360player_via_cdn_script_signature():
+    body = (
+        "<html><head>"
+        '<script src="https://cdn.360player.com/widget.js"></script>'
+        "</head></html>"
+    )
+    assert detect_cms(FakeResponse(text=body)) == "360player"
+
+
+def test_360player_via_app_subdomain_link():
+    body = (
+        "<html><body>"
+        '<a href="https://app.360player.com/club/acme">Acme on 360Player</a>'
+        "</body></html>"
+    )
+    assert detect_cms(FakeResponse(text=body)) == "360player"
+
+
+def test_360player_via_canonical_url():
+    body = (
+        "<html><head>"
+        '<link rel="canonical" href="https://360player.com/acme-fc">'
+        "</head></html>"
+    )
+    assert detect_cms(FakeResponse(text=body)) == "360player"
+
+
 # --------------------------------------------------------------------------- negative + safety
 
 
