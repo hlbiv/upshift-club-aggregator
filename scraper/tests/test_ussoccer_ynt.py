@@ -26,10 +26,17 @@ from extractors.ussoccer_ynt import (  # noqa: E402
 FIXTURE = (
     Path(__file__).parent / "fixtures" / "ussoccer_ynt_sample.html"
 )
+INLINE_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "ussoccer_ynt_inline_sample.html"
+)
 
 
 def _load() -> str:
     return FIXTURE.read_text(encoding="utf-8")
+
+
+def _load_inline() -> str:
+    return INLINE_FIXTURE.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +79,41 @@ def test_parse_inline_line_em_dash():
     assert row["position"] == "GK"
     assert row["club_name_raw"] == "FC Dallas"
     assert row["graduation_year"] == 2027
+
+
+def test_parse_inline_line_pipe_separator():
+    row = _parse_inline_line("Caleb Washington | GK | Philadelphia Union Academy | 2028")
+    assert row is not None
+    assert row["player_name"] == "Caleb Washington"
+    assert row["position"] == "GK"
+    assert row["club_name_raw"] == "Philadelphia Union Academy"
+    assert row["graduation_year"] == 2028
+
+
+def test_parse_inline_line_parenthesized_with_hometown():
+    # The format used on ~2/3 of US Soccer press releases (GitHub #84).
+    row = _parse_inline_line("Jane Doe (Los Angeles FC; Los Angeles, CA)")
+    assert row is not None
+    assert row["player_name"] == "Jane Doe"
+    assert row["club_name_raw"] == "Los Angeles FC"
+
+
+def test_parse_inline_line_parenthesized_no_hometown():
+    # "Name (Club)" — hometown omitted, parser must still emit the row.
+    row = _parse_inline_line("Giana Park (Bay FC)")
+    assert row is not None
+    assert row["player_name"] == "Giana Park"
+    assert row["club_name_raw"] == "Bay FC"
+
+
+def test_parse_inline_line_parenthesized_multi_club_takes_first():
+    # "Name (Club1 / Club2; Hometown)" — take the first club.
+    row = _parse_inline_line(
+        "Dana O'Connell (North Carolina Courage / Carolina Ascent; Raleigh, NC)"
+    )
+    assert row is not None
+    assert row["player_name"] == "Dana O'Connell"
+    assert row["club_name_raw"] == "North Carolina Courage"
 
 
 def test_parse_inline_line_rejects_non_roster():
@@ -143,6 +185,46 @@ def test_parse_article_html_no_age_or_gender_returns_empty():
         "<body><article><h1>A press release</h1></article></body></html>"
     )
     assert parse_article_html(html, source_url="https://x.example") == []
+
+
+def test_parse_article_html_inline_parenthesized_fixture():
+    """The inline parenthesized "Name (Club; Hometown)" layout — used on
+    ~2/3 of US Soccer press releases — must yield one row per <li>."""
+    rows = parse_article_html(
+        _load_inline(),
+        source_url=(
+            "https://www.ussoccer.com/stories/2025/12/"
+            "u19-gnt-announces-january-2026-roster"
+        ),
+    )
+
+    assert len(rows) >= 20, f"expected ≥20 players, got {len(rows)}"
+
+    for r in rows:
+        assert r["age_group"] == "U-19"
+        assert r["gender"] == "girls"
+        assert r["player_name"]
+        assert r["club_name_raw"], f"row missing club_name_raw: {r}"
+
+    # Camp metadata — pulled from "January 10-17, 2026".
+    start_dates = {r["camp_start_date"] for r in rows}
+    end_dates = {r["camp_end_date"] for r in rows}
+    assert date(2026, 1, 10) in start_dates
+    assert date(2026, 1, 17) in end_dates
+
+    by_name = {r["player_name"]: r for r in rows}
+
+    # Canonical parenthesized form with hometown.
+    assert "Avery Thompson" in by_name
+    assert by_name["Avery Thompson"]["club_name_raw"] == "Los Angeles FC"
+
+    # "Name (Club)" — hometown omitted.
+    assert "Giana Park" in by_name
+    assert by_name["Giana Park"]["club_name_raw"] == "Bay FC"
+
+    # Multi-club "Club1 / Club2" — first club wins.
+    assert "Dana O'Connell" in by_name
+    assert by_name["Dana O'Connell"]["club_name_raw"] == "North Carolina Courage"
 
 
 def test_parse_article_html_respects_hints():

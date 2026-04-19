@@ -85,6 +85,19 @@ _DATE_RANGE_RE = re.compile(
 # Separators: em-dash, en-dash, hyphen, pipe, comma.
 _INLINE_SEP = re.compile(r"\s*[–—|,-]\s*")
 
+# Parenthesized inline roster format used on ~2/3 of US Soccer press
+# releases — see GitHub issue #84. Examples:
+#   "Jane Doe (Los Angeles FC; Los Angeles, CA)"
+#   "Jane Doe (Los Angeles FC / Galaxy SC; Los Angeles, CA)"  → first club wins
+#   "Jane Doe (Los Angeles FC)"                                → hometown None
+# The name portion allows two+ capitalized tokens (middle names, hyphens,
+# apostrophes, periods). We split multi-club strings on `/` or `&` and
+# keep the first entry as the club name; the rest is dropped.
+_INLINE_PAREN_PAT = re.compile(
+    r"^(?P<name>[A-Z][A-Za-z.'’\-]+(?:\s+[A-Z][A-Za-z.'’\-]+)+)"
+    r"\s*\((?P<club>[^;)]+?)(?:\s*;\s*(?P<hometown>[^)]+))?\)"
+)
+
 # Position abbrevs commonly used in YNT rosters.
 _POSITION_ABBR = {
     "GK", "D", "DF", "DEF", "CB", "FB", "LB", "RB", "LWB", "RWB",
@@ -433,6 +446,24 @@ def _parse_inline_line(line: str) -> Optional[Dict[str, Any]]:
     """
     if len(line) < 5 or len(line) > 240:
         return None
+
+    # Fast path — parenthesized "Name (Club; Hometown)" used on ~2/3
+    # of US Soccer press releases (GitHub #84). Try this first because
+    # it has a more specific shape than the generic separator split and
+    # otherwise the name-prefix regex below would swallow a match and
+    # then fail to find a ``[–—|,-]`` separator.
+    m_paren = _INLINE_PAREN_PAT.match(line)
+    if m_paren:
+        club_raw = m_paren.group("club").strip()
+        # Multi-club entries like "LA Galaxy / Real SoCal" — take first.
+        club = re.split(r"\s*[/&]\s*", club_raw, maxsplit=1)[0].strip()
+        row: Dict[str, Any] = {
+            "player_name": m_paren.group("name").strip(),
+        }
+        if club:
+            row["club_name_raw"] = club
+        return row
+
     # Must look like "Firstname Lastname" at start.
     m_name = re.match(
         r"([A-Z][A-Za-z'’\-]+(?:\s+[A-Z][A-Za-z'’\-]+){1,3})\b",
