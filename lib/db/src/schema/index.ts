@@ -248,6 +248,7 @@ export * from "./colleges";
 export * from "./coaches";
 export * from "./commitments";
 export * from "./events";
+export * from "./hs";
 export * from "./matches";
 export * from "./rosters-and-tryouts";
 export * from "./scrape-health";

@@ -357,6 +357,31 @@ assertTable(schema.rawHtmlArchive, "raw_html_archive", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain: HS rosters (MaxPreps) — see lib/db/src/schema/hs.ts
+// ---------------------------------------------------------------------------
+
+assertTable(schema.hsRosters, "hs_rosters", {
+  cols: [
+    "school_name_raw",
+    "school_state",
+    "school_city",
+    "team_level",
+    "season",
+    "gender",
+    "player_name",
+    "jersey_number",
+    "graduation_year",
+    "position",
+    "height",
+    "source_url",
+    "first_seen_at",
+    "last_seen_at",
+  ],
+  uniques: ["hs_rosters_natural_key_uq"],
+  indexes: ["hs_rosters_state_idx", "hs_rosters_grad_year_idx"],
+});
+
+// ---------------------------------------------------------------------------
 // Domain 10 — Player iD selections (US Club iD program)
 // ---------------------------------------------------------------------------
 
