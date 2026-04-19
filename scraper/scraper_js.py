@@ -7,15 +7,20 @@ Falls back to the static scraper automatically when:
   - The browser crashes or times out on launch
   - Any other unrecoverable browser error occurs
 
-TODO(raw-html-archive): wire ``utils.html_archive.archive_raw_html``
-after a successful ``page.content()`` capture. The static scraper
-already archives every 2xx fetch (see ``scraper_static.py``). The
-Playwright path is deliberately deferred to a follow-up PR because
-(a) rendered HTML can be multi-MB and naive capture doubles the
-per-page memory footprint, and (b) we want to decide whether to
-archive the pre-JS source, the post-render DOM, or both before
-committing to a shape. Gating follows the same ``ARCHIVE_RAW_HTML_ENABLED``
-env flag as the static hook.
+Raw HTML archival
+-----------------
+After ``page.content()`` captures the post-render DOM, the HTML is
+handed to :func:`utils.html_archive.archive_raw_html` (same
+``ARCHIVE_RAW_HTML_ENABLED`` env gate as the static path). We archive
+the *post-render* DOM rather than the pre-JS source because every
+extractor parses the hydrated DOM — archival exists so we can re-parse
+later, and the wire source isn't what we re-parse. Capturing the
+pre-JS source is a separate follow-up if we ever need it.
+
+Memory: the HTML reference is held on a single local variable and
+dropped as soon as the extractor returns, so archival does not double
+the per-page memory footprint. The archive call is wrapped in a
+try/except so a bucket outage never breaks a scrape.
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout, Error as PlaywrightError
 
 from config import PLAYWRIGHT_TIMEOUT, PLAYWRIGHT_WAIT_FOR
+from utils.html_archive import archive_raw_html
 from utils.http import pick_proxy_server
 
 logger = logging.getLogger(__name__)
@@ -150,7 +156,17 @@ def scrape_js(url: str, league_name: str) -> List[Dict]:
                 pass
 
             html = page.content()
+            final_url = page.url or url
             browser.close()
+
+        # Archive the post-render DOM before extractor dispatch. If
+        # extraction later raises, we still have the snapshot on disk
+        # for a re-parse. The archive path is strictly defensive —
+        # any failure is logged and swallowed so scraping proceeds.
+        try:
+            archive_raw_html(final_url, html, run_id=None)
+        except Exception as exc:  # pragma: no cover — strictly defensive
+            logger.warning("raw-html archival skipped (%s): %s", final_url, exc)
 
         records = _parse_rendered_html(html, url, league_name)
         logger.info("JS extraction yielded %d clubs from %s", len(records), url)
