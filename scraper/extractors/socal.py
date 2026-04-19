@@ -15,12 +15,34 @@ import os
 from typing import List, Dict
 
 from extractors.registry import register
-from extractors.gotsport import scrape_gotsport_event, scrape_gotsport_teams
+from extractors.gotsport import (
+    parse_gotsport_event_html,
+    scrape_gotsport_event,
+    scrape_gotsport_teams,
+)
 
 logger = logging.getLogger(__name__)
 
 _GOTSPORT_EVENT_ID = 43086
 _STATE = "CA"
+
+
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """
+    Pure-function parser for the SOCAL GotSport event-clubs page.
+
+    SOCAL has a single GotSport event (``_GOTSPORT_EVENT_ID = 43086``), so
+    ``parse_html`` is a straight delegation to ``parse_gotsport_event_html``.
+    The CA ``state`` stamp lives in the live ``scrape_socal`` orchestrator;
+    replay flows pass state via caller context if needed.
+    """
+    return parse_gotsport_event_html(
+        html, source_url, league_name=league_name, state=_STATE,
+    )
 
 
 @register(r"socalsoccerleague\.org")

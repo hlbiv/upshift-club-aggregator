@@ -37,9 +37,27 @@ from typing import List, Dict, Set
 import requests
 
 from extractors.registry import register
-from extractors.gotsport import scrape_gotsport_event
+from extractors.gotsport import parse_gotsport_event_html, scrape_gotsport_event
 
 logger = logging.getLogger(__name__)
+
+
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """
+    Pure-function parser for one DPL-hosted GotSport event-clubs page.
+
+    DPL orchestrates many GotSport events (see ``_KNOWN_EVENT_IDS``); the
+    live ``scrape_dpl`` entry point loops over them and dedups. For replay
+    (``--source replay-html``) we receive a single pre-fetched page at a
+    time, so ``parse_html`` delegates straight to
+    ``parse_gotsport_event_html`` and lets cross-page dedup / club-name
+    filtering stay in the orchestrator.
+    """
+    return parse_gotsport_event_html(html, source_url, league_name=league_name)
 
 # Strings that indicate a GotSport row is a league/org label rather than a club
 _NOT_A_CLUB: Set[str] = {

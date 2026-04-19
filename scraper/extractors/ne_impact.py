@@ -28,9 +28,26 @@ import os
 from typing import List, Dict
 
 from extractors.registry import register
-from extractors.gotsport import scrape_gotsport_event
+from extractors.gotsport import parse_gotsport_event_html, scrape_gotsport_event
 
 logger = logging.getLogger(__name__)
+
+
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """
+    Pure-function parser for a NE Impact NPL GotSport event-clubs page.
+
+    The live ``scrape_ne_impact`` entry point falls back to a curated seed
+    list when the (now-404ed) GotSport event returns empty; that fallback
+    is orchestration-level and stays in ``scrape_ne_impact``. ``parse_html``
+    is strictly the pure parse step over a pre-fetched GotSport page, used
+    by the replay flow.
+    """
+    return parse_gotsport_event_html(html, source_url, league_name=league_name)
 
 # Old event ID kept for reference; returns 404 as of April 2026.
 _GOTSPORT_EVENTS = [21393]

@@ -40,10 +40,34 @@ from rapidfuzz import fuzz
 
 from config import FUZZY_THRESHOLD
 from extractors.registry import register
-from extractors.gotsport import scrape_gotsport_event, scrape_gotsport_teams
+from extractors.gotsport import (
+    parse_gotsport_event_html,
+    scrape_gotsport_event,
+    scrape_gotsport_teams,
+)
 from normalizer import _canonical
 
 logger = logging.getLogger(__name__)
+
+
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """
+    Pure-function parser for one NPL sub-league GotSport event-clubs page.
+
+    Every extractor in this module (``scrape_gla``, ``scrape_nisl``,
+    ``scrape_fcl``, ``scrape_red_river``, ``scrape_minnesota_npl``,
+    ``scrape_sapl``, ``scrape_pnw_npl``, and the Task #21 additions)
+    orchestrates one or more GotSport events via ``_multi_event_scrape`` —
+    canonical-form fuzzy dedup lives in that orchestrator. For replay we
+    receive a single pre-fetched page at a time, so ``parse_html``
+    delegates directly to ``parse_gotsport_event_html``; cross-event
+    fuzzy-dedup stays in ``_multi_event_scrape``.
+    """
+    return parse_gotsport_event_html(html, source_url, league_name=league_name)
 
 
 def _multi_event_scrape(events: list, league_name: str, state: str = "") -> List[Dict]:
