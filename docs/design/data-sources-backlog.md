@@ -24,43 +24,58 @@ one place.
 
 ## Backlog (ranked)
 
+_Ranks updated 2026-04-19 after spike findings on NCAA and USSF sources — see "Spike outcomes" section below._
+
 | # | Source | Recommendation | (value, public) | Schema impact |
 |---|---|---|---|---|
-| 1 | NCAA Transfer Portal | Requires spike | (5, 1) | New `transfer_portal_entries` table |
+| 1 | NCAA Transfer Portal (via TDS tracker) | **Build now — same shape as TDS commitments** | (5, 4) | New `transfer_portal_entries` table |
 | 2 | Hudl (fan profiles) | Queue — gated on Phase 0 egress spike | (5, 2) | New `player_profiles` table + linker to existing player rows |
-| 3 | US Soccer coaching license registry | Requires spike | (4, 2) | New `coach_licenses` table + FK to `coaches` |
-| 4 | HS athletic associations (CIF/UIL/FHSAA) | Build now — pilot 3 states | (4, 3) | Reuse `hs_rosters` (add `sanctioning_body` column) |
+| 3 | HS athletic associations (CIF/UIL/FHSAA) | Build now — pilot 3 states | (4, 3) | Reuse `hs_rosters` (add `sanctioning_body` column) |
+| 4 | US Soccer coaching license registry | Queue — needs Playwright search-shape spike | (4, 2) | New `coach_licenses` table + FK to `coaches` |
 | 5 | USL W League | Build now | (3, 4) | Extend `event_teams` / add `pro_rosters` table |
 | 6 | NPSL | Queue | (3, 3) | Extend same `pro_rosters` table |
 | 7 | UPSL | Queue (low priority) | (2, 3) | Extend same `pro_rosters` table |
 | 8 | US Soccer referee assignments | Skip | (1, 1) | — |
 
+## Spike outcomes (2026-04-19)
+
+Two entries in this doc were originally tagged `requires spike`. Both spikes ran on 2026-04-19 (web-search + web-fetch, no code). Findings:
+
+### NCAA Transfer Portal — **PROMOTED from (5, 1) spike → (5, 4) build now**
+
+- TopDrawerSoccer publishes free, public DI transfer trackers for both men's and women's soccer at `topdrawersoccer.com/college-soccer-articles/2026-mens-division-i-transfer-tracker_aid55358` and `...2026-womens-division-i-transfer-tracker_aid55352`. ~350–400 rows per tracker, table layout: Player | Position | Outgoing College | Incoming College.
+- **No paywall.** No anti-bot measures visible. Same domain we already scrape via `scraper/extractors/topdrawer_commitments.py`.
+- Mid-year vs. summer windows: TDS publishes two trackers per season. The summer window (post-May-1) is a separate URL; we'd pick both up.
+- Additional aggregators noted but NOT needed for MVP: FieldLevel, Portal Report, New England Soccer Journal (mostly women's). TDS is sufficient to validate schema and cover DI.
+- **What changes:** recommendation flips from `requires spike` to `build now` with the same extractor pattern as TDS commitments ([#74](https://github.com/hlbiv/upshift-data/pull/74)). Ranking `public` axis goes 1 → 4 (plain HTML, no paywall, same domain we already know).
+
+### US Soccer coaching license registry — **confirmed exists, queued behind Playwright spike**
+
+- Directory confirmed live at `https://learning.ussoccer.com/directory` (April 2026).
+- Implementation note: the page is a **JavaScript SPA**. A plain HTTP fetch returns a "browser too old" shim. The real directory renders client-side and will require Playwright (already wired into the scraper via `scraper/scraper_js.py`).
+- **What's still unknown (needs a short Playwright probe, not a full extractor):**
+  - Search fields: can you query by name, by state, by license tier? Is there an "all coaches" index or only per-search results?
+  - Pagination: page-size limit, total count disclosure.
+  - Rate limits: does the underlying API rate-limit per-IP at scale?
+  - Response shape: JSON API the SPA calls, or server-rendered HTML fragments?
+- **What changes:** recommendation flips from `requires spike` to `queue — needs Playwright spike`. The spike is half a day of Playwright work, not a blocker on product decisions.
+
 ## Briefs
 
-### 1. NCAA Transfer Portal — `(5, 1)`, requires spike
+### 1. NCAA Transfer Portal (via TDS tracker) — `(5, 4)`, build now
 
-- **URL surface:** The official NCAA Transfer Portal (`portal.ncaa.org`) is
-  gated to compliance officers with institutional SSO. Third-party aggregators
-  (On3, 247Sports, Rivals) republish portal activity but typically paywall the
-  feed.
-- **Auth wall:** fully gated on the official source. Aggregators: mixed —
-  some entries public on news/blog pages, full feed behind paid sub.
-- **Anti-bot:** aggregator sites run Cloudflare + standard bot detection.
-- **Data fields available (hypothetical, via aggregator):** player name,
-  previous school, intended destination, position, graduation year, entry
-  date.
-- **Extractor complexity:** high. Either negotiate aggregator API access or
-  scrape news pages from multiple aggregators to stitch signal.
-- **Schema impact:** new `transfer_portal_entries` table — `{id, player_name,
-  previous_school, new_school, position, entry_date, exit_date, status,
-  source_aggregator, source_url}`. FK to `colleges.id` on both ends.
-- **Downstream value:** **flagship for the recruiting graph.** Transfer
-  movement is half of NCAA roster churn today. Unblocks "which D1 programs
-  reload via transfer vs. HS recruits" analytics for Upshift Player.
-- **Recommendation:** **requires spike** — does ANY public soccer-specific
-  feed exist that we can ingest legally without a paid subscription? If no,
-  demote to `skip` and flag as a future partnership ask.
-- **Ranking:** `value=5` (core recruiting signal), `public=1` (fully gated).
+_Spike resolved 2026-04-19: TDS publishes free public trackers. Original (5, 1) "fully gated" ranking was wrong._
+
+- **URL surface:** `topdrawersoccer.com/college-soccer-articles/{season}-{gender}-division-i-transfer-tracker_aid<id>`. Example IDs as of April 2026: men's 2026 = `aid55358`, women's 2026 = `aid55352`. Two trackers per season (mid-year + summer), so four URLs per year total.
+- **Auth wall:** none. Public HTML, no paywall on the tracker articles themselves. TDS Premium badges exist on adjacent content but not on the trackers.
+- **Anti-bot:** none observed. Same anti-bot posture as TDS commitments, which we already scrape successfully.
+- **Data fields available:** Player | Position (F/M/D/GK) | Outgoing College | Incoming College. ~350–400 entries per tracker.
+- **Extractor complexity:** **low.** Near-clone of `scraper/extractors/topdrawer_commitments.py` — same domain, same HTML table pattern, likely the same parser with different header aliases.
+- **Schema impact:** new `transfer_portal_entries` table — `{id, player_name, position, previous_school_raw, previous_college_id, new_school_raw, new_college_id, season, tracker_window (enum: mid-year / summer), source_url, first_seen_at, last_seen_at}`. Two FKs to `colleges.id`, both nullable at scrape time and backfilled by the college linker.
+- **Downstream value:** **flagship for the recruiting graph.** Transfer movement is roughly half of NCAA roster churn today. Unblocks "which D1 programs reload via transfer vs. HS recruits" analytics for Upshift Player.
+- **Recommendation:** **build now.** Near-trivial extractor, high value, zero legal ambiguity. No paid subscription needed. Could ship alongside or shortly after the HS athletic-assoc pilot.
+- **Follow-up (not blocker):** additional aggregators to consider adding if/when TDS coverage shows gaps — FieldLevel (`fieldlevel.com/app/portal-announcements?sportEnum=soccerwomen`), Portal Report (`theportalreport.com`), New England Soccer Journal. Can ship TDS alone for MVP.
+- **Ranking:** `value=5` (core recruiting signal), `public=4` (plain HTML, no auth, known-friendly domain).
 
 ### 2. Hudl (fan.hudl.com player profiles) — `(5, 2)`, queue
 
@@ -91,34 +106,21 @@ one place.
 - **Ranking:** `value=5` (identity backbone), `public=2` (public but
   egress-IP-sensitive + probable TLS fingerprinting).
 
-### 3. US Soccer coaching license registry — `(4, 2)`, requires spike
+### 4. US Soccer coaching license registry — `(4, 2)`, queue (needs Playwright spike)
 
-- **URL surface:** Historically USSF had a public "Find a Coach" lookup at
-  `ussoccer.com/coach-directory` or similar. As of April 2026, confirm it
-  still exists and returns D/C/B/A/Pro license-tier records.
-- **Auth wall:** typically public lookup form + results page. May have rate
-  limits or search-only-returns-first-N behavior.
-- **Anti-bot:** unlikely on the directory itself; USSF hosts on a standard
-  CMS.
-- **Data fields available:** coach name, license tier, city/state, club
-  affiliation (optionally), license issue date.
-- **Extractor complexity:** medium — need a pagination / enumeration
-  strategy since there's no single "all coaches" endpoint. State-by-state or
-  name-prefix sweeps.
-- **Schema impact:** new `coach_licenses` table — `{id, coach_id, license_tier
-  (enum: D/C/B/A/Pro), state, issue_date, source_url, first_seen_at,
-  last_seen_at}`. FK `coach_id` → `coaches.id` via existing coach linker.
-- **Downstream value:** hardens the coach graph. Tier-1 coaches (A/Pro) are
-  career-stage markers, useful for both club-quality analytics and coach
-  career-path tracking.
-- **Recommendation:** **requires spike** — confirm USSF still publishes the
-  lookup, note the pagination/search strategy, estimate extraction cost. If
-  lookup was quietly retired, demote to `queue` pending a partnership
-  conversation with USSF.
-- **Ranking:** `value=4` (tier-1 coach signal), `public=2` (public but may
-  require complex enumeration).
+_Spike resolved 2026-04-19: directory confirmed live, but it's a JS SPA. Extractor work needs a preliminary Playwright probe._
 
-### 4. HS athletic associations — `(4, 3)`, build now (pilot 3 states)
+- **URL surface:** `https://learning.ussoccer.com/directory` — confirmed present and returning content as of 2026-04-19.
+- **Auth wall:** public-facing (no login required to reach the directory page), but the page is a **JavaScript single-page app**. Plain-HTTP fetches return a "Your browser version is too old" compatibility shim. Real content renders client-side. Must use Playwright.
+- **Anti-bot:** unknown. Standard USSF CMS so probably minimal at low volume, but worth verifying in the Playwright probe — specifically whether the underlying API enforces per-IP rate limits.
+- **Data fields available (expected, confirm in Playwright probe):** coach name, license tier (grassroots → D → C → B → A → Pro), city/state, club affiliation when filled, license issue date or expiration.
+- **Extractor complexity:** **medium** — Playwright required. Pagination/enumeration strategy still unknown. Probable approaches: state-by-state sweeps or name-prefix enumeration. If the SPA calls an underlying JSON API, prefer calling that API directly through Playwright's network interception rather than scraping the rendered DOM.
+- **Schema impact:** new `coach_licenses` table — `{id, coach_id, license_tier (enum: grassroots-online / grassroots-in-person / D / C / B / A / Pro), state, issue_date, expires_at, source_url, first_seen_at, last_seen_at}`. FK `coach_id` → `coaches.id` via existing coach linker.
+- **Downstream value:** hardens the coach graph. Tier-1 coaches (A/Pro) are career-stage markers, useful for club-quality analytics and coach career-path tracking.
+- **Recommendation:** **queue — needs Playwright probe before building the extractor.** Half a day of Playwright work to answer: (1) search fields, (2) pagination shape, (3) response format (JSON API vs DOM fragments), (4) per-IP rate limit behavior. Once those are known, the extractor itself is medium complexity — not a product blocker.
+- **Ranking:** `value=4` (tier-1 coach signal), `public=2` (lookup is public but requires JS rendering + unresolved pagination cost).
+
+### 3. HS athletic associations — `(4, 3)`, build now (pilot 3 states)
 
 - **URL surface:** state-level orgs. Flagship candidates: CIF California
   (`cifstate.org`), UIL Texas (`uiltexas.org`), FHSAA Florida (`fhsaa.com`).
@@ -242,33 +244,23 @@ easy-but-low-value source (e.g., `value=2, public=5` → 12) out-rank a
 hard-but-high-value one (`value=4, public=1` → 6). That's the opposite of
 what we want.
 
-**How to use this list:** pull off the top. NCAA Transfer Portal + Hudl are
-`value=5` but gated on spikes — run those spikes first, then decide whether
-to promote or demote. In the meantime, HS athletic associations (row 4) and
-USL W League (row 5) are immediately actionable and should be the next real
-extractor PRs.
+**How to use this list:** pull off the top. Rows 1 (NCAA Transfer Portal), 3 (HS athletic assocs), and 5 (USL W League) are all immediately buildable. Row 2 (Hudl) is gated on the Phase 0 egress spike. Row 4 (USSF license registry) is confirmed live but needs a Playwright probe before the extractor is worth writing.
 
-## Next actions (recommended)
+## Next actions (recommended, updated 2026-04-19)
 
-1. Run the **NCAA Transfer Portal spike** (row 1) — 1 day of investigation to
-   determine if any public soccer-specific feed exists.
-2. Run the **USSF coaching license registry spike** (row 3) — half a day to
-   confirm the lookup still exists and characterize pagination strategy.
-3. After Hudl Phase 0 egress spike completes (per
-   [docs/design/hudl-phase-0-egress.md](hudl-phase-0-egress.md)), unblock row 2.
-4. In parallel with the spikes, scope **HS athletic assocs pilot (row 4)** as
-   the next extractor PR. CIF, UIL, FHSAA in one wave.
+1. **Build NCAA Transfer Portal extractor (row 1)** — same shape as TDS commitments ([#74](https://github.com/hlbiv/upshift-data/pull/74)). New `transfer_portal_entries` schema + 4 seed URLs (men's + women's × mid-year + summer). Small extractor PR.
+2. **Build HS athletic assocs pilot (row 3)** — CIF / UIL / FHSAA in one wave. Extend `hs_rosters` with `sanctioning_body` column.
+3. **Build USL W League extractor (row 5)** — new `pro_rosters` table shape, ~80 team pages.
+4. **Run USSF license Playwright probe (row 4)** — half-day spike. Characterize search fields, pagination, rate limits, response format (JSON API vs DOM fragments). Outputs: short probe-report doc; then scope the real extractor.
+5. **Wait on Hudl (row 2)** — the Phase 0 egress-IP spike at [docs/design/hudl-phase-0-egress.md](hudl-phase-0-egress.md) must complete first.
 
-## Requires-spike summary
+Rows 6 (NPSL), 7 (UPSL), and 8 (USSF referee assignments) stay queued / skipped per their individual briefs.
 
-Two entries flagged for user decision before extractor work starts:
+## Spike summary (post-2026-04-19)
 
-- **NCAA Transfer Portal (row 1):** is there any public soccer-specific feed
-  we can ingest legally without a paid aggregator subscription?
-- **US Soccer coaching license registry (row 3):** does USSF still expose a
-  public license-lookup endpoint as of April 2026, and what's the URL +
-  result-set limit?
+Original doc flagged 2 entries as `requires spike`. Outcomes:
 
-Both spikes are lightweight — a few web fetches + one hour of investigation —
-but neither should be baked into the agent brief for the downstream extractor
-PR. Answer them first.
+- ✅ **NCAA Transfer Portal** — resolved. Public TDS trackers confirmed. Promoted from (5, 1) spike → (5, 4) build now. Ships with same extractor pattern as TDS commitments.
+- 🟡 **US Soccer coaching license registry** — partially resolved. Directory at `learning.ussoccer.com/directory` confirmed present. Implementation is a JS SPA, so extractor requires Playwright. A short Playwright probe (row 4 in Next Actions above) is now the only open question — not a product-decision blocker.
+
+Neither question remains as a blocker on user decisions. Both are now engineering scoping tasks.
