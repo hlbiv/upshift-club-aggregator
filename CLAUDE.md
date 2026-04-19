@@ -8,7 +8,7 @@ Persistent context for Claude Code. Read at the start of every session.
 
 Upshift Data is the reference-data backend for Upshift soccer club/coach intelligence:
 
-- **Python scraper toolkit** (`scraper/`) — 150+ extractors across 127 league directories
+- **Python scraper toolkit** (`scraper/`) — ~52 Python modules in `scraper/extractors/` (~30–35 active league extractors plus utilities); covers a directory of 127 leagues tracked in `leagues_master`
 - **PostgreSQL graph** (`lib/db/`) — canonical clubs, coaches master, events, matches, rosters, tryouts, scrape health
 - **REST API** (`artifacts/api-server/`) — Express 5 on port 8080, consumed by `upshift-player-platform`
 
