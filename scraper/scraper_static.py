@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 
 from config import MAX_RETRIES, RETRY_BASE_DELAY_SECONDS
 from utils.http import get as http_get
+from utils.html_archive import archive_raw_html
 from utils.retry import retry_with_backoff, TransientError
 
 logger = logging.getLogger(__name__)
@@ -212,6 +213,16 @@ def scrape_static(url: str, league_name: str) -> List[Dict]:
     except requests.RequestException as exc:
         logger.error("Failed to fetch %s: %s", url, exc)
         raise
+
+    # Archive the raw HTML. Gated on ARCHIVE_RAW_HTML_ENABLED env var —
+    # disabled by default, so this is a cheap no-op in local dev / CI.
+    # A run_id isn't plumbed down to this layer (ScrapeRunLogger lives
+    # in run.py's per-league loop), so pass None; the archive row is
+    # still useful even without a run context.
+    try:
+        archive_raw_html(response.url, response.text, run_id=None)
+    except Exception as exc:  # pragma: no cover — strictly defensive
+        logger.warning("raw-html archival skipped (%s): %s", url, exc)
 
     soup = BeautifulSoup(response.text, "lxml")
 

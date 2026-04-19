@@ -343,6 +343,19 @@ assertTable(schema.scrapeHealth, "scrape_health", {
   ],
 });
 
+assertTable(schema.rawHtmlArchive, "raw_html_archive", {
+  cols: [
+    "run_id",
+    "source_url",
+    "sha256",
+    "bucket_path",
+    "content_bytes",
+    "archived_at",
+  ],
+  uniques: ["raw_html_archive_sha256_uq"],
+  indexes: ["raw_html_archive_run_id_idx"],
+});
+
 // ---------------------------------------------------------------------------
 // Domain 10 — Player iD selections (US Club iD program)
 // ---------------------------------------------------------------------------
