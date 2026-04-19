@@ -73,8 +73,20 @@ assertTable(schema.canonicalClubs, "canonical_clubs", {
     "website_last_checked_at",
     "last_scraped_at",
     "scrape_confidence",
+    "manually_merged",
   ],
   checks: ["canonical_clubs_website_status_enum"],
+});
+
+assertTable(schema.clubAliases, "club_aliases", {
+  cols: [
+    "club_id",
+    "alias_name",
+    "alias_slug",
+    "merged_from_canonical_id",
+    "merged_at",
+  ],
+  uniques: ["club_aliases_club_alias_uq"],
 });
 
 assertTable(schema.coachDiscoveries, "coach_discoveries", {
