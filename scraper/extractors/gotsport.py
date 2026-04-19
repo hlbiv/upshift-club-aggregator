@@ -68,19 +68,30 @@ def _get_with_retry(url: str, timeout: int = 20) -> requests.Response:
     )
 
 
-def _get_clubs_with_ids(event_id: int | str) -> List[Tuple[str, str]]:
-    """
-    Fetch the clubs list page and return (club_name, club_id) pairs.
-    Filters ZZ- placeholder rows.
-    """
-    url = f"{_BASE}/org_event/events/{event_id}/clubs"
-    try:
-        r = _get_with_retry(url)
-    except (TransientError, requests.RequestException) as exc:
-        logger.error("GotSport clubs fetch failed (event_id=%s): %s", event_id, exc)
-        return []
+def _event_clubs_url(event_id: int | str) -> str:
+    return f"{_BASE}/org_event/events/{event_id}/clubs"
 
-    soup = BeautifulSoup(r.text, "lxml")
+
+def _fetch_gotsport_event(url: str) -> str:
+    """
+    Fetch the raw HTML of a GotSport event clubs page.
+
+    Pure HTTP — no parsing. Returns the response body as text. Uses
+    ``_get_with_retry`` so transient 5xx / connection errors are retried.
+    Callers that need replay/fixture testing can skip this helper and
+    feed HTML directly into ``parse_gotsport_event_html``.
+    """
+    r = _get_with_retry(url)
+    return r.text
+
+
+def _parse_clubs_with_ids_from_html(html: str) -> List[Tuple[str, str]]:
+    """
+    Parse the (club_name, club_id) pairs out of a GotSport clubs-page body.
+
+    Filters ZZ- placeholder rows. Pure function — no HTTP, no logging.
+    """
+    soup = BeautifulSoup(html, "lxml")
     clubs: List[Tuple[str, str]] = []
 
     for row in soup.find_all("tr"):
@@ -102,6 +113,78 @@ def _get_clubs_with_ids(event_id: int | str) -> List[Tuple[str, str]]:
         clubs.append((club_name, club_id))
 
     return clubs
+
+
+def parse_gotsport_event_html(
+    html: str,
+    url: str,
+    league_name: str = "",
+    state: str = "",
+    multi_state: bool = False,
+) -> List[Dict]:
+    """
+    Turn a GotSport event-clubs HTML page into the list of club dicts that
+    ``scrape_gotsport_event`` returns.
+
+    Pure function — no HTTP. Callers feeding fixture HTML into this for
+    replay coverage should pass the canonical ``url`` of the source page so
+    every record's ``source_url`` matches live output.
+
+    Args:
+        html:        Raw HTML body of ``/org_event/events/{id}/clubs``.
+        url:         Canonical source URL, stamped onto each record's
+                     ``source_url``.
+        league_name: League name to tag on each record.
+        state:       State name/code to inject when the event is single-state.
+                     Ignored when ``multi_state=True``.
+        multi_state: When True, the event spans multiple states. Club state
+                     is left empty and each record is marked
+                     ``_state_derived=True`` so downstream enrichment
+                     (geocoding / manual mapping) can fill it in.
+
+    Returns:
+        List of club dicts ready for the normalizer.
+    """
+    clubs = _parse_clubs_with_ids_from_html(html)
+    if not clubs:
+        return []
+
+    effective_state = "" if multi_state else state
+
+    records: List[Dict] = []
+    for club_name, _club_id in clubs:
+        rec = {
+            "club_name": club_name,
+            "league_name": league_name,
+            "city": "",
+            "state": effective_state,
+            "source_url": url,
+        }
+        if multi_state:
+            rec["_state_derived"] = True
+        records.append(rec)
+
+    return records
+
+
+def _get_clubs_with_ids(event_id: int | str) -> List[Tuple[str, str]]:
+    """
+    Fetch the clubs list page and return (club_name, club_id) pairs.
+    Filters ZZ- placeholder rows.
+
+    Thin compatibility wrapper around ``_fetch_gotsport_event`` +
+    ``_parse_clubs_with_ids_from_html`` so the existing retry/logging
+    contract (swallow transient fetch errors and return []) is preserved
+    for ``scrape_gotsport_teams``.
+    """
+    url = _event_clubs_url(event_id)
+    try:
+        html = _fetch_gotsport_event(url)
+    except (TransientError, requests.RequestException) as exc:
+        logger.error("GotSport clubs fetch failed (event_id=%s): %s", event_id, exc)
+        return []
+
+    return _parse_clubs_with_ids_from_html(html)
 
 
 def _fetch_club_detail(event_id: int | str, club_name: str, club_id: str) -> Dict:
@@ -176,6 +259,12 @@ def scrape_gotsport_event(
     """
     Fetch all clubs from a GotSport event clubs page.
 
+    Thin orchestrator around ``_fetch_gotsport_event`` (HTTP) and
+    ``parse_gotsport_event_html`` (pure parse). Public signature is
+    preserved for the 13+ extractors that call this function — splitting
+    fetch + parse enables fixture-based replay coverage of parsing logic
+    without touching caller code.
+
     Args:
         event_id:    The numeric event ID from the GotSport URL.
         league_name: League name to tag on each record.
@@ -189,14 +278,15 @@ def scrape_gotsport_event(
     Returns:
         List of club dicts ready for normalizer.
     """
-    url = f"{_BASE}/org_event/events/{event_id}/clubs"
+    url = _event_clubs_url(event_id)
     logger.info("[GotSport] Fetching event %s: %s", event_id, url)
 
-    clubs = _get_clubs_with_ids(event_id)
-    if not clubs:
+    try:
+        html = _fetch_gotsport_event(url)
+    except (TransientError, requests.RequestException) as exc:
+        logger.error("GotSport clubs fetch failed (event_id=%s): %s", event_id, exc)
         return []
 
-    effective_state = "" if multi_state else state
     if multi_state and state:
         logger.info(
             "[GotSport] event %s is multi-state; ignoring hardcoded state '%s' — "
@@ -204,18 +294,13 @@ def scrape_gotsport_event(
             event_id, state,
         )
 
-    records = []
-    for club_name, _club_id in clubs:
-        rec = {
-            "club_name": club_name,
-            "league_name": league_name,
-            "city": "",
-            "state": effective_state,
-            "source_url": url,
-        }
-        if multi_state:
-            rec["_state_derived"] = True
-        records.append(rec)
+    records = parse_gotsport_event_html(
+        html,
+        url,
+        league_name=league_name,
+        state=state,
+        multi_state=multi_state,
+    )
 
     logger.info("[GotSport] event %s → %d clubs", event_id, len(records))
     return records
