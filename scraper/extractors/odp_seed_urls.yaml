@@ -13,60 +13,604 @@
 # and factor it up only after two or more states demonstrably share
 # layout.
 #
-# Top 5 states (by youth-soccer registration) are scoped here. The
-# remaining 49 state associations are intentional follow-ups — they
-# should ship one-by-one as operators confirm URLs.
+# The `platform` key classifies how each state distributes its ODP
+# roster. Allowed values:
+#   public-html   — roster published as a public HTML page.
+#   gotsport      — routes through GotSport event pages.
+#   playmetrics   — PlayMetrics-hosted.
+#   praxis        — Praxis League Management.
+#   band          — BAND app.
+#   box           — Box.com shared folder.
+#   email         — no platform; roster mailed after selection.
+#   wordpress-pdf — roster PDFs on a WordPress site (wp-content/uploads).
+#   hubspot-pdf   — roster PDFs served from HubSpot (hubfs).
+#   unknown       — platform couldn't be determined from the sweep.
+#
+# --- wave-3b sweep (2026-04-19) ----------------------------------------
+# Total states/sub-associations with public URLs: 15 (was 5).
+# Deferred (no public URL surfaced or placeholder "coming soon"): 39.
+# Last sweep: 2026-04-19.
+#
+# Platforms (54 total): public-html=11, wordpress-pdf=3, hubspot-pdf=1,
+# gotsport=3, playmetrics=2, praxis=2, band=1, box=1, email=5,
+# unknown=25.
+#
+# Deferred list: AL, AR, CO, CT, DE, GA, HI, IA, ID, IN, KS, KY, LA,
+# MA, MD, ME, MI, MN, MS, MT, NC, ND, NE, NM, NV, OK, OR, PA-W, RI,
+# SC, SD, TN, UT, VA, VT, WA, WI, WV, WY.
+#
+# Wave-3b's policy: when a state association explicitly says rosters
+# are "coming soon" or only mentions them behind an email contact, we
+# leave `urls: []` with a note. Many of these states DO publish pools
+# eventually (usually USYS-hosted) but the URL isn't discoverable from
+# a public nav; operator needs to supply once the cycle publishes.
+#
+# Phase 2 (separate follow-up): register parsers to existing extractors
+# for the USYS-hosted layouts (Ohio, NY-West, STX, Missouri, EPYSA-G,
+# CalNorth PDF) — shapes that clearly share structure.
 
 states:
+
+  AK:
+    # Alaska Youth Soccer Association — ADP Regional Camp Selections
+    # (Alaska calls its state program ADP). Public roster page listing
+    # 20 boys + 17 girls by birth year, club, and name.
+    # Last verified 2026-04-19.
+    platform: public-html
+    program_year: "2025-26"
+    urls:
+      - https://www.alaskayouthsoccer.org/adp-regional-camp-selections/
+
+  AL:
+    # Alabama Soccer Association ODP hub. Page links to GotSport
+    # registration + ID Center schedule; no public pool roster
+    # observed as of 2026-04-19. Roster distribution appears to be
+    # via GotSport / email to selected players.
+    platform: gotsport
+    urls: []
+    # No public ODP roster URL found (searched "Alabama Soccer
+    # Association ODP roster", "alsoccer.org odp pool"; only alumni
+    # showcase visible).
+
+  AR:
+    # Arkansas Soccer Association ODP hub. Program year dates posted
+    # but no public pool roster; selections go via email per page
+    # (contact will.Montgomery@arkansassoccer.org).
+    platform: email
+    urls: []
+    # No public ODP roster URL found (searched "Arkansas Soccer
+    # Association ODP 2025-26 roster", "arkansassoccer.org pool").
+
+  AZ:
+    # Arizona Soccer Association — ODP Pool Training Rosters news post
+    # with linked per-gender roster pages. Phase 2 will register a
+    # parser once DOM is audited.
+    # Last verified 2026-04-19.
+    platform: public-html
+    program_year: "2025-26"
+    urls:
+      - https://www.azsoccerassociation.org/news/2025/08/08/arizona-soccer-association-announces-2025-26-odp-pool-training-rosters/
+
   CA:
     # Cal South (Southern California) — PRO+ ODP player pools.
     # Player-pool hub links to per-age-group roster news releases.
+    platform: public-html
     parser: calsouth
     program_year: "2025-26"
     urls:
       - https://calsouth.com/pro-odp-player-pools/
 
-  TX:
-    # North Texas State Soccer Association — ODP player pools.
-    # South Texas (STXsoccer) uses a different URL shape; add as a
-    # separate row when confirmed.
-    parser: ntxsoccer
+  CA-N:
+    # Cal North — 2025-26 State Pool List published as a single PDF
+    # at a HubSpot-hosted URL. Public (515KB PDF, binary-verified).
+    # Last verified 2026-04-19.
+    platform: hubspot-pdf
     program_year: "2025-26"
     urls:
-      - https://www.ntxsoccer.org/odp/north-texas-odp-player-pools-2025-2026/
+      - https://www.calnorth.org/hubfs/2026.State%20Pool%20List%20Letter.pdf
+
+  CO:
+    # Colorado Soccer Association rebranded ODP as "Colorado Select"
+    # with three platforms (Front Range / Mountain / Young Olympians).
+    # 2025-26 rosters not yet posted as of 2026-04-19 — page says
+    # "rosters will be posted here" after 2026-27 tryouts. Regional
+    # invite-list links currently point to external Facebook posts.
+    platform: unknown
+    urls: []
+    # No public 2025-26 ODP roster URL found on coloradosoccer.org/select
+    # (searched "Colorado Select ODP roster 2025-26", "coloradosoccer.org
+    # ODP pool"); roster page placeholder states content coming later.
+    # Platform unknown: Facebook-linked invite lists don't fit any of
+    # the allowed platform tags.
+
+  CT:
+    # Connecticut Junior Soccer Association ODP hub. Contact + BAND
+    # group links only; no public roster.
+    platform: band
+    urls: []
+    # No public ODP roster URL found (searched "CJSA ODP 2025-26
+    # roster", "Connecticut Junior Soccer ODP pool"); selections appear
+    # to be communicated through PlayMetrics and a BAND invite-only
+    # app. Tagged as `band` because the BAND app is the destination
+    # for the roster itself; PlayMetrics is only the registration
+    # funnel.
+
+  DE:
+    # Delaware Youth Soccer Association ODP FAQ. Selections are
+    # communicated by email to Director of ODP (Tyler Bastianelli);
+    # no public pool page.
+    platform: email
+    urls: []
+    # No public ODP roster URL found (searched "Delaware Youth Soccer
+    # ODP roster", "dysa.org odp pool").
 
   FL:
     # Florida Youth Soccer Association — ODP selections hub.
     # Posts per-age-group PDFs + HTML-embedded name lists once
     # tryouts conclude.
+    platform: public-html
     parser: fysa
     program_year: "2025-26"
     urls:
       - https://www.fysa.com/odp-selections/
 
+  GA:
+    # Georgia Soccer — Boys ODP + Girls ODP hubs exist but pages
+    # currently say "TEAM SELECTIONS AND TRAININGS COMING SOON"
+    # (verified 2026-04-19). The page structure (/boys-odp/, /girls-odp/)
+    # is the eventual target; add when populated.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found as of 2026-04-19 (Boys/Girls ODP
+    # pages exist at georgiasoccer.org/boys-odp/ and /girls-odp/ but
+    # currently show placeholder; Google Drive folder link referenced
+    # for training schedules, not rosters).
+    # Platform unknown: placeholder page gives no indication of final
+    # distribution channel.
+
+  HI:
+    # Hawaii Youth Soccer — ODP hub describes program + coaching
+    # contacts. No public state team roster URL surfaced.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Hawaii Youth Soccer
+    # ODP roster", "hawaiisoccer.com odp pool"); state team names are
+    # published via club-level press releases (e.g., Honolulu Bulls).
+    # Platform unknown: club-level press-release distribution doesn't
+    # fit any allowed tag.
+
+  IA:
+    # Iowa Soccer ODP hub. Registration via Blue Sombrero; no public
+    # pool list.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Iowa Soccer ODP
+    # roster", "iowasoccer.org iowa-odp"); contact is Damien Corrieri
+    # per page. Platform unknown: Blue Sombrero is registration only
+    # and isn't an allowed platform tag; roster distribution channel
+    # not observed.
+
+  ID:
+    # Idaho Youth Soccer ODP hub. 2025-26 tryouts info + GotSport
+    # registration; no public roster.
+    platform: gotsport
+    urls: []
+    # No public ODP roster URL found (searched "Idaho Youth Soccer
+    # ODP roster", "idahoyouthsoccer.org odp"); selections communicated
+    # via GotSport portal.
+
+  IL:
+    # Illinois Youth Soccer — ODP State Select index page links to
+    # annual State Team PDFs. 2026 final roster PDF is hosted on
+    # wp-content (170KB PDF, binary-verified public).
+    # Last verified 2026-04-19.
+    platform: wordpress-pdf
+    program_year: "2025-26"
+    urls:
+      - https://www.illinoisyouthsoccer.org/illinois-odp-state-select/
+      - https://www.illinoisyouthsoccer.org/wp-content/uploads/sites/225/2026/04/2026-ODP-State-Teams-Final.pdf
+
+  IN:
+    # Indiana Soccer ODP/IDP hub. Links to State Pool & Registration
+    # info + ODP Staff; no public roster visible on odp-idp/.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Indiana Soccer ODP
+    # roster", "soccerindiana.org odp-idp pool"); Twitter/IG
+    # (@indianaodp) used for announcements.
+    # Platform unknown: social-media announcements aren't an allowed
+    # tag.
+
+  KS:
+    # Kansas Youth Soccer + separate kansasodp.org site. Neither
+    # lists a public pool roster in-page; "State Pool Archives"
+    # referenced but no link found.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Kansas Youth Soccer
+    # ODP roster", "kansasodp.org state pool"). Platform unknown: no
+    # distribution channel mentioned on either hub.
+
+  KY:
+    # Kentucky Youth Soccer ODP hub. Event dates + camp registration
+    # only; no public roster.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Kentucky Youth Soccer
+    # ODP roster", "kysoccer.net odp pool"). Platform unknown: page
+    # has no explicit roster-distribution channel.
+
+  LA:
+    # Louisiana Soccer Association — "Louisiana Select (ODP)". Tryout
+    # registration links by age group; no public pool roster.
+    platform: email
+    urls: []
+    # No public ODP roster URL found (searched "Louisiana Soccer ODP
+    # roster", "playlouisianasoccer.org odp select"); roster likely
+    # distributed to players via email.
+
+  MA:
+    # Massachusetts Youth Soccer ODP hub (mayouthsoccer.org). URL
+    # consistently errored on TLS cert verify during sweep, and
+    # public search did not surface a roster page; selections visible
+    # only as social-media announcements (press-release style).
+    platform: unknown
+    urls: []
+    # No public ODP roster URL confirmed (TLS error on
+    # mayouthsoccer.org/events-and-programs/olympic-development-program/
+    # during 2026-04-19 sweep; retry in Phase 2 from a different
+    # origin). Platform unknown: TLS failure prevented the sweep from
+    # observing the distribution channel.
+
+  MD:
+    # Maryland State Youth Soccer Association ODP general info page.
+    # Lists staff + schedule; no public pool roster.
+    platform: email
+    urls: []
+    # No public ODP roster URL found (searched "Maryland Youth Soccer
+    # ODP roster", "msysa.org odp pool"); roster distributed via
+    # programs@msysa.org.
+
+  ME:
+    # Soccer Maine ODP program page. General program info only; roster
+    # questions directed to ODP Director (Andy Halligan).
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Maine Youth Soccer
+    # ODP roster", "soccermaine.com olympic-development").
+    # Platform unknown: page surfaces a contact person but no
+    # explicit email/platform-based roster distribution mechanism.
+
+  MI:
+    # Michigan State Youth Soccer ODP hub. Has dedicated 2025-26 ODP
+    # info sub-page but no public roster URL visible.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Michigan State Youth
+    # Soccer ODP roster", "michiganyouthsoccer.org odp pool");
+    # @michiganodp IG used for announcements. Platform unknown:
+    # Instagram announcements aren't an allowed tag.
+
+  MN:
+    # MN Youth Soccer ODP hub. PlayMetrics registration links + trial
+    # info; no public roster.
+    platform: playmetrics
+    urls: []
+    # No public ODP roster URL found (searched "Minnesota Youth
+    # Soccer ODP roster", "mnyouthsoccer.org odp pool"); contact is
+    # ODP@MNYouthSoccer.org.
+
+  MO:
+    # Missouri ODP — dedicated microsite (missouriodp.org) with a
+    # nav tree of per-age-group team pages + a State Rosters index.
+    # Public; page loaded cleanly on sweep.
+    # Last verified 2026-04-19.
+    platform: public-html
+    program_year: "2025-26"
+    urls:
+      - https://www.missouriodp.org/about/2025-2026-state-rosters/150609
+
+  MS:
+    # Mississippi Soccer Association ODP hub. Event schedule +
+    # registration; no public pool roster.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Mississippi Soccer
+    # ODP roster", "mssoccer.org odp pool"). Platform unknown: hub
+    # mentions no distribution channel.
+
+  MT:
+    # Montana Youth Soccer ODP hub. Season overview + Junior Academy
+    # pages; no public roster visible.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Montana Youth Soccer
+    # ODP roster", "montanayouthsoccer.com ODP");
+    # facebook.com/odpmontana used for announcements. Platform unknown:
+    # Facebook announcements aren't an allowed tag.
+
+  NC:
+    # North Carolina Youth Soccer ODP hub. Contact (odp@ncsoccer.org)
+    # + FAQ; no public roster.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "North Carolina Youth
+    # Soccer ODP roster", "ncsoccer.org olympic-development").
+    # Platform unknown: though an email contact exists, the page does
+    # not describe rosters being distributed via that address.
+
+  ND:
+    # Dakota ODP (North + South Dakota joint program,
+    # dakotaodp.org). Has a "Region I.D. Camp Player List" link at
+    # /Default.aspx?tabid=2751302 but content is dormant / historical;
+    # no current pool roster URL surfaced.
+    platform: unknown
+    urls: []
+    # No public 2025-26 ODP roster URL found on dakotaodp.org
+    # (searched "Dakota ODP roster", "ndsoccer.org dakota-odp"); the
+    # Region I.D. Camp Player List link exists but its current
+    # contents are not public. Platform unknown: dormant microsite
+    # doesn't reveal a distribution channel.
+
+  NE:
+    # Nebraska State Soccer ODP hub. 2025-26 moving to Praxis for
+    # registration; no public roster.
+    platform: praxis
+    urls: []
+    # No public ODP roster URL found (searched "Nebraska State
+    # Soccer ODP roster", "nebraskastatesoccer.org odp"); contact is
+    # odp@nebraskastatesoccer.org.
+
+  NH:
+    # NH Soccer Association — dedicated State and Regional Team
+    # Rosters page; shows state + East Region pool selections with
+    # first name + last initial + birth year. Public.
+    # Last verified 2026-04-19.
+    platform: public-html
+    program_year: "2025-26"
+    urls:
+      - https://soccernh.com/odp/state-and-regional-team-rosters/
+
+  NJ:
+    # NJYS ODP microsite (njysodp.com). Has USYS Selections subnav
+    # (ODP National Team Players / Inter-Regional / East Region
+    # Players) rendered via legacy Blue Sombrero tabids. Regional
+    # Invitees post exists as images; inter-regional index is the
+    # canonical entry point.
+    # Last verified 2026-04-19.
+    platform: public-html
+    program_year: "2025-26"
+    urls:
+      - https://www.njysodp.com/Default.aspx?tabid=1457820
+
+  NM:
+    # NM Youth Soccer ODP/YOP hub. References "Boys Rosters" /
+    # "Girls Rosters" + a Canva regional selection link under the
+    # ODP Phase 2/3 headings, but the text labels on the page are
+    # not hyperlinked to public URLs. Contact is r.flores@nmysa.net.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "New Mexico Youth
+    # Soccer ODP roster", "nmysa.net odp-yop"); Canva regional link
+    # exists but was not captured as a full URL during sweep.
+    # Platform unknown: Canva-hosted rosters don't fit any allowed
+    # tag.
+
+  NV:
+    # Nevada Youth Soccer ODP overview page returned 404 during
+    # sweep; Northern/Southern Nevada sub-programs exist per nav
+    # but no roster URL surfaced.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found — nevadayouthsoccer.org/odp/
+    # overview returned 404 on 2026-04-19; retry in Phase 2.
+    # Platform unknown: 404 prevented the sweep from observing the
+    # distribution channel.
+
   NY:
     # Eastern New York Youth Soccer Association — Regional/National
-    # Pool selections. Western NY (nyswysa) has a separate hub; add
-    # as a separate row keyed "NY-W" when confirmed.
+    # Pool selections hub.
+    platform: public-html
     parser: enysoccer
     program_year: "2025-26"
     urls:
       - https://www.enysoccer.com/odp/interregional-pool-selections/
 
+  NY-W:
+    # NY State West Youth Soccer — 2025-26 ODP Pool Rosters page
+    # linking to 10 per-age-group per-gender PDFs under
+    # /wp-content/uploads/sites/285/2026/03/. Public (269KB PDF on
+    # 12B-Outdoor-Pool binary-verified).
+    # Last verified 2026-04-19.
+    platform: wordpress-pdf
+    program_year: "2025-26"
+    urls:
+      - https://www.nyswysa.org/olympic-development-program/
+
+  OH:
+    # Ohio Soccer Association ODP — large inline roster listing with
+    # named players AND per-age-group PDFs for both Phase II and
+    # Phase III at wp-content/uploads/2026/01/ and /04/. Binary-
+    # verified the 2009B.pdf returned a real 97KB Excel-export PDF.
+    # Last verified 2026-04-19.
+    platform: wordpress-pdf
+    program_year: "2025-26"
+    urls:
+      - https://ohio-soccer.org/odp/
+
+  OK:
+    # Oklahoma Soccer Association — ODP Schedule page references
+    # "Full List of Players can be found HERE" but link is to a
+    # SharePoint folder of unclear public accessibility; a separate
+    # Junior Olympians PDF link exists but its contents weren't
+    # inspected during sweep.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL confirmed (searched "Oklahoma Soccer
+    # ODP roster", "oksoccer.com olympic-development-player"); the
+    # SharePoint link on the Schedule page may require auth — retry
+    # in Phase 2 with explicit HEAD check. Platform unknown:
+    # SharePoint-hosted rosters don't fit any allowed platform tag.
+
+  OR:
+    # Oregon Youth Soccer ODP hub. WUFOO financial aid form +
+    # Praxis/Squadi registration; no public roster.
+    platform: praxis
+    urls: []
+    # No public ODP roster URL found (searched "Oregon Youth Soccer
+    # ODP roster", "oregonyouthsoccer.org odp").
+
   PA:
-    # Eastern Pennsylvania Youth Soccer — Boys U15+ rosters hub. A
-    # separate girls hub exists under the same /odp-*-rosters/ shape.
-    # Western PA (pawest-soccer) has its own URL family; add later.
+    # Eastern Pennsylvania Youth Soccer — Boys U15+ rosters hub.
+    platform: public-html
     parser: epysa
     program_year: "2025-26"
     urls:
       - https://www.epysa.org/odp-boys-rosters/
+      - https://www.epysa.org/odp-girls-rosters/
 
-# --- follow-ups -------------------------------------------------------
-# AK, AL, AR, AZ, CO, CT, DE, GA, HI, IA, ID, IL, IN, KS, KY, LA, MA,
-# MD, ME, MI, MN, MO, MS, MT, NC, ND, NE, NH, NJ, NM, NV, OH, OK, OR,
-# RI, SC, SD, TN, UT, VA, VT, WA, WI, WV, WY, plus sub-state assocs
-# (CA-North, NY-West, PA-West, South Texas, etc.) are all pending.
-# No public URL has been verified for them at the time this PR
-# shipped. DO NOT add speculative URLs here — they will 404 and
-# pollute scrape_run_logs with `zero_results` failures.
+  PA-W:
+    # PA West Soccer ODP hub. Philosophy + fees + selection info;
+    # no public roster.
+    platform: gotsport
+    urls: []
+    # No public ODP roster URL found (searched "PA West Soccer ODP
+    # roster", "pawest-soccer.org odp"); operator likely gets
+    # selections via GotSport.
+
+  RI:
+    # Rhode Island Soccer Association ODP page. Program description +
+    # partner info; roster contact is odp-director@soccer-ri.com.
+    platform: email
+    urls: []
+    # No public ODP roster URL found (searched "Rhode Island Soccer
+    # ODP roster", "soccer-ri.com olympic-development-program").
+
+  SC:
+    # SC Youth Soccer — calls the program "Youth Elite Program" at
+    # scyouthsoccer.com/youth-elite-program. Tryout dates + league
+    # registration links only; no public roster.
+    platform: playmetrics
+    urls: []
+    # No public ODP roster URL found (searched "South Carolina Youth
+    # Soccer ODP roster", "scyouthsoccer.com youth-elite-program");
+    # rosters may be routed via PlayMetrics/Squadi registrations.
+
+  SD:
+    # South Dakota's ODP is administered jointly with North Dakota
+    # as Dakota ODP (dakotaodp.org). See ND row for details; same
+    # deferred status.
+    platform: unknown
+    urls: []
+    # No public 2025-26 ODP roster URL found on dakotaodp.org
+    # (searched "South Dakota Youth Soccer ODP roster", "dakotaodp.org
+    # region ID camp player list"). Platform unknown: same dormant
+    # microsite as ND; distribution channel not observed.
+
+  TN:
+    # Tennessee State Soccer Association ODP hub. Player development
+    # calendar + Box folder link for team app; no public roster on
+    # the hub page.
+    platform: box
+    urls: []
+    # No public ODP roster URL found (searched "Tennessee State
+    # Soccer ODP roster", "tnsoccer.org odp"); Box-hosted team app
+    # link may gate access, not verified during sweep.
+
+  TX:
+    # North Texas State Soccer Association — ODP player pools.
+    platform: public-html
+    parser: ntxsoccer
+    program_year: "2025-26"
+    urls:
+      - https://www.ntxsoccer.org/odp/north-texas-odp-player-pools-2025-2026/
+
+  TX-S:
+    # South Texas Youth Soccer (STXsoccer) — ODP State Teams page
+    # links to Google Drive roster PDFs ("2025/2026 Boys ODP Pool
+    # Rosters" + "Girls") updated 8/22/25. Google Drive is public
+    # per page presentation but explicit HEAD check on the Drive
+    # file not performed during sweep; index page is public.
+    # Last verified 2026-04-19.
+    platform: public-html
+    program_year: "2025-26"
+    urls:
+      - https://www.stxsoccer.org/odp-state-teams-and-coaching-staff/
+    # Platform note: the index page itself is public HTML; rosters
+    # live as Google Drive PDFs which isn't an allowed platform tag,
+    # so we classify the seed by the hub's own surface.
+
+  UT:
+    # Utah Youth Soccer ODP hub. Page says "Utah ODP Player
+    # Information Results and registration 26/27 coming Soon" —
+    # 2025-26 roster not published as of 2026-04-19.
+    platform: unknown
+    urls: []
+    # No public 2025-26 ODP roster URL found on
+    # utahyouthsoccer.net/odp/; content is a placeholder for 26/27.
+    # Platform unknown: placeholder page gives no indication of the
+    # eventual distribution channel.
+
+  VA:
+    # Virginia Youth Soccer Association ODP hub. Sub-pages for
+    # Tryouts / District Training / State Training exist, but no
+    # public pool roster URL on the hub.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "VYSA ODP roster",
+    # "vysa.com virginia_odp"); SoccerWire historically published
+    # VYSA pool announcements (2016/2020/2021) but 2025-26 not seen.
+    # Platform unknown: third-party SoccerWire announcements aren't
+    # an allowed tag.
+
+  VT:
+    # Vermont Soccer Association ODP hub. Program structure +
+    # Talent ID Centers; no public roster.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Vermont Soccer
+    # Association ODP roster", "vermontsoccer.org odp"); VSA
+    # Facebook posts have referenced pool announcements historically.
+    # Platform unknown: Facebook announcements aren't an allowed tag.
+
+  WA:
+    # Washington Youth Soccer. The main org site links out to the
+    # national USYS ODP page rather than a dedicated state ODP page;
+    # WA-specific roster URL not surfaced.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Washington Youth
+    # Soccer ODP roster", "washingtonyouthsoccer.org odp"); verify
+    # with WYS ODP contact in Phase 2. Platform unknown: external
+    # USYS link doesn't reveal a state-level distribution channel.
+
+  WI:
+    # Wisconsin Youth Soccer ODP hub. ODP Admin (Eric Natwick) +
+    # Head Coach info; no public roster.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Wisconsin Youth
+    # Soccer ODP roster", "wiyouthsoccer.com odp"); contact is
+    # enatwick@wiyouthsoccer.com. Platform unknown: hub surfaces a
+    # contact person but does not describe a roster-distribution
+    # channel.
+
+  WV:
+    # West Virginia Soccer Association ODP general info page. Links
+    # to ODP Player Manual + Handbook; no public pool roster.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "West Virginia
+    # Soccer ODP roster", "wvsoccer.net odp-general-information").
+    # Platform unknown: general-info page describes no distribution
+    # channel.
+
+  WY:
+    # Wyoming Soccer ODP / "Wyoming 307 Select" hub. Program
+    # overview only; no public roster.
+    platform: unknown
+    urls: []
+    # No public ODP roster URL found (searched "Wyoming Soccer ODP
+    # roster", "wyomingsoccer.com wyoming-odp"); roster rosters
+    # capped at 16-18 players per age group per the page.
+    # Platform unknown: no distribution channel mentioned.

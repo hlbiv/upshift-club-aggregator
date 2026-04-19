@@ -16,7 +16,7 @@ from typing import List, Dict
 
 from extractors.registry import register
 from extractors.gotsport import (
-    parse_event_clubs_html,
+    parse_gotsport_event_html,
     scrape_gotsport_event,
     scrape_gotsport_teams,
 )
@@ -33,9 +33,9 @@ def parse_html(
     league_name: str = "",
 ) -> List[Dict]:
     """Pure-function parser for the archived MSPSP GotSport clubs page."""
-    return parse_event_clubs_html(
+    return parse_gotsport_event_html(
         html,
-        source_url=source_url,
+        url=source_url,
         league_name=league_name,
         state=_STATE,
     )
