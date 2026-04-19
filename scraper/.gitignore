@@ -5,3 +5,8 @@ scraper/output/master.csv
 # connection and renamed to *.drained.jsonl for audit.
 logs/
 
+# Generated dedup-review CSVs from `--source club-dedup-resolve`. Each
+# run writes a date-stamped file; these are operator review artifacts,
+# not source.
+dedup/output/dedup-review-*.csv
+

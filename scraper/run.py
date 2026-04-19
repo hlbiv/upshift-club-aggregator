@@ -546,6 +546,26 @@ def _handle_club_dedup(args: argparse.Namespace) -> None:
     print_report(pairs)
 
 
+def _handle_club_dedup_resolve(args: argparse.Namespace) -> None:
+    # Tiered resolver — auto-merges high-confidence pairs, writes a
+    # review CSV for the rest. **DEFAULTS TO DRY-RUN** even when
+    # --dry-run is absent; pass --no-dry-run to actually mutate.
+    # (--dry-run remains supported for symmetry with other --source
+    # jobs, and forces dry-run regardless of --no-dry-run.)
+    from dedup.__main__ import run_resolve, print_summary
+    commit = bool(getattr(args, "no_dry_run", False)) and not args.dry_run
+    try:
+        summary = run_resolve(
+            threshold=0.85,
+            state=args.state if hasattr(args, "state") else None,
+            dry_run=not commit,
+        )
+    except RuntimeError as exc:
+        logger.error("club-dedup-resolve: %s", exc)
+        sys.exit(1)
+    print_summary(summary)
+
+
 def _handle_usclub_sanctioned(args: argparse.Namespace) -> None:
     from usclub_events_runner import run_usclub_events, print_summary as _uc_print_summary
     outcomes = run_usclub_events(
@@ -660,6 +680,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "club_enrichment": _handle_club_enrichment,
     "club-dedup": _handle_club_dedup,
     "club_dedup": _handle_club_dedup,
+    "club-dedup-resolve": _handle_club_dedup_resolve,
+    "club_dedup_resolve": _handle_club_dedup_resolve,
     "usclub-sanctioned": _handle_usclub_sanctioned,
     "usclub_sanctioned": _handle_usclub_sanctioned,
     "usclub-seeds": _handle_usclub_seeds,
@@ -694,6 +716,7 @@ SOURCE_HELP: dict[str, str] = {
     "replay-html": "[stub] replay archived HTML through extractors (not yet implemented)",
     "club-enrichment": "enrich canonical_clubs with logo/socials/status",
     "club-dedup": "fuzzy dedup report for canonical_clubs",
+    "club-dedup-resolve": "tiered: auto-merges high-confidence pairs + writes review CSV; defaults to dry-run, requires --no-dry-run to commit",
     "usclub-sanctioned": "discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events",
     "usclub-seeds": "seed only — National Cup + NPL Finals GotSport events, skip discovery",
     "usclub-id": "discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API (scaffold)",
@@ -979,6 +1002,11 @@ def main() -> None:
                         help="State filter for --source youth-coaches or club-dedup (e.g. GA, CA).")
     parser.add_argument("--force", action="store_true",
                         help="For --source club-enrichment: re-enrich clubs that already have data.")
+    parser.add_argument("--no-dry-run", action="store_true", dest="no_dry_run",
+                        help="For --source club-dedup-resolve: explicitly opt in to "
+                             "committing auto-merge tier merges. Without this flag the "
+                             "resolver runs in dry-run mode regardless. Ignored by other "
+                             "sources.")
     parser.add_argument("--platform-family",
                         choices=["sportsengine", "leagueapps", "wordpress", "unknown"],
                         dest="platform_family",

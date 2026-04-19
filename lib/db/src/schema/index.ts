@@ -65,6 +65,11 @@ export const canonicalClubs = pgTable(
     websiteLastCheckedAt: timestamp("website_last_checked_at"),
     lastScrapedAt: timestamp("last_scraped_at"),
     scrapeConfidence: real("scrape_confidence"),
+    // Operator-curated override flag. When true the canonical_club row is
+    // pinned — the dedup resolver (`scraper/dedup/canonical_club_merger.py`)
+    // will refuse to auto-merge it on either side of a pair. Mirrors the
+    // `coaches.manually_merged` semantics. See BACKLOG #2.
+    manuallyMerged: boolean("manually_merged").default(false).notNull(),
   },
   (t) => [
     // 'search' is included because enrich_websites.py writes it to mark
@@ -88,6 +93,14 @@ export const clubAliases = pgTable(
     aliasSlug: text("alias_slug"),
     source: text("source"),
     isOfficial: boolean("is_official").default(false),
+    // Audit columns populated by the canonical-club merger
+    // (`scraper/dedup/canonical_club_merger.py`). When a duplicate is
+    // collapsed into a winner, the loser's id + canonical name are inserted
+    // as an alias row pointing at the winner; `mergedFromCanonicalId`
+    // captures the loser's old id so the merge is reversible by inspection
+    // (no separate audit table — see BACKLOG #2 PR body).
+    mergedFromCanonicalId: integer("merged_from_canonical_id"),
+    mergedAt: timestamp("merged_at"),
   },
   (t) => [unique("club_aliases_club_alias_uq").on(t.clubId, t.aliasName)],
 );
