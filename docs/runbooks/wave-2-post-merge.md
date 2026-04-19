@@ -260,9 +260,48 @@ pnpm --filter @workspace/upshift-data-client run test
 
 Restart the sibling's api-server.
 
+### 7d. Validate read-swap is actually flowing through Data (not silent fallback)
+
+Read-swap env is already live on the sibling (`UPSHIFT_DATA_READS=orgs,events,coaches,schools`, `UPSHIFT_DATA_API_URL`, `UPSHIFT_DATA_API_KEY` all set). But the sibling's `dataReads.ts` wrapper **fails silently** when a call to Data errors out — it logs a warning and falls back to the local Player tables. The runbook's earlier sections prove Data is reachable from a shell curl; they don't prove the sibling is *actually* routing reads through Data end-to-end.
+
+**Check 1 — direct curl from the sibling environment:**
+
+```bash
+# On the sibling's Replit shell, with env already set:
+curl -sS -H "X-API-Key: $UPSHIFT_DATA_API_KEY" \
+  "$UPSHIFT_DATA_API_URL/api/clubs?page_size=1" | jq '.clubs[0].id'
+# Expect: an integer club id from Data. 401 / empty / local UUID = read-swap broken.
+```
+
+**Check 2 — grep sibling logs for silent fallbacks over the last 24h:**
+
+```bash
+# Adjust path to wherever your sibling's logs land (Replit console tail, log file, Datadog, etc.)
+grep -c '\[dataReads\] falling back to local' <sibling-log-source>
+# Expect: 0. Any non-zero count means at least one call has silently degraded.
+```
+
+If check 2 returns > 0, the next step is NOT more runbook work — it's investigating why Data returned an error for that resource. Look for rate-limit 429s, auth 401s, or timeouts in this service's logs around the same timestamps.
+
 ---
 
 ## 8. Sanity check canonical-club linker + data counts
+
+**Precondition — prove scrapers have actually run recently:**
+
+Scrapers live on Replit now (the `artifacts/scraper/` directory was removed in the Phase 4+5 consolidation). If you run the linker cold on a freshly-pulled repo without §6's schedulers having fired at least once, the linker will be a no-op and the NULL-count queries below will show "zero NULLs" — not because linking succeeded, but because nothing has been scraped.
+
+```sql
+SELECT source_name, count(*) AS rows, max(completed_at) AS last_success
+FROM scrape_run_logs
+WHERE status = 'success' AND completed_at > now() - interval '7 days'
+GROUP BY source_name
+ORDER BY last_success DESC;
+```
+
+Zero rows = no scrapes have run in the last week. Fire one manually first (e.g., `bash scraper/scheduled/nightly_tier1.sh`) before proceeding with the linker checks below.
+
+---
 
 After any scraper runs, linker must backfill FKs:
 
