@@ -154,6 +154,7 @@ _HEADER_ALIASES = {
     "college": "college_name_raw",
     "school": "college_name_raw",
     "committed to": "college_name_raw",
+    "commitment": "college_name_raw",
     "club": "club_name_raw",
     "current club": "club_name_raw",
     "team": "club_name_raw",
