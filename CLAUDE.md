@@ -10,9 +10,9 @@ Upshift Data is the reference-data backend for Upshift soccer club/coach intelli
 
 - **Python scraper toolkit** (`scraper/`) — ~52 Python modules in `scraper/extractors/` (~30–35 active league extractors plus utilities); covers a directory of 127 leagues tracked in `leagues_master`
 - **PostgreSQL graph** (`lib/db/`) — canonical clubs, coaches master, events, matches, rosters, tryouts, scrape health
-- **REST API** (`artifacts/api-server/`) — Express 5 on port 8080, consumed by `upshift-player-platform`
+- **REST API** (`artifacts/api-server/`) — Express 5 on port 8080, consumed by `upshift-studio`
 
-**Relationship to sibling repo:** `upshift-player-platform` owns user/claim/payment data. This repo owns everything scraped (orgs, coaches, events, rosters, results). Player platform calls this API — never the DB directly.
+**Relationship to sibling repo:** `upshift-studio` owns user/claim/payment data. This repo owns everything scraped (orgs, coaches, events, rosters, results). Player platform calls this API — never the DB directly.
 
 ---
 
@@ -189,7 +189,7 @@ Every `/api/*` route except `/api/healthz` requires a valid API key in either `X
 1. Pull + `pnpm install` + `pnpm --filter @workspace/db run push` (creates `api_keys`).
 2. Mint the first key:
    ```bash
-   pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-player-platform prod"
+   pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-studio prod"
    ```
 3. Copy the plaintext into the caller's `UPSHIFT_DATA_API_KEY` env var.
 4. Set `API_KEY_AUTH_ENABLED=true` in Replit Secrets.
@@ -203,11 +203,11 @@ One-time flip to require `X-API-Key` on every `/api/*` call. Run the steps in or
 
 1. **Mint the caller's key.** The CLI takes `--name` only; there is no `--scope` flag (scopes default to `[]` in the `api_keys` row and are reserved for future use).
    ```bash
-   pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-player-platform"
+   pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-studio"
    ```
    The script prints the plaintext key exactly once. Copy it now.
 
-2. **Hand the plaintext to the sibling repo.** Set `UPSHIFT_DATA_API_KEY=<plaintext>` in the `upshift-player-platform` Replit Secrets. Also set `UPSHIFT_DATA_API_URL=<this-repo's-api-base>` if it isn't already wired. Redeploy / restart the player-platform server so the env is picked up.
+2. **Hand the plaintext to the sibling repo.** Set `UPSHIFT_DATA_API_KEY=<plaintext>` in the `upshift-studio` Replit Secrets. Also set `UPSHIFT_DATA_API_URL=<this-repo's-api-base>` if it isn't already wired. Redeploy / restart the player-platform server so the env is picked up.
 
 3. **Enable enforcement on this repo.** In Replit Secrets set `API_KEY_AUTH_ENABLED=true`, then restart the api-server. Boot log should print `[api-key-auth] enabled` (the `DISABLED` line means the flag is still false / unset).
 
