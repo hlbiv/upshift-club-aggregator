@@ -209,22 +209,14 @@ def _candidate_slugs(slugs: List[str], state_abbr: str) -> List[str]:
     return [s for s in slugs if any(kw in s for kw in keywords)]
 
 
-def _fetch_club_page(slug: str) -> Optional[Dict]:
+def _parse_club_page_html(html: str, slug: str, url: str) -> Optional[Dict]:
     """
-    Fetch a single SoccerWire club page and return a parsed club record,
-    or None if the page does not exist or has no usable data.
-    """
-    url = _CLUB_URL_TPL.format(slug=slug)
-    try:
-        r = requests.get(url, headers=_HEADERS, timeout=12)
-        if r.status_code == 404:
-            return None
-        r.raise_for_status()
-    except requests.RequestException as exc:
-        logger.debug("[SoccerWire] Fetch failed for %s: %s", slug, exc)
-        return None
+    Pure-function parse of a SoccerWire club detail page.
 
-    soup = BeautifulSoup(r.text, "lxml")
+    Extracts club name, location (city/state), and membership tags from
+    the page HTML. Returns ``None`` when the page has no usable data.
+    """
+    soup = BeautifulSoup(html, "lxml")
     main = soup.find("main") or soup.body
     text = main.get_text(separator="\n") if main else ""
 
@@ -267,6 +259,62 @@ def _fetch_club_page(slug: str) -> Optional[Dict]:
         "memberships": memberships,
         "source_url": url,
     }
+
+
+def _slug_from_url(url: str) -> str:
+    """Best-effort slug extraction from a SoccerWire club URL."""
+    m = re.search(r"/club/([^/?#]+)", url)
+    return m.group(1) if m else ""
+
+
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """
+    Pure-function parser exposed to --source replay-html.
+
+    Given the HTML of a single SoccerWire club detail page
+    (``soccerwire.com/club/<slug>/``), return a list containing one
+    normaliser-shaped club record. Returns ``[]`` when the page carries
+    no usable data (e.g. redirect stub).
+
+    The live :func:`scrape_soccerwire` path also walks the WP REST API to
+    build a slug list; that index step has no persistent HTML and is
+    not replayable. Individual club-page HTML is, which is what this
+    parser targets.
+    """
+    slug = _slug_from_url(source_url) or "unknown"
+    rec = _parse_club_page_html(html, slug, source_url)
+    if not rec or not rec.get("club_name"):
+        return []
+    return [{
+        "club_name":   rec["club_name"],
+        "league_name": league_name,
+        "city":        rec["city"],
+        "state":       rec["state"],
+        "source_url":  rec["source_url"],
+        "source_type": "soccerwire",
+    }]
+
+
+def _fetch_club_page(slug: str) -> Optional[Dict]:
+    """
+    Fetch a single SoccerWire club page and return a parsed club record,
+    or None if the page does not exist or has no usable data.
+    """
+    url = _CLUB_URL_TPL.format(slug=slug)
+    try:
+        r = requests.get(url, headers=_HEADERS, timeout=12)
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+    except requests.RequestException as exc:
+        logger.debug("[SoccerWire] Fetch failed for %s: %s", slug, exc)
+        return None
+
+    return _parse_club_page_html(r.text, slug, url)
 
 
 def scrape_soccerwire_state(

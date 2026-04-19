@@ -68,19 +68,19 @@ def _get_with_retry(url: str, timeout: int = 20) -> requests.Response:
     )
 
 
-def _get_clubs_with_ids(event_id: int | str) -> List[Tuple[str, str]]:
+def parse_clubs_list_html(html: str) -> List[Tuple[str, str]]:
     """
-    Fetch the clubs list page and return (club_name, club_id) pairs.
-    Filters ZZ- placeholder rows.
-    """
-    url = f"{_BASE}/org_event/events/{event_id}/clubs"
-    try:
-        r = _get_with_retry(url)
-    except (TransientError, requests.RequestException) as exc:
-        logger.error("GotSport clubs fetch failed (event_id=%s): %s", event_id, exc)
-        return []
+    Pure HTML parser for a GotSport event clubs-list page.
 
-    soup = BeautifulSoup(r.text, "lxml")
+    Extracts ``(club_name, club_id)`` pairs from the ``<tr>`` rows of the
+    clubs table. ZZ- placeholder rows are filtered out. ``club_id`` is
+    the empty string when the row has no ``/clubs/<id>`` anchor.
+
+    This is the replay-friendly half of :func:`_get_clubs_with_ids` —
+    call it directly with previously-archived HTML and you get the
+    same output as a live fetch.
+    """
+    soup = BeautifulSoup(html, "lxml")
     clubs: List[Tuple[str, str]] = []
 
     for row in soup.find_all("tr"):
@@ -102,6 +102,55 @@ def _get_clubs_with_ids(event_id: int | str) -> List[Tuple[str, str]]:
         clubs.append((club_name, club_id))
 
     return clubs
+
+
+def parse_event_clubs_html(
+    html: str,
+    source_url: str,
+    league_name: str,
+    state: str = "",
+    multi_state: bool = False,
+) -> List[Dict]:
+    """
+    Pure-function parse of a GotSport event clubs-list HTML string into
+    the club-record shape used by the normalizer.
+
+    This is the replay-friendly counterpart to
+    :func:`scrape_gotsport_event`: it does no I/O, just the HTML → dicts
+    transform.
+    """
+    clubs = parse_clubs_list_html(html)
+    effective_state = "" if multi_state else state
+
+    records: List[Dict] = []
+    for club_name, _club_id in clubs:
+        rec = {
+            "club_name": club_name,
+            "league_name": league_name,
+            "city": "",
+            "state": effective_state,
+            "source_url": source_url,
+        }
+        if multi_state:
+            rec["_state_derived"] = True
+        records.append(rec)
+
+    return records
+
+
+def _get_clubs_with_ids(event_id: int | str) -> List[Tuple[str, str]]:
+    """
+    Fetch the clubs list page and return (club_name, club_id) pairs.
+    Filters ZZ- placeholder rows.
+    """
+    url = f"{_BASE}/org_event/events/{event_id}/clubs"
+    try:
+        r = _get_with_retry(url)
+    except (TransientError, requests.RequestException) as exc:
+        logger.error("GotSport clubs fetch failed (event_id=%s): %s", event_id, exc)
+        return []
+
+    return parse_clubs_list_html(r.text)
 
 
 def _fetch_club_detail(event_id: int | str, club_name: str, club_id: str) -> Dict:

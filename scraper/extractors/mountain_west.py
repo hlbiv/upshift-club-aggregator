@@ -14,12 +14,30 @@ import os
 from typing import List, Dict
 
 from extractors.registry import register
-from extractors.gotsport import scrape_gotsport_event, scrape_gotsport_teams
+from extractors.gotsport import (
+    parse_event_clubs_html,
+    scrape_gotsport_event,
+    scrape_gotsport_teams,
+)
 
 logger = logging.getLogger(__name__)
 
 _GOTSPORT_EVENT_ID = 44839
 _STATE = ""
+
+
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """Pure-function parser for the archived Mountain West NPL GotSport clubs page."""
+    return parse_event_clubs_html(
+        html,
+        source_url=source_url,
+        league_name=league_name,
+        state=_STATE,
+    )
 
 
 @register(r"mountainwestnpl\.com")

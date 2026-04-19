@@ -38,6 +38,32 @@ from extractors.registry import register
 logger = logging.getLogger(__name__)
 
 
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """
+    Pure-function parser exposed to --source replay-html.
+
+    All three stubs in this module return 0 clubs by design — the
+    registered URLs have no public club directory we can parse. Replay
+    honours that contract: the archived HTML yields 0 records without
+    touching the network.
+
+    Keeping the stub in the replay surface means future fixes
+    (discovering a real CCL Playwright path, finding the correct SCCL
+    URL, etc.) will get wired up via the normal parse_html contract
+    rather than as a new dispatcher branch.
+    """
+    logger.debug(
+        "[no_source] parse_html called for source_url=%s — returning 0 clubs "
+        "(this extractor group has no parseable club directory).",
+        source_url,
+    )
+    return []
+
+
 @register(r"clubchampionsleague\.com|clubchampions\.org")
 def scrape_ccl(url: str, league_name: str) -> List[Dict]:
     logger.warning(
