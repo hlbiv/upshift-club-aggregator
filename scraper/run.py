@@ -399,6 +399,16 @@ def _handle_gotsport_matches(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_odp_rosters(args: argparse.Namespace) -> None:
+    from odp_runner import run_odp_rosters, print_summary as _odp_print_summary
+    summary = run_odp_rosters(
+        dry_run=args.dry_run,
+        limit=args.limit,
+        state=args.state,
+    )
+    _odp_print_summary(summary)
+
+
 def _handle_sincsports_events(args: argparse.Namespace) -> None:
     from events_runner import run_sincsports_events, print_summary
     outcomes = run_sincsports_events(dry_run=args.dry_run, only_tid=args.tid)
@@ -649,6 +659,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "sincsports_events": _handle_sincsports_events,
     "link-canonical-clubs": _handle_link_canonical_clubs,
     "link_canonical_clubs": _handle_link_canonical_clubs,
+    "odp-rosters": _handle_odp_rosters,
+    "odp_rosters": _handle_odp_rosters,
     "replay-html": _handle_replay_html,
     "replay_html": _handle_replay_html,
     "sincsports-rosters": _handle_sincsports_rosters,
@@ -713,6 +725,7 @@ SOURCE_HELP: dict[str, str] = {
     "sportsengine-clubs": "SportsEngine + JSON-LD harvest: rosters, coaches, tryouts, enrichment",
     "duda-360player-clubs": "probe Duda CMS + 360Player club sites; writes Event JSON-LD into tryouts",
     "link-canonical-clubs": "resolves event_teams.canonical_club_id / matches.home_club_id / etc.",
+    "odp-rosters": "scrapes state-association Olympic Development Program rosters (top-5 states; 49 follow-ups)",
     "replay-html": "[stub] replay archived HTML through extractors (not yet implemented)",
     "club-enrichment": "enrich canonical_clubs with logo/socials/status",
     "club-dedup": "fuzzy dedup report for canonical_clubs",
