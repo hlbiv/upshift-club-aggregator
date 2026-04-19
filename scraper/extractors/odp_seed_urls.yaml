@@ -29,11 +29,27 @@
 # --- wave-3b sweep (2026-04-19) ----------------------------------------
 # Total states/sub-associations with public URLs: 15 (was 5).
 # Deferred (no public URL surfaced or placeholder "coming soon"): 39.
+# Deferred states (blocked-by-platform): 11
 # Last sweep: 2026-04-19.
 #
 # Platforms (54 total): public-html=11, wordpress-pdf=3, hubspot-pdf=1,
 # gotsport=3, playmetrics=2, praxis=2, band=1, box=1, email=5,
 # unknown=25.
+#
+# The `deferred` key tags a state whose roster is known to be
+# permanently or semi-permanently unreachable via public HTTP. Allowed
+# values (extensible; add new tags as new blocker classes emerge):
+#   blocked-by-platform  — roster gated behind a platform we can't
+#                          scrape (BAND, Box, PlayMetrics, Praxis,
+#                          email-only). See the platform-specific
+#                          blocker docs for why each is out of scope.
+#   blocked-by-auth      — roster requires a login we don't have.
+#   deferred-research    — operator-TBD; not yet swept exhaustively.
+#   no-public-roster     — org confirmed roster is never made public.
+#   pending-partnership  — partnership conversation ongoing.
+# States tagged `deferred:` are short-circuited by the runner (they
+# already have `urls: []` today, but the tag makes the skip intentional
+# and carries a structured reason for downstream reporting).
 #
 # Deferred list: AL, AR, CO, CT, DE, GA, HI, IA, ID, IN, KS, KY, LA,
 # MA, MD, ME, MI, MN, MS, MT, NC, ND, NE, NM, NV, OK, OR, PA-W, RI,
@@ -77,6 +93,8 @@ states:
     # but no public pool roster; selections go via email per page
     # (contact will.Montgomery@arkansassoccer.org).
     platform: email
+    deferred: blocked-by-platform
+    deferred_reason: "Roster distributed via email only; no public URL"
     urls: []
     # No public ODP roster URL found (searched "Arkansas Soccer
     # Association ODP 2025-26 roster", "arkansassoccer.org pool").
@@ -128,6 +146,8 @@ states:
     # Connecticut Junior Soccer Association ODP hub. Contact + BAND
     # group links only; no public roster.
     platform: band
+    deferred: blocked-by-platform
+    deferred_reason: "BAND is invite-only; no public web access"
     urls: []
     # No public ODP roster URL found (searched "CJSA ODP 2025-26
     # roster", "Connecticut Junior Soccer ODP pool"); selections appear
@@ -141,6 +161,8 @@ states:
     # communicated by email to Director of ODP (Tyler Bastianelli);
     # no public pool page.
     platform: email
+    deferred: blocked-by-platform
+    deferred_reason: "Roster distributed via email only; no public URL"
     urls: []
     # No public ODP roster URL found (searched "Delaware Youth Soccer
     # ODP roster", "dysa.org odp pool").
@@ -245,6 +267,8 @@ states:
     # Louisiana Soccer Association — "Louisiana Select (ODP)". Tryout
     # registration links by age group; no public pool roster.
     platform: email
+    deferred: blocked-by-platform
+    deferred_reason: "Roster distributed via email only; no public URL"
     urls: []
     # No public ODP roster URL found (searched "Louisiana Soccer ODP
     # roster", "playlouisianasoccer.org odp select"); roster likely
@@ -267,6 +291,8 @@ states:
     # Maryland State Youth Soccer Association ODP general info page.
     # Lists staff + schedule; no public pool roster.
     platform: email
+    deferred: blocked-by-platform
+    deferred_reason: "Roster distributed via email only; no public URL"
     urls: []
     # No public ODP roster URL found (searched "Maryland Youth Soccer
     # ODP roster", "msysa.org odp pool"); roster distributed via
@@ -296,6 +322,8 @@ states:
     # MN Youth Soccer ODP hub. PlayMetrics registration links + trial
     # info; no public roster.
     platform: playmetrics
+    deferred: blocked-by-platform
+    deferred_reason: "PlayMetrics gates rosters behind account login"
     urls: []
     # No public ODP roster URL found (searched "Minnesota Youth
     # Soccer ODP roster", "mnyouthsoccer.org odp pool"); contact is
@@ -357,6 +385,8 @@ states:
     # Nebraska State Soccer ODP hub. 2025-26 moving to Praxis for
     # registration; no public roster.
     platform: praxis
+    deferred: blocked-by-platform
+    deferred_reason: "Praxis League Management gates rosters behind login"
     urls: []
     # No public ODP roster URL found (searched "Nebraska State
     # Soccer ODP roster", "nebraskastatesoccer.org odp"); contact is
@@ -457,6 +487,8 @@ states:
     # Oregon Youth Soccer ODP hub. WUFOO financial aid form +
     # Praxis/Squadi registration; no public roster.
     platform: praxis
+    deferred: blocked-by-platform
+    deferred_reason: "Praxis League Management gates rosters behind login"
     urls: []
     # No public ODP roster URL found (searched "Oregon Youth Soccer
     # ODP roster", "oregonyouthsoccer.org odp").
@@ -483,6 +515,8 @@ states:
     # Rhode Island Soccer Association ODP page. Program description +
     # partner info; roster contact is odp-director@soccer-ri.com.
     platform: email
+    deferred: blocked-by-platform
+    deferred_reason: "Roster distributed via email only; no public URL"
     urls: []
     # No public ODP roster URL found (searched "Rhode Island Soccer
     # ODP roster", "soccer-ri.com olympic-development-program").
@@ -492,6 +526,8 @@ states:
     # scyouthsoccer.com/youth-elite-program. Tryout dates + league
     # registration links only; no public roster.
     platform: playmetrics
+    deferred: blocked-by-platform
+    deferred_reason: "PlayMetrics gates rosters behind account login"
     urls: []
     # No public ODP roster URL found (searched "South Carolina Youth
     # Soccer ODP roster", "scyouthsoccer.com youth-elite-program");
@@ -513,6 +549,8 @@ states:
     # calendar + Box folder link for team app; no public roster on
     # the hub page.
     platform: box
+    deferred: blocked-by-platform
+    deferred_reason: "Box.com shared folder gates access behind sign-in"
     urls: []
     # No public ODP roster URL found (searched "Tennessee State
     # Soccer ODP roster", "tnsoccer.org odp"); Box-hosted team app

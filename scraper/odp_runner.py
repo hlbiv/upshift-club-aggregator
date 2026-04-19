@@ -181,6 +181,16 @@ def run_odp_rosters(
                     )
                     continue
 
+            deferred_tag = state_cfg.get("deferred")
+            if deferred_tag:
+                logger.info(
+                    "[odp-rosters] state %s deferred (%s): %s — skipping",
+                    state_key,
+                    deferred_tag,
+                    state_cfg.get("deferred_reason") or "no reason given",
+                )
+                continue
+
             if not urls:
                 logger.info(
                     "[odp-rosters] state %s has no seed URLs (follow-up) — skipping",
