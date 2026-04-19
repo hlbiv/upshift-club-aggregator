@@ -492,6 +492,19 @@ def _run_source(args) -> None:
         )
         _sq_print_summary(outcome)
         return
+    if key in ("sportsengine-clubs", "sportsengine_clubs"):
+        from sportsengine_clubs_runner import (
+            run_sportsengine_clubs,
+            print_summary as _se_print_summary,
+            DEFAULT_LIMIT as _SE_DEFAULT_LIMIT,
+        )
+        outcome = run_sportsengine_clubs(
+            dry_run=args.dry_run,
+            limit=args.limit if args.limit is not None else _SE_DEFAULT_LIMIT,
+            state=args.state,
+        )
+        _se_print_summary(outcome)
+        return
     if key in ("club-enrichment", "club_enrichment"):
         from enrichment_runner import run_club_enrichment, print_summary as _ce_print_summary
         outcome = run_club_enrichment(
@@ -804,6 +817,7 @@ def main() -> None:
                              "'tryouts' (wordpress source + status expiry; see tryouts_runner.py for why GotSport tryout discovery is not supported), "
                              "'youth-coaches' (scrapes youth club staff pages into coach_discoveries), "
                              "'squarespace-clubs' (Squarespace + JSON-LD harvest: rosters, coaches, tryouts, enrichment), "
+                             "'sportsengine-clubs' (SportsEngine + JSON-LD harvest: rosters, coaches, tryouts, enrichment), "
                              "'link-canonical-clubs' (resolves event_teams.canonical_club_id), "
                              "'club-enrichment' (enrich canonical_clubs with logo/socials/status), "
                              "'club-dedup' (fuzzy dedup report for canonical_clubs), "
