@@ -1,0 +1,9 @@
+# Per-domain proxy pool config. See scraper/utils/http.py for semantics.
+# Format:
+#   domains:
+#     <hostname>:
+#       proxies: [<proxy_url>, <proxy_url>]
+#       cooldown_seconds: 300   # optional, default 300
+# Empty domains map = direct connection for every request. This is the
+# initial state; add entries when a site starts 403-ing.
+domains: {}
