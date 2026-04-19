@@ -48,9 +48,27 @@ from typing import List, Dict, Set
 import requests
 
 from extractors.registry import register
-from extractors.gotsport import scrape_gotsport_event
+from extractors.gotsport import parse_gotsport_event_html, scrape_gotsport_event
 
 logger = logging.getLogger(__name__)
+
+
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """
+    Pure-function parser for one EDP-hosted GotSport event-clubs page.
+
+    EDP orchestrates many GotSport events (see ``_KNOWN_EDP_EVENT_IDS``);
+    the live ``scrape_edp`` entry point loops over them, filters to
+    EDP-branded events, and dedups. ``parse_html`` receives a single
+    pre-fetched page at a time (replay flow) so it delegates directly to
+    ``parse_gotsport_event_html`` and leaves cross-page dedup /
+    name-filtering in the orchestrator.
+    """
+    return parse_gotsport_event_html(html, source_url, league_name=league_name)
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"}
 _BASE_URL = "https://www.edpsoccer.com"

@@ -16,7 +16,11 @@ import os
 from typing import List, Dict
 
 from extractors.registry import register
-from extractors.gotsport import scrape_gotsport_event, scrape_gotsport_teams
+from extractors.gotsport import (
+    parse_gotsport_event_html,
+    scrape_gotsport_event,
+    scrape_gotsport_teams,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +29,24 @@ _EVENTS = [
     (32708, "SSSL active season"),
 ]
 _STATE = "FL"
+
+
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """
+    Pure-function parser for one SSSL GotSport event-clubs page.
+
+    SSSL orchestrates two GotSport events and merges + dedups them in
+    ``scrape_sssl``. For replay we parse one pre-fetched page at a time;
+    cross-event dedup stays in the orchestrator. The FL ``state`` is
+    stamped here so single-page replays produce canonical SSSL records.
+    """
+    return parse_gotsport_event_html(
+        html, source_url, league_name=league_name, state=_STATE,
+    )
 
 
 @register(r"sssl\.net")
