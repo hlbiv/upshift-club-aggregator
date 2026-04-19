@@ -52,7 +52,23 @@ try:
 except ImportError:  # pragma: no cover — tested envs have psycopg2
     psycopg2 = None  # type: ignore
 
+try:
+    # `utils.retry` is a sibling module under scraper/. If the package
+    # layout changes (e.g. running this file directly with a weird
+    # sys.path) we fall back to a no-retry connect rather than crashing
+    # the logger import — the JSONL fallback still catches the failure.
+    from utils.retry import retry_with_backoff  # type: ignore
+except Exception:  # pragma: no cover — defensive
+    retry_with_backoff = None  # type: ignore
+
 log = logging.getLogger("scrape_run_logger")
+
+# Retry budget for the initial psycopg2 connect. Small + fast on purpose:
+# we don't want to block scraping on a sustained outage (the JSONL
+# fallback is the durable safety net), but a one-second hiccup at process
+# start shouldn't dump a session's worth of telemetry to disk.
+_CONNECT_MAX_RETRIES = 2  # → up to 3 attempts total
+_CONNECT_BASE_DELAY_SECONDS = 0.5
 
 
 class FailureKind(str, Enum):
@@ -185,16 +201,46 @@ def _db_configured() -> bool:
     return psycopg2 is not None and bool(os.environ.get("DATABASE_URL"))
 
 
+def _raw_connect() -> Any:
+    """One-shot psycopg2 connect. Raises on failure."""
+    c = psycopg2.connect(os.environ["DATABASE_URL"])
+    c.autocommit = True
+    return c
+
+
 def _try_connect() -> Optional[Any]:
-    """Attempt a raw psycopg2 connect. Returns None on failure."""
+    """Attempt a psycopg2 connect with bounded retries. Returns None on failure.
+
+    Wrapped in `retry_with_backoff` so a transient blip (DNS flap,
+    pgbouncer restart, server-side connection limit churn) doesn't dump
+    the entire scrape session into the JSONL fallback. After the retry
+    budget is exhausted we still fall through to JSONL — the retry is
+    additive, not a replacement for the durable on-disk safety net.
+
+    The retry treats *any* exception during connect as transient
+    (`retryable_check=lambda _: True`). psycopg2 raises `OperationalError`
+    for most network-level failures, but the precise class varies by
+    pgbouncer/proxy in front of the DB, so a permissive check is safer
+    than enumerating types here. The budget is small enough (≤3 attempts,
+    sub-second base delay) that genuine outages still fall through
+    quickly to the JSONL fallback.
+    """
     if not _db_configured():
         return None
     try:
-        c = psycopg2.connect(os.environ["DATABASE_URL"])
-        c.autocommit = True
-        return c
+        if retry_with_backoff is None:
+            return _raw_connect()
+        return retry_with_backoff(
+            _raw_connect,
+            max_retries=_CONNECT_MAX_RETRIES,
+            base_delay=_CONNECT_BASE_DELAY_SECONDS,
+            retryable_check=lambda _exc: True,
+            label="scrape_run_logger.connect",
+        )
     except Exception as exc:
-        log.warning("scrape_run_logger: connect failed — %s", exc)
+        log.warning(
+            "scrape_run_logger: connect failed after retries — %s", exc,
+        )
         return None
 
 
