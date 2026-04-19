@@ -22,7 +22,7 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import pandas as pd
 
@@ -375,193 +375,312 @@ def _write_website_coverage(frame_entries: list[tuple[str, pd.DataFrame]]) -> No
 
 # ---------------------------------------------------------------------------
 # Alternative dispatchers: per-source scraper + rollup jobs
+#
+# --source handlers: each handler takes an argparse.Namespace and returns
+# None. They are kept small on purpose so adding a new --source value
+# means adding ONE entry to SOURCE_HANDLERS + ONE entry to SOURCE_HELP —
+# no more editing a long `if key in (...)` chain that collides with every
+# parallel PR.
+#
+# Imports are kept inside handlers so importing run.py does not pull
+# every runner's transitive dependency tree (Playwright, psycopg2, etc.).
 # ---------------------------------------------------------------------------
 
-def _run_source(args) -> None:
+
+def _handle_gotsport_matches(args: argparse.Namespace) -> None:
+    if not args.event_id:
+        logger.error("--source gotsport-matches requires --event-id")
+        sys.exit(2)
+    _run_gotsport_matches(
+        event_id=args.event_id,
+        season=args.season,
+        league_name=args.league_name,
+        dry_run=args.dry_run,
+    )
+
+
+def _handle_sincsports_events(args: argparse.Namespace) -> None:
+    from events_runner import run_sincsports_events, print_summary
+    outcomes = run_sincsports_events(dry_run=args.dry_run, only_tid=args.tid)
+    print_summary(outcomes)
+
+
+def _handle_link_canonical_clubs(args: argparse.Namespace) -> None:
+    from canonical_club_linker import run_cli as _run_linker
+    rc = _run_linker(dry_run=args.dry_run, limit=args.limit)
+    sys.exit(rc)
+
+
+def _handle_sincsports_rosters(args: argparse.Namespace) -> None:
+    from rosters_runner import run_sincsports_rosters, print_summary
+    outcomes = run_sincsports_rosters(dry_run=args.dry_run, only_tid=args.tid)
+    print_summary(outcomes)
+
+
+def _handle_gotsport_events(args: argparse.Namespace) -> None:
+    from gotsport_events_runner import run_gotsport_events
+    from gotsport_events_runner import print_summary as _gs_print_summary
+    event_ids = [args.event_id] if args.event_id else None
+    outcomes = run_gotsport_events(
+        dry_run=args.dry_run, event_ids=event_ids, limit=args.limit,
+    )
+    _gs_print_summary(outcomes)
+
+
+def _handle_totalglobalsports_events(args: argparse.Namespace) -> None:
+    from totalglobalsports_events_runner import (
+        run_totalglobalsports_events,
+        print_summary as _tgs_print_summary,
+    )
+    event_ids = [args.event_id] if args.event_id else None
+    outcomes = run_totalglobalsports_events(
+        dry_run=args.dry_run,
+        event_ids=event_ids,
+        limit=args.limit,
+        season=args.season or "2025-26",
+    )
+    _tgs_print_summary(outcomes)
+
+
+def _handle_gotsport_matches_batch(args: argparse.Namespace) -> None:
+    from gotsport_matches_runner import run_gotsport_matches_batch
+    from gotsport_matches_runner import print_summary as _gmb_print_summary
+    outcomes = run_gotsport_matches_batch(
+        dry_run=args.dry_run,
+        event_id=args.event_id,
+        limit=args.limit,
+    )
+    _gmb_print_summary(outcomes)
+
+
+def _handle_gotsport_rosters(args: argparse.Namespace) -> None:
+    from gotsport_rosters_runner import run_gotsport_rosters
+    from gotsport_rosters_runner import print_summary as _gr_print_summary
+    outcomes = run_gotsport_rosters(
+        dry_run=args.dry_run,
+        event_id=args.event_id,
+        limit=args.limit,
+    )
+    _gr_print_summary(outcomes)
+
+
+def _handle_tryouts_wordpress(args: argparse.Namespace) -> None:
+    from tryouts_runner import run_tryouts_wordpress, print_summary
+    outcomes = run_tryouts_wordpress(dry_run=args.dry_run, limit=args.limit)
+    print_summary(outcomes)
+
+
+def _handle_tryouts_gotsport(args: argparse.Namespace) -> None:
+    logger.error(
+        "--source tryouts-gotsport is no longer supported. GotSport "
+        "disallows automated event discovery via robots.txt and the "
+        "public Rankings API does not include tryouts. See "
+        "tryouts_runner.py module docstring for details."
+    )
+    sys.exit(2)
+
+
+def _handle_tryouts(args: argparse.Namespace) -> None:
+    from tryouts_runner import run_tryouts, print_summary
+    outcomes = run_tryouts(dry_run=args.dry_run, limit=args.limit)
+    print_summary(outcomes)
+
+
+def _handle_youth_coaches(args: argparse.Namespace) -> None:
+    from youth_coach_runner import run_youth_coaches, print_summary as _yc_print_summary
+    result = run_youth_coaches(
+        dry_run=args.dry_run,
+        limit=args.limit,
+        state=args.state,
+        platform_family=args.platform_family,
+    )
+    _yc_print_summary(result)
+
+
+def _handle_squarespace_clubs(args: argparse.Namespace) -> None:
+    from squarespace_clubs_runner import (
+        run_squarespace_clubs,
+        print_summary as _sq_print_summary,
+        DEFAULT_LIMIT as _SQ_DEFAULT_LIMIT,
+    )
+    outcome = run_squarespace_clubs(
+        dry_run=args.dry_run,
+        limit=args.limit if args.limit is not None else _SQ_DEFAULT_LIMIT,
+        state=args.state,
+    )
+    _sq_print_summary(outcome)
+
+
+def _handle_sportsengine_clubs(args: argparse.Namespace) -> None:
+    from sportsengine_clubs_runner import (
+        run_sportsengine_clubs,
+        print_summary as _se_print_summary,
+        DEFAULT_LIMIT as _SE_DEFAULT_LIMIT,
+    )
+    outcome = run_sportsengine_clubs(
+        dry_run=args.dry_run,
+        limit=args.limit if args.limit is not None else _SE_DEFAULT_LIMIT,
+        state=args.state,
+    )
+    _se_print_summary(outcome)
+
+
+def _handle_club_enrichment(args: argparse.Namespace) -> None:
+    from enrichment_runner import run_club_enrichment, print_summary as _ce_print_summary
+    outcome = run_club_enrichment(
+        dry_run=args.dry_run,
+        only_club_id=int(args.event_id) if args.event_id else None,
+        force=getattr(args, "force", False),
+        limit=args.limit,
+    )
+    _ce_print_summary(outcome)
+
+
+def _handle_club_dedup(args: argparse.Namespace) -> None:
+    from dedup.club_dedup import run_club_dedup, print_report
+    pairs = run_club_dedup(
+        threshold=0.85,
+        dry_run=args.dry_run,
+        state=args.state if hasattr(args, "state") else None,
+    )
+    print_report(pairs)
+
+
+def _handle_usclub_sanctioned(args: argparse.Namespace) -> None:
+    from usclub_events_runner import run_usclub_events, print_summary as _uc_print_summary
+    outcomes = run_usclub_events(
+        dry_run=args.dry_run,
+        season=args.season or "2025-26",
+    )
+    _uc_print_summary(outcomes)
+
+
+def _handle_usclub_seeds(args: argparse.Namespace) -> None:
+    from usclub_events_runner import run_usclub_events, print_summary as _uc_print_summary
+    outcomes = run_usclub_events(
+        dry_run=args.dry_run,
+        skip_discovery=True,
+        season=args.season or "2025-26",
+    )
+    _uc_print_summary(outcomes)
+
+
+def _handle_usclub_id(args: argparse.Namespace) -> None:
+    from usclub_id_runner import run_usclub_id, print_summary as _uid_print_summary
+    outcomes = run_usclub_id(
+        dry_run=args.dry_run,
+        limit=args.limit,
+    )
+    _uid_print_summary(outcomes)
+
+
+def _handle_duda_360player_clubs(args: argparse.Namespace) -> None:
+    from duda_360player_clubs_runner import (
+        run_duda_360player_clubs,
+        print_summary as _d360_print_summary,
+    )
+    outcome = run_duda_360player_clubs(
+        dry_run=args.dry_run,
+        limit=args.limit,
+    )
+    _d360_print_summary(outcome)
+
+
+# Kebab-case is the canonical, documented form in the CLI help output;
+# snake-case aliases exist only because early scripts sometimes passed
+# them. Keep both in SOURCE_HANDLERS but ONLY kebab in SOURCE_HELP (snake
+# duplicates would pollute --help).
+SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
+    "gotsport-matches": _handle_gotsport_matches,
+    "gotsport_matches": _handle_gotsport_matches,
+    "sincsports-events": _handle_sincsports_events,
+    "sincsports_events": _handle_sincsports_events,
+    "link-canonical-clubs": _handle_link_canonical_clubs,
+    "link_canonical_clubs": _handle_link_canonical_clubs,
+    "sincsports-rosters": _handle_sincsports_rosters,
+    "sincsports_rosters": _handle_sincsports_rosters,
+    "gotsport-events": _handle_gotsport_events,
+    "gotsport_events": _handle_gotsport_events,
+    "totalglobalsports-events": _handle_totalglobalsports_events,
+    "totalglobalsports_events": _handle_totalglobalsports_events,
+    "tgs-events": _handle_totalglobalsports_events,
+    "tgs_events": _handle_totalglobalsports_events,
+    "gotsport-matches-batch": _handle_gotsport_matches_batch,
+    "gotsport_matches_batch": _handle_gotsport_matches_batch,
+    "gotsport-rosters": _handle_gotsport_rosters,
+    "gotsport_rosters": _handle_gotsport_rosters,
+    "tryouts-wordpress": _handle_tryouts_wordpress,
+    "tryouts_wordpress": _handle_tryouts_wordpress,
+    "tryouts-gotsport": _handle_tryouts_gotsport,
+    "tryouts_gotsport": _handle_tryouts_gotsport,
+    "tryouts": _handle_tryouts,
+    "youth-coaches": _handle_youth_coaches,
+    "youth_coaches": _handle_youth_coaches,
+    "squarespace-clubs": _handle_squarespace_clubs,
+    "squarespace_clubs": _handle_squarespace_clubs,
+    "sportsengine-clubs": _handle_sportsengine_clubs,
+    "sportsengine_clubs": _handle_sportsengine_clubs,
+    "club-enrichment": _handle_club_enrichment,
+    "club_enrichment": _handle_club_enrichment,
+    "club-dedup": _handle_club_dedup,
+    "club_dedup": _handle_club_dedup,
+    "usclub-sanctioned": _handle_usclub_sanctioned,
+    "usclub_sanctioned": _handle_usclub_sanctioned,
+    "usclub-seeds": _handle_usclub_seeds,
+    "usclub_seeds": _handle_usclub_seeds,
+    "usclub-id": _handle_usclub_id,
+    "usclub_id": _handle_usclub_id,
+    "duda-360player-clubs": _handle_duda_360player_clubs,
+    "duda_360player_clubs": _handle_duda_360player_clubs,
+}
+
+# One entry per UNIQUE source (kebab form only). Used to build the
+# --source argparse help block. Snake-case aliases deliberately absent
+# here: they're a compatibility shim, not user-facing.
+SOURCE_HELP: dict[str, str] = {
+    "gotsport-matches": "populates matches from GotSport schedules (requires --event-id)",
+    "gotsport-matches-batch": "batch matches across all GotSport events",
+    "gotsport-events": "populates events + event_teams from GotSport",
+    "gotsport-rosters": "populates club_roster_snapshots from GotSport rosters",
+    "totalglobalsports-events": "populates events + event_teams from TotalGlobalSports (alias: tgs-events)",
+    "tgs-events": "short alias for totalglobalsports-events",
+    "sincsports-events": "populates events + event_teams from SincSports",
+    "sincsports-rosters": "populates club_roster_snapshots + roster_diffs from SincSports",
+    "tryouts-wordpress": "populates tryouts from WordPress club sites",
+    "tryouts": "wordpress source + status expiry (see tryouts_runner.py for why GotSport tryout discovery is not supported)",
+    "tryouts-gotsport": "removed — GotSport disallows automated event discovery",
+    "youth-coaches": "scrapes youth club staff pages into coach_discoveries",
+    "squarespace-clubs": "Squarespace + JSON-LD harvest: rosters, coaches, tryouts, enrichment",
+    "sportsengine-clubs": "SportsEngine + JSON-LD harvest: rosters, coaches, tryouts, enrichment",
+    "duda-360player-clubs": "probe Duda CMS + 360Player club sites; writes Event JSON-LD into tryouts",
+    "link-canonical-clubs": "resolves event_teams.canonical_club_id / matches.home_club_id / etc.",
+    "club-enrichment": "enrich canonical_clubs with logo/socials/status",
+    "club-dedup": "fuzzy dedup report for canonical_clubs",
+    "usclub-sanctioned": "discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events",
+    "usclub-seeds": "seed only — National Cup + NPL Finals GotSport events, skip discovery",
+    "usclub-id": "discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API (scaffold)",
+}
+
+
+def _build_source_help() -> str:
+    """Render the --source argparse help block from SOURCE_HELP."""
+    lines = ["Run a non-league scraper by key. Supported sources:"]
+    for k in sorted(SOURCE_HELP):
+        lines.append(f"  {k} — {SOURCE_HELP[k]}")
+    return "\n".join(lines)
+
+
+def _run_source(args: argparse.Namespace) -> None:
     """Dispatch --source KEY to the appropriate non-league scraper."""
     key = args.source
-    if key == "gotsport-matches":
-        if not args.event_id:
-            logger.error("--source gotsport-matches requires --event-id")
-            sys.exit(2)
-        _run_gotsport_matches(
-            event_id=args.event_id,
-            season=args.season,
-            league_name=args.league_name,
-            dry_run=args.dry_run,
+    handler = SOURCE_HANDLERS.get(key)
+    if handler is None:
+        raise ValueError(
+            f"Unknown --source value: {key!r}. "
+            f"Valid: {sorted(set(SOURCE_HELP))}"
         )
-        return
-    if key in ("sincsports-events", "sincsports_events"):
-        from events_runner import run_sincsports_events, print_summary
-        outcomes = run_sincsports_events(dry_run=args.dry_run, only_tid=args.tid)
-        print_summary(outcomes)
-        return
-    if key in ("link-canonical-clubs", "link_canonical_clubs"):
-        from canonical_club_linker import run_cli as _run_linker
-        rc = _run_linker(dry_run=args.dry_run, limit=args.limit)
-        sys.exit(rc)
-    if key in ("sincsports-rosters", "sincsports_rosters"):
-        from rosters_runner import run_sincsports_rosters, print_summary
-        outcomes = run_sincsports_rosters(dry_run=args.dry_run, only_tid=args.tid)
-        print_summary(outcomes)
-        return
-    if key in ("gotsport-events", "gotsport_events"):
-        from gotsport_events_runner import run_gotsport_events
-        from gotsport_events_runner import print_summary as _gs_print_summary
-        event_ids = [args.event_id] if args.event_id else None
-        outcomes = run_gotsport_events(
-            dry_run=args.dry_run, event_ids=event_ids, limit=args.limit,
-        )
-        _gs_print_summary(outcomes)
-        return
-    if key in (
-        "totalglobalsports-events", "totalglobalsports_events",
-        "tgs-events", "tgs_events",
-    ):
-        from totalglobalsports_events_runner import (
-            run_totalglobalsports_events,
-            print_summary as _tgs_print_summary,
-        )
-        event_ids = [args.event_id] if args.event_id else None
-        outcomes = run_totalglobalsports_events(
-            dry_run=args.dry_run,
-            event_ids=event_ids,
-            limit=args.limit,
-            season=args.season or "2025-26",
-        )
-        _tgs_print_summary(outcomes)
-        return
-    if key in ("gotsport-matches-batch", "gotsport_matches_batch"):
-        from gotsport_matches_runner import run_gotsport_matches_batch
-        from gotsport_matches_runner import print_summary as _gmb_print_summary
-        outcomes = run_gotsport_matches_batch(
-            dry_run=args.dry_run,
-            event_id=args.event_id,
-            limit=args.limit,
-        )
-        _gmb_print_summary(outcomes)
-        return
-    if key in ("gotsport-rosters", "gotsport_rosters"):
-        from gotsport_rosters_runner import run_gotsport_rosters
-        from gotsport_rosters_runner import print_summary as _gr_print_summary
-        outcomes = run_gotsport_rosters(
-            dry_run=args.dry_run,
-            event_id=args.event_id,
-            limit=args.limit,
-        )
-        _gr_print_summary(outcomes)
-        return
-    if key in ("tryouts-wordpress", "tryouts_wordpress"):
-        from tryouts_runner import run_tryouts_wordpress, print_summary
-        outcomes = run_tryouts_wordpress(dry_run=args.dry_run, limit=args.limit)
-        print_summary(outcomes)
-        return
-    if key in ("tryouts-gotsport", "tryouts_gotsport"):
-        logger.error(
-            "--source tryouts-gotsport is no longer supported. GotSport "
-            "disallows automated event discovery via robots.txt and the "
-            "public Rankings API does not include tryouts. See "
-            "tryouts_runner.py module docstring for details."
-        )
-        sys.exit(2)
-    if key == "tryouts":
-        from tryouts_runner import run_tryouts, print_summary
-        outcomes = run_tryouts(dry_run=args.dry_run, limit=args.limit)
-        print_summary(outcomes)
-        return
-    if key in ("youth-coaches", "youth_coaches"):
-        from youth_coach_runner import run_youth_coaches, print_summary as _yc_print_summary
-        result = run_youth_coaches(
-            dry_run=args.dry_run,
-            limit=args.limit,
-            state=args.state,
-            platform_family=args.platform_family,
-        )
-        _yc_print_summary(result)
-        return
-    if key in ("squarespace-clubs", "squarespace_clubs"):
-        from squarespace_clubs_runner import (
-            run_squarespace_clubs,
-            print_summary as _sq_print_summary,
-            DEFAULT_LIMIT as _SQ_DEFAULT_LIMIT,
-        )
-        outcome = run_squarespace_clubs(
-            dry_run=args.dry_run,
-            limit=args.limit if args.limit is not None else _SQ_DEFAULT_LIMIT,
-            state=args.state,
-        )
-        _sq_print_summary(outcome)
-        return
-    if key in ("sportsengine-clubs", "sportsengine_clubs"):
-        from sportsengine_clubs_runner import (
-            run_sportsengine_clubs,
-            print_summary as _se_print_summary,
-            DEFAULT_LIMIT as _SE_DEFAULT_LIMIT,
-        )
-        outcome = run_sportsengine_clubs(
-            dry_run=args.dry_run,
-            limit=args.limit if args.limit is not None else _SE_DEFAULT_LIMIT,
-            state=args.state,
-        )
-        _se_print_summary(outcome)
-        return
-    if key in ("club-enrichment", "club_enrichment"):
-        from enrichment_runner import run_club_enrichment, print_summary as _ce_print_summary
-        outcome = run_club_enrichment(
-            dry_run=args.dry_run,
-            only_club_id=int(args.event_id) if args.event_id else None,
-            force=getattr(args, "force", False),
-            limit=args.limit,
-        )
-        _ce_print_summary(outcome)
-        return
-    if key in ("club-dedup", "club_dedup"):
-        from dedup.club_dedup import run_club_dedup, print_report
-        pairs = run_club_dedup(
-            threshold=0.85,
-            dry_run=args.dry_run,
-            state=args.state if hasattr(args, "state") else None,
-        )
-        print_report(pairs)
-        return
-    if key in ("usclub-sanctioned", "usclub_sanctioned"):
-        from usclub_events_runner import run_usclub_events, print_summary as _uc_print_summary
-        outcomes = run_usclub_events(
-            dry_run=args.dry_run,
-            season=args.season or "2025-26",
-        )
-        _uc_print_summary(outcomes)
-        return
-    if key in ("usclub-seeds", "usclub_seeds"):
-        from usclub_events_runner import run_usclub_events, print_summary as _uc_print_summary
-        outcomes = run_usclub_events(
-            dry_run=args.dry_run,
-            skip_discovery=True,
-            season=args.season or "2025-26",
-        )
-        _uc_print_summary(outcomes)
-        return
-    if key in ("usclub-id", "usclub_id"):
-        from usclub_id_runner import run_usclub_id, print_summary as _uid_print_summary
-        outcomes = run_usclub_id(
-            dry_run=args.dry_run,
-            limit=args.limit,
-        )
-        _uid_print_summary(outcomes)
-        return
-    if key in ("duda-360player-clubs", "duda_360player_clubs"):
-        from duda_360player_clubs_runner import (
-            run_duda_360player_clubs,
-            print_summary as _d360_print_summary,
-        )
-        outcome = run_duda_360player_clubs(
-            dry_run=args.dry_run,
-            limit=args.limit,
-        )
-        _d360_print_summary(outcome)
-        return
-    logger.error("Unknown --source key: %s", key)
-    sys.exit(2)
+    handler(args)
+    return
 
 
 def _run_gotsport_matches(
@@ -805,28 +924,7 @@ def main() -> None:
                         help="Also scrape team-level data (age groups, contacts) where available. "
                              "For GotSport leagues this makes one additional HTTP request per club.")
     parser.add_argument("--source", metavar="KEY",
-                        help="Run a non-league scraper by key. Supported: "
-                             "'gotsport-matches' (requires --event-id), "
-                             "'gotsport-matches-batch' (batch matches for all GotSport events), "
-                             "'gotsport-events' (populates events + event_teams from GotSport), "
-                             "'totalglobalsports-events' / 'tgs-events' (populates events + event_teams from TotalGlobalSports), "
-                             "'gotsport-rosters' (populates club_roster_snapshots from GotSport rosters), "
-                             "'sincsports-events' (populates events + event_teams), "
-                             "'sincsports-rosters' (populates club_roster_snapshots + roster_diffs), "
-                             "'tryouts-wordpress' (populates tryouts from WordPress club sites), "
-                             "'tryouts' (wordpress source + status expiry; see tryouts_runner.py for why GotSport tryout discovery is not supported), "
-                             "'youth-coaches' (scrapes youth club staff pages into coach_discoveries), "
-                             "'squarespace-clubs' (Squarespace + JSON-LD harvest: rosters, coaches, tryouts, enrichment), "
-                             "'sportsengine-clubs' (SportsEngine + JSON-LD harvest: rosters, coaches, tryouts, enrichment), "
-                             "'link-canonical-clubs' (resolves event_teams.canonical_club_id), "
-                             "'club-enrichment' (enrich canonical_clubs with logo/socials/status), "
-                             "'club-dedup' (fuzzy dedup report for canonical_clubs), "
-                             "'usclub-sanctioned' (discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events), "
-                             "'usclub-seeds' (seed only — National Cup + NPL Finals GotSport events, skip discovery), "
-                             "'usclub-id' (discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API; "
-                             "scaffold only — body parsing + player_id_selections rows arrive in a follow-up PR), "
-                             "'duda-360player-clubs' (probe Duda CMS + 360Player club sites; "
-                             "writes Event JSON-LD into tryouts; coach_discoveries collected but not written this PR).")
+                        help=_build_source_help())
     parser.add_argument("--event-id", metavar="ID",
                         help="GotSport event id for --source gotsport-matches or gotsport-events.")
     parser.add_argument("--season", metavar="SEASON",
