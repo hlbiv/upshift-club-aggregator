@@ -11,6 +11,10 @@ Both pages share the same structure:
   </article>
 
 City and state are extracted from the trailing parenthetical.
+
+The HTML-parsing logic lives in ``parse_html(html, source_url, league_name)``
+at module level so the replay handler (see ``run.py::_handle_replay_html``)
+can dispatch to it against archived HTML without re-fetching.
 """
 
 from __future__ import annotations
@@ -46,20 +50,26 @@ def _parse_location(text: str) -> tuple[str, str, str]:
     return club, city, state
 
 
-@register(r"girlsacademyleague\.com/(members|aspire-membership)")
-def scrape_girls_academy(url: str, league_name: str) -> List[Dict]:
-    logger.info("[GA custom] Scraping %s", url)
-    try:
-        r = requests.get(url, headers=_HEADERS, timeout=20)
-        r.raise_for_status()
-    except requests.RequestException as exc:
-        logger.error("GA fetch failed: %s", exc)
+def parse_html(html: str, source_url: str = "", league_name: str = "") -> List[Dict]:
+    """Pure parser for Girls Academy / GA Aspire members pages.
+
+    Takes raw HTML and returns the same list-of-dicts shape that the
+    registered scrape entry points produce. Used by both the live
+    scrapers (which fetch via ``requests.get`` then call this) and the
+    ``--source replay-html`` handler (which re-parses archived HTML).
+
+    The ``source_url`` and ``league_name`` arguments accept empty strings
+    so the replay handler can call this with whatever metadata it has
+    stored against the archive row — they are passed through into each
+    record.
+    """
+    if not html:
         return []
 
-    soup = BeautifulSoup(r.text, "lxml")
+    soup = BeautifulSoup(html, "lxml")
     article = soup.find("article")
     if not article:
-        logger.warning("GA: no <article> found on %s", url)
+        logger.warning("GA: no <article> found on %s", source_url or "<no-url>")
         return []
 
     records: List[Dict] = []
@@ -68,6 +78,11 @@ def scrape_girls_academy(url: str, league_name: str) -> List[Dict]:
     for el in article.find_all(["h3", "h4", "li"]):
         if el.name in ("h3", "h4"):
             current_conf = el.get_text(strip=True)
+            continue
+        # Skip Divi social-follow icons ("Follow" links to FB/Twitter/IG
+        # bleed through on the members page as fake <li> rows).
+        classes = el.get("class") or []
+        if any("et_pb_social" in c for c in classes):
             continue
         # Capture any direct website link in the <li> before stripping tags
         a_tag = el.find("a", href=True)
@@ -87,10 +102,24 @@ def scrape_girls_academy(url: str, league_name: str) -> List[Dict]:
             "league_name": league_name,
             "city": city,
             "state": state,
-            "source_url": url,
+            "source_url": source_url,
             "conference": current_conf,
             "website": website,
         })
 
+    return records
+
+
+@register(r"girlsacademyleague\.com/(members|aspire-membership)")
+def scrape_girls_academy(url: str, league_name: str) -> List[Dict]:
+    logger.info("[GA custom] Scraping %s", url)
+    try:
+        r = requests.get(url, headers=_HEADERS, timeout=20)
+        r.raise_for_status()
+    except requests.RequestException as exc:
+        logger.error("GA fetch failed: %s", exc)
+        return []
+
+    records = parse_html(r.text, source_url=url, league_name=league_name)
     logger.info("[GA custom] Found %d clubs on %s", len(records), url)
     return records
