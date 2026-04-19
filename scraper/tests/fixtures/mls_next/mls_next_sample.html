@@ -1,0 +1,98 @@
+<!--
+  MLS NEXT clubs directory — minimal fixture mirroring the shape the extractor
+  expects after Playwright renders mlsnextsoccer.com/clubs. The page is a React
+  SPA whose live HTML is not fetchable without a browser (DNS-filtered in the
+  test sandbox, no Wayback capture of the rendered DOM); this file reproduces
+  the post-render structure the parser documents:
+
+    <div class="club-card"> with <h3 class="club-name"> and <p class="club-location">
+
+  Do not treat the specific club list below as authoritative — the real scraper
+  pulls from the live directory and falls back to a curated Wikipedia seed. This
+  fixture exists solely so tests can pin the parser contract.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>MLS NEXT Clubs</title></head>
+<body>
+  <div id="root">
+    <main class="club-directory">
+      <section class="clubs-grid">
+
+        <div class="club-card">
+          <h3 class="club-name">Atlanta United FC Academy</h3>
+          <p class="club-location">Marietta, GA</p>
+          <a href="https://www.atlutd.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">Austin FC Academy</h3>
+          <p class="club-location">Austin, TX</p>
+          <a href="https://www.austinfc.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">Chicago Fire FC</h3>
+          <p class="club-location">Bridgeview, IL</p>
+          <a href="https://www.chicagofirefc.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">Colorado Rapids Academy</h3>
+          <p class="club-location">Commerce City, CO</p>
+          <a href="https://www.coloradorapids.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">Columbus Crew Academy</h3>
+          <p class="club-location">Columbus, OH</p>
+          <a href="https://www.columbuscrew.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">FC Dallas Academy</h3>
+          <p class="club-location">Frisco, TX</p>
+          <a href="https://www.fcdallas.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">Houston Dynamo Academy</h3>
+          <p class="club-location">Houston, TX</p>
+          <a href="https://www.houstondynamofc.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">Inter Miami CF Academy</h3>
+          <p class="club-location">Fort Lauderdale, FL</p>
+          <a href="https://www.intermiamicf.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">LA Galaxy Academy</h3>
+          <p class="club-location">Carson, CA</p>
+          <a href="https://www.lagalaxy.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">Los Angeles FC Academy</h3>
+          <p class="club-location">Los Angeles, CA</p>
+          <a href="https://www.lafc.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">Minnesota United FC</h3>
+          <p class="club-location">Minneapolis, MN</p>
+          <a href="https://www.mnufc.com/academy">Website</a>
+        </div>
+
+        <div class="club-card">
+          <h3 class="club-name">New York Red Bulls Academy</h3>
+          <p class="club-location">Whippany, NJ</p>
+          <a href="https://www.newyorkredbulls.com/academy">Website</a>
+        </div>
+
+      </section>
+    </main>
+  </div>
+</body>
+</html>

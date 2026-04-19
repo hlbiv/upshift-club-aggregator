@@ -233,6 +233,30 @@ def _seed_records(league_name: str, source_url: str) -> List[Dict]:
     ]
 
 
+def parse_html(
+    html: str,
+    source_url: str = _URL,
+    league_name: str | None = None,
+) -> List[Dict]:
+    """
+    Pure-function parser for the MLS NEXT clubs directory.
+
+    Accepts already-fetched HTML (from Playwright or a raw-HTML archive)
+    and returns the canonical club records. This is the entry point used
+    by ``--source replay-html`` — the live scheduled scrape continues to
+    go through :func:`scrape_mls_next` below, which fetches via
+    Playwright and falls back to the curated seed list when the DOM
+    doesn't render.
+
+    Unlike ``scrape_mls_next``, this function does NOT fall back to the
+    seed dataset when parsing yields no rows — callers get whatever the
+    archived HTML actually contained. That's the right behaviour for
+    replay, which is supposed to measure what the parser would have
+    produced against the archive.
+    """
+    return _parse_live_html(html, league_name or "MLS Next", source_url)
+
+
 def _parse_live_html(html: str, league_name: str, source_url: str) -> List[Dict]:
     """
     Parse a Playwright-rendered DOM from mlsnextsoccer.com/clubs.

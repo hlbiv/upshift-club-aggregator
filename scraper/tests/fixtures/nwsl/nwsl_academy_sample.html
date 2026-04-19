@@ -1,0 +1,24 @@
+<!--
+  NWSL Academy — placeholder fixture.
+
+  nwslsoccer.com/nwsl-academy is a Next.js shell that returns 404 for
+  server-side fetches and exposes no public club-directory API. The
+  extractor intentionally ignores its HTML input and emits the curated
+  NWSL_ACADEMY_CLUBS seed list (see extractors/nwsl_academy.py docstring).
+
+  This fixture exists so replay-style tests can assert that the parser's
+  output is stable under an archived HTML body — even though the body's
+  content is not actually parsed.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>NWSL Academy</title></head>
+<body>
+  <div id="__next">
+    <main>
+      <h1>NWSL Academy</h1>
+      <p>Club directory coming soon.</p>
+    </main>
+  </div>
+</body>
+</html>
