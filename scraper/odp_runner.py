@@ -41,6 +41,7 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, os.path.dirname(__file__))
 
 from extractors.odp_rosters import PARSERS, parse_odp_page  # noqa: E402
+from extractors import odp_hubspot_pdf  # noqa: E402
 from ingest.odp_writer import insert_odp_entries  # noqa: E402
 from utils import http as _http  # noqa: E402
 from utils.retry import retry_with_backoff  # noqa: E402
@@ -158,15 +159,27 @@ def run_odp_rosters(
     try:
         for state_key, state_cfg in sorted(states_map.items()):
             parser_key = state_cfg.get("parser")
+            platform = (state_cfg.get("platform") or "").strip().lower()
             program_year = state_cfg.get("program_year") or "unknown"
             urls: List[str] = list(state_cfg.get("urls") or [])
 
-            if parser_key and parser_key not in PARSERS:
-                logger.warning(
-                    "[odp-rosters] state %s references unknown parser %r — skipping",
-                    state_key, parser_key,
-                )
-                continue
+            # HTML parsers must resolve against the PARSERS registry;
+            # PDF parsers resolve against odp_hubspot_pdf.PARSER_KEYS.
+            is_pdf_platform = platform == "hubspot-pdf"
+            if parser_key:
+                if is_pdf_platform:
+                    if parser_key not in odp_hubspot_pdf.PARSER_KEYS:
+                        logger.warning(
+                            "[odp-rosters] state %s (hubspot-pdf) references unknown PDF parser %r — skipping",
+                            state_key, parser_key,
+                        )
+                        continue
+                elif parser_key not in PARSERS:
+                    logger.warning(
+                        "[odp-rosters] state %s references unknown parser %r — skipping",
+                        state_key, parser_key,
+                    )
+                    continue
 
             if not urls:
                 logger.info(
@@ -186,44 +199,88 @@ def run_odp_rosters(
                     break
                 urls_processed += 1
 
-                html = _fetch_html(url)
-                if html is None:
-                    summary.http_errors += 1
-                    per_state["http_errors"] += 1
-                    alert_scraper_failure(
-                        scraper_key=scraper_key,
-                        failure_kind=FailureKind.NETWORK.value,
-                        error_message=f"fetch failed: {url}",
-                        source_url=url,
-                        league_name=f"ODP {state_key}",
-                    )
-                    continue
-
-                summary.pages_fetched += 1
-                per_state["pages_fetched"] += 1
-
-                entries = parse_odp_page(parser_key or "", html)
-                if not entries:
-                    logger.info("[odp-rosters] %s: 0 entries parsed from %s", state_key, url)
-                    continue
-
-                # Stamp runner-supplied metadata onto every row. See
-                # module docstring for the ALL/ALL rationale.
                 rows: List[Dict[str, Any]] = []
-                for e in entries:
-                    if not e.get("player_name"):
+
+                if is_pdf_platform:
+                    # PDF path: the extractor downloads + parses in one
+                    # call and returns fully-stamped dicts.
+                    entries = odp_hubspot_pdf.download_and_parse(
+                        url,
+                        state=state_key,
+                        program_year=program_year,
+                    )
+                    if not entries:
+                        # We can't distinguish "fetch failed" from "PDF
+                        # parsed to zero rows" without plumbing more
+                        # status through the extractor — log + alert
+                        # as a network failure, which is the more likely
+                        # cause and the one ops cares about catching.
+                        summary.http_errors += 1
+                        per_state["http_errors"] += 1
+                        alert_scraper_failure(
+                            scraper_key=scraper_key,
+                            failure_kind=FailureKind.NETWORK.value,
+                            error_message=f"hubspot-pdf fetch/parse returned 0 rows: {url}",
+                            source_url=url,
+                            league_name=f"ODP {state_key}",
+                        )
                         continue
-                    rows.append({
-                        "player_name": e["player_name"],
-                        "graduation_year": e.get("graduation_year"),
-                        "position": e.get("position"),
-                        "club_name_raw": e.get("club_name_raw"),
-                        "state": state_key,
-                        "program_year": program_year,
-                        "age_group": e.get("age_group") or "ALL",
-                        "gender": e.get("gender") or "ALL",
-                        "source_url": url,
-                    })
+                    summary.pages_fetched += 1
+                    per_state["pages_fetched"] += 1
+
+                    for e in entries:
+                        if not e.get("player_name"):
+                            continue
+                        rows.append({
+                            "player_name": e["player_name"],
+                            "graduation_year": e.get("graduation_year"),
+                            "position": e.get("position"),
+                            "club_name_raw": e.get("club_name_raw"),
+                            "state": state_key,
+                            "program_year": program_year,
+                            "age_group": e.get("age_group") or "ALL",
+                            "gender": e.get("gender") or "ALL",
+                            "source_url": url,
+                        })
+                else:
+                    # HTML path (original behavior).
+                    html = _fetch_html(url)
+                    if html is None:
+                        summary.http_errors += 1
+                        per_state["http_errors"] += 1
+                        alert_scraper_failure(
+                            scraper_key=scraper_key,
+                            failure_kind=FailureKind.NETWORK.value,
+                            error_message=f"fetch failed: {url}",
+                            source_url=url,
+                            league_name=f"ODP {state_key}",
+                        )
+                        continue
+
+                    summary.pages_fetched += 1
+                    per_state["pages_fetched"] += 1
+
+                    entries = parse_odp_page(parser_key or "", html)
+                    if not entries:
+                        logger.info("[odp-rosters] %s: 0 entries parsed from %s", state_key, url)
+                        continue
+
+                    # Stamp runner-supplied metadata onto every row. See
+                    # module docstring for the ALL/ALL rationale.
+                    for e in entries:
+                        if not e.get("player_name"):
+                            continue
+                        rows.append({
+                            "player_name": e["player_name"],
+                            "graduation_year": e.get("graduation_year"),
+                            "position": e.get("position"),
+                            "club_name_raw": e.get("club_name_raw"),
+                            "state": state_key,
+                            "program_year": program_year,
+                            "age_group": e.get("age_group") or "ALL",
+                            "gender": e.get("gender") or "ALL",
+                            "source_url": url,
+                        })
 
                 summary.entries_parsed += len(rows)
                 per_state["entries_parsed"] += len(rows)
