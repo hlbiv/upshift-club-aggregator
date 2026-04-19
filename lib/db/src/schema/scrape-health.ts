@@ -45,6 +45,14 @@ export const scrapeRunLogs = pgTable(
     ),
     errorMessage: text("error_message"),
     sourceUrl: text("source_url"),
+    // Set by the Python logger from the `SCRAPE_TRIGGERED_BY` env var
+    // (see scraper/scrape_run_logger.py::_triggered_by). Typical
+    // values: 'scheduler' for Replit Scheduled Deployments (wrapper
+    // scripts in scraper/scheduled/*.sh) and 'manual' for
+    // operator-invoked runs. NOT NULL with a default so the column is
+    // safe to push against existing rows — every pre-existing row
+    // gets backfilled to 'manual' by Postgres during ALTER TABLE.
+    triggeredBy: text("triggered_by").notNull().default("manual"),
   },
   (t) => [
     check(
