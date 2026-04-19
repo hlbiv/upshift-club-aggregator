@@ -67,12 +67,34 @@ from alerts import alert_scraper_failure  # noqa: E402
 logger = logging.getLogger("commitments_runner")
 
 
-# Default starting URLs. Each is a public TDS commitments index page.
-# TDS paginates; we deliberately do NOT follow pagination in the
-# default run until proxy support lands.
+# Default starting URLs. Each is a public TDS commitments search page,
+# server-rendered as an HTML <table> with columns:
+#   Name | Gender | State | pos | Grad | Commitment
+# Last verified 2026-04-18 — each URL returned HTTP 200 and ~25 rows
+# of player-level commitment data. Older seeds like
+# `/college-soccer-commitments/{boys,girls}` 404 today (the public
+# commitment-list paths were moved to `/search/?area=commitments`
+# sometime in 2025).
+#
+# We keep the list small and diverse (boys/girls × 2026/2027 classes);
+# TDS paginates via the ``pageNo`` query arg but we deliberately do NOT
+# follow pagination in the default run until proxy support lands.
+#
+# NOTE: the TDS `/search/` table uses the header "Commitment" for the
+# college column, which is not currently aliased in
+# ``extractors/topdrawer_commitments.py::_HEADER_ALIASES``. Until that
+# mapping is added in a follow-up parser PR, these seeds will fetch
+# 200 OK but extract 0 commitment rows. This PR is seed-URL-only by
+# design (see PR description).
 DEFAULT_TDS_SEEDS: List[str] = [
-    "https://www.topdrawersoccer.com/college-soccer-commitments/girls",
-    "https://www.topdrawersoccer.com/college-soccer-commitments/boys",
+    # Boys — Class of 2026
+    "https://www.topdrawersoccer.com/search/?query=&divisionId=&genderId=m&graduationYear=2026&positionId=0&playerRating=&stateId=All&pageNo=0&area=commitments",
+    # Girls — Class of 2026
+    "https://www.topdrawersoccer.com/search/?query=&divisionId=&genderId=f&graduationYear=2026&positionId=0&playerRating=&stateId=All&pageNo=0&area=commitments",
+    # Boys — Class of 2027
+    "https://www.topdrawersoccer.com/search/?query=&divisionId=&genderId=m&graduationYear=2027&positionId=0&playerRating=&stateId=All&pageNo=0&area=commitments",
+    # Girls — Class of 2027
+    "https://www.topdrawersoccer.com/search/?query=&divisionId=&genderId=f&graduationYear=2027&positionId=0&playerRating=&stateId=All&pageNo=0&area=commitments",
 ]
 
 DEFAULT_LIMIT = 20

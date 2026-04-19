@@ -56,49 +56,76 @@ _HEADERS = {
 
 
 # ---------------------------------------------------------------------------
-# Seed list — US Soccer YNT article index pages.
+# Seed list — US Soccer YNT press-release article URLs.
 #
 # Hardcoded on purpose. Discovery of new URLs is out of scope for this
 # PR (see module docstring). Adding a new URL = one line here.
 #
-# Format: (url, age_group_hint | None, gender_hint | None). Hints help
-# when the URL slug is unambiguous; the extractor also sniffs from the
-# article's <h1>.
+# Last verified 2026-04-18 — each URL resolves to a 200 OK press
+# release containing a positional roster (Goalkeepers / Defenders /
+# Midfielders / Forwards). The prior placeholder URLs below 404'd:
+#   /stories/2025/12/u17-bnt-announces-january-2026-training-camp-roster
+#   /stories/2025/11/u19-bnt-roster-november-2025-international-camp
+#   /stories/2025/12/u17-gnt-announces-january-2026-training-camp-roster
+#   /stories/2025/11/u19-gnt-roster-november-2025-international-camp
+# Those were invented slugs that never existed on ussoccer.com.
+#
+# Format: {"url", "age_group_hint", "gender_hint"}. Hints help when
+# the URL slug is unambiguous; the extractor also sniffs from the
+# article's <h1>. We leave hints as None where the article covers
+# multiple age groups and the parser should infer per-player.
 # ---------------------------------------------------------------------------
 USSOCCER_YNT_SEED: List[Dict[str, Optional[str]]] = [
-    # Each entry is kept loose — if a URL 404s the runner logs and
-    # continues. Over time this list will grow / churn as US Soccer
-    # publishes new rosters and archives old ones.
+    # U-17 MNT — Concacaf U-17 Qualifiers roster (Jan 2026)
     {
         "url": (
-            "https://www.ussoccer.com/stories/2025/12/"
-            "u17-bnt-announces-january-2026-training-camp-roster"
+            "https://www.ussoccer.com/stories/2026/01/"
+            "u-17-mens-national-team-head-coach-alex-aldaz-names-usa-"
+            "roster-for-2026-concacaf-u-17-qualifiers-in-st-vincent-"
+            "and-the-grenadines"
         ),
         "age_group_hint": "U-17",
         "gender_hint": "boys",
     },
+    # U-19 MNT — March 2026 training camp in Spain
     {
         "url": (
-            "https://www.ussoccer.com/stories/2025/11/"
-            "u19-bnt-roster-november-2025-international-camp"
+            "https://www.ussoccer.com/stories/2026/03/ynt-u19-mnt/"
+            "gonzalo-segares-names-20-player-us-u-19-mens-national-"
+            "team-roster-for-march-training-camp-in-spain"
         ),
         "age_group_hint": "U-19",
         "gender_hint": "boys",
     },
-    {
-        "url": (
-            "https://www.ussoccer.com/stories/2025/12/"
-            "u17-gnt-announces-january-2026-training-camp-roster"
-        ),
-        "age_group_hint": "U-17",
-        "gender_hint": "girls",
-    },
+    # U-19 + U-17 MNT — combined November 2025 FIFA-window camp article
+    # (age hint omitted — single article covers two rosters; parser
+    # per-row age detection handles it).
     {
         "url": (
             "https://www.ussoccer.com/stories/2025/11/"
-            "u19-gnt-roster-november-2025-international-camp"
+            "rosters-u-19-u-17-mens-national-team-november-fifa-window"
         ),
-        "age_group_hint": "U-19",
+        "age_group_hint": None,
+        "gender_hint": "boys",
+    },
+    # U-18/U-19/U-20 MNT — January 2026 combined domestic camp (Mesa, AZ)
+    {
+        "url": (
+            "https://www.ussoccer.com/stories/2026/01/"
+            "rosters-named-for-u-18-u-19-u-20-mens-national-team-"
+            "january-combined-domestic-training-camp-mesa-arizona"
+        ),
+        "age_group_hint": None,
+        "gender_hint": "boys",
+    },
+    # U-17 WNT — November 2025 training camp (2026 FIFA U-17 WC qualifying)
+    {
+        "url": (
+            "https://www.ussoccer.com/stories/2025/11/"
+            "under-17-womens-national-team-training-camp-georgia-"
+            "2026-fifa-world-cup-qualifying"
+        ),
+        "age_group_hint": "U-17",
         "gender_hint": "girls",
     },
 ]
