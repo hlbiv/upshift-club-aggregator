@@ -161,6 +161,19 @@ per_key AS (
 ),
 per_entity AS (
     SELECT
+        -- DECISION (PR #53 follow-up): roster scrapers map onto
+        -- entity_type='club'. The Postgres CHECK constraint
+        -- `scrape_health_entity_type_enum` (see
+        -- lib/db/src/schema/scrape-health.ts:92) does not include a
+        -- 'roster' value — its enum is
+        -- ('club','league','college','coach','event','match','tryout').
+        -- Roster freshness logically belongs to the club whose roster
+        -- is being scraped, so 'club' is the closest fit without a
+        -- schema migration. The mapping is imperfect because the
+        -- scraper_key suffix is an event/tournament id, not a
+        -- canonical_clubs.id; it just preserves freshness signal in
+        -- the polymorphic table. A future iteration can either add
+        -- 'roster' to the enum or join through a roster→club map.
         CASE
             WHEN scraper_key LIKE 'gotsport-rosters:%'   THEN 'club'
             WHEN scraper_key LIKE 'sincsports-rosters:%' THEN 'club'

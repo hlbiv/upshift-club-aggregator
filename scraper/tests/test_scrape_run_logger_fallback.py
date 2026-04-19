@@ -52,6 +52,10 @@ def _reset_module_state(tmp_path, monkeypatch):
     # Stamp a fresh process-wide fallback id so assertions on it are
     # stable per-test.
     scrape_run_logger._PROCESS_FALLBACK_RUN_ID = "test-process-id"
+    # Zero the connect-retry delay so failure-path tests don't pay
+    # multi-second backoff cost. The retry behaviour itself is
+    # exercised separately in test_connect_retry_uses_bounded_attempts.
+    monkeypatch.setattr(scrape_run_logger, "_CONNECT_BASE_DELAY_SECONDS", 0.0)
 
     yield
 
@@ -326,3 +330,90 @@ def test_close_connection_drains_pending(monkeypatch):
         if "INSERT INTO scrape_run_logs" in sql and "RETURNING" not in sql
     ]
     assert len(inserts) == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 5 — transient connect failure retries before falling through to JSONL
+# ---------------------------------------------------------------------------
+
+def test_connect_retries_on_transient_failure(monkeypatch):
+    """A one-shot connect failure must NOT spill to JSONL — the retry
+    layer should swallow it. Earlier behaviour (without retry) latched
+    transient blips into the JSONL fallback for the rest of the
+    process. The JSONL fallback is the *durable* safety net for
+    sustained outages, not the *first* response to a single failed
+    socket."""
+    # Speed up the test by shrinking the inter-attempt delay.
+    monkeypatch.setattr(scrape_run_logger, "_CONNECT_BASE_DELAY_SECONDS", 0.0)
+
+    cursor = _FakeCursor(insert_returning_id=42)
+
+    fake_mod = MagicMock()
+    call_count = {"n": 0}
+
+    def _flaky_connect(_url):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise ConnectionError("simulated transient blip")
+        return _FakeConn(lambda: cursor)
+
+    fake_mod.connect.side_effect = _flaky_connect
+    monkeypatch.setattr(scrape_run_logger, "psycopg2", fake_mod)
+
+    lg = ScrapeRunLogger(scraper_key="retry-key", league_name="L")
+    lg.start(source_url="https://example.test")
+    lg.finish_ok(records_created=1)
+
+    # Connect was attempted at least twice (one failure + one success).
+    assert call_count["n"] >= 2
+    # Logger got a real DB run_id — meaning start() landed on the DB,
+    # not the JSONL fallback.
+    assert lg.run_id == 42
+
+    # No JSONL fallback file should have been created.
+    logs_dir = os.environ["SCRAPE_RUN_LOGGER_FALLBACK_DIR"]
+    if os.path.isdir(logs_dir):
+        files = [f for f in os.listdir(logs_dir) if f.endswith(".jsonl")]
+        assert files == [], (
+            f"expected no JSONL spill on transient retry; got {files}"
+        )
+
+
+def test_connect_falls_through_to_jsonl_after_retry_budget_exhausted(monkeypatch):
+    """A sustained outage (every attempt fails) must still spill to
+    JSONL after the bounded retry budget. Otherwise we'd block on
+    backoff forever."""
+    monkeypatch.setattr(scrape_run_logger, "_CONNECT_BASE_DELAY_SECONDS", 0.0)
+    fake_mod = MagicMock()
+    fake_mod.connect.side_effect = ConnectionError("sustained outage")
+    monkeypatch.setattr(scrape_run_logger, "psycopg2", fake_mod)
+
+    lg = ScrapeRunLogger(scraper_key="exhaust-key")
+    lg.start(source_url="x")
+    lg.finish_ok(records_created=2)
+
+    # connect() called (max_retries + 1) times for start(); finish()
+    # may also retry once. Just assert we attempted >1 times overall.
+    assert fake_mod.connect.call_count >= 2
+
+    # JSONL spill must have happened.
+    logs_dir = os.environ["SCRAPE_RUN_LOGGER_FALLBACK_DIR"]
+    files = [f for f in os.listdir(logs_dir) if f.endswith(".jsonl")]
+    assert len(files) == 1
+
+
+def test_connect_retry_uses_bounded_attempts(monkeypatch):
+    """Don't retry forever: respect _CONNECT_MAX_RETRIES so a sustained
+    outage doesn't block a scrape session indefinitely."""
+    monkeypatch.setattr(scrape_run_logger, "_CONNECT_BASE_DELAY_SECONDS", 0.0)
+    monkeypatch.setattr(scrape_run_logger, "_CONNECT_MAX_RETRIES", 2)
+
+    fake_mod = MagicMock()
+    fake_mod.connect.side_effect = ConnectionError("always-down")
+    monkeypatch.setattr(scrape_run_logger, "psycopg2", fake_mod)
+
+    # Direct call to _try_connect: should attempt 3 times (1 + 2 retries)
+    # then return None.
+    result = scrape_run_logger._try_connect()
+    assert result is None
+    assert fake_mod.connect.call_count == 3
