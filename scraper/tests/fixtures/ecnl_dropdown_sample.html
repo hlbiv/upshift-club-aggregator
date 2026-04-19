@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ECNL Standings — Discovery</title>
+</head>
+<body>
+<!--
+  Mock of the AthleteOne discovery response returned by
+    /get-conference-standings/0/12/70/0/0
+  Only the <select id="event-select"> dropdown matters here; the rest of
+  the page is irrelevant to the dropdown parser.
+-->
+<div id="standings-widget">
+  <form>
+    <label for="event-select">Conference</label>
+    <select id="event-select" name="event">
+      <option value="0">Select a conference</option>
+      <option value="12345">ECNL Boys Far West 2025-26</option>
+      <option value="12346">ECNL Boys Florida 2025-26</option>
+      <option value="12347">ECNL Boys Heartland 2025-26</option>
+      <option value="12348">ECNL Boys Mid-Atlantic 2025-26</option>
+      <option value="12349">ECNL Boys Midwest 2025-26</option>
+      <option value="">Broken option (no value)</option>
+    </select>
+  </form>
+
+  <table id="standings">
+    <tbody>
+      <!-- default conference body irrelevant for the dropdown test -->
+    </tbody>
+  </table>
+</div>
+</body>
+</html>
