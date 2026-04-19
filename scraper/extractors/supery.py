@@ -37,20 +37,21 @@ _GOTSPORT_EVENTS = [
 _SYL_CLUBS_URL = "https://www.sylsoccer.com/clubs-home"
 
 
-def _scrape_syl_clubs() -> List[Dict]:
-    """Scrape the Super Y League / USL-Y historical member club list."""
-    records: List[Dict] = []
-    try:
-        r = requests.get(_SYL_CLUBS_URL, headers=_HEADERS, timeout=20)
-        r.raise_for_status()
-    except requests.RequestException as exc:
-        logger.warning("[Super Y] sylsoccer.com fetch failed: %s", exc)
-        return records
+def _parse_syl_clubs_html(html: str, source_url: str) -> List[Dict]:
+    """
+    Pure-function parser for the Super Y / USL-Y historical club list.
 
-    soup = BeautifulSoup(r.text, "lxml")
+    The sylsoccer.com clubs page is a static nav-list of ``<a>`` links; we
+    pick out anchors whose href contains ``/page/show/`` or ``/clubs/`` and
+    treat the link text as the club name.
+
+    Returns dicts with ``league_name`` left empty — the caller fills that
+    in from the invocation context.
+    """
+    records: List[Dict] = []
+    soup = BeautifulSoup(html, "lxml")
     seen: set = set()
 
-    # sylsoccer.com uses a nav-list of club links
     for a in soup.find_all("a", href=True):
         href = a["href"]
         if "/page/show/" in href or "/clubs/" in href.lower():
@@ -62,9 +63,42 @@ def _scrape_syl_clubs() -> List[Dict]:
                     "league_name": "",   # filled in by caller
                     "city": "",
                     "state": "",
-                    "source_url": _SYL_CLUBS_URL,
+                    "source_url": source_url,
                 })
 
+    return records
+
+
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """
+    Pure-function parser exposed to --source replay-html.
+
+    Parses a sylsoccer.com-style clubs-list page (the simplest single-URL
+    path in this extractor). Live runs of :func:`scrape_supery` also walk
+    multiple GotSport events; those are replayed via the gotsport-backed
+    parse_html paths on the sibling NPL extractors.
+    """
+    url = source_url or _SYL_CLUBS_URL
+    records = _parse_syl_clubs_html(html, url)
+    for rec in records:
+        rec["league_name"] = league_name
+    return records
+
+
+def _scrape_syl_clubs() -> List[Dict]:
+    """Scrape the Super Y League / USL-Y historical member club list."""
+    try:
+        r = requests.get(_SYL_CLUBS_URL, headers=_HEADERS, timeout=20)
+        r.raise_for_status()
+    except requests.RequestException as exc:
+        logger.warning("[Super Y] sylsoccer.com fetch failed: %s", exc)
+        return []
+
+    records = _parse_syl_clubs_html(r.text, _SYL_CLUBS_URL)
     logger.info("[Super Y] sylsoccer.com → %d historical clubs", len(records))
     return records
 
