@@ -1,1 +1,7 @@
 scraper/output/master.csv
+
+# JSONL fallback files written by scrape_run_logger when the DB is
+# unreachable. Drained into scrape_run_logs on the next successful
+# connection and renamed to *.drained.jsonl for audit.
+logs/
+
