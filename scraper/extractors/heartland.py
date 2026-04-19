@@ -22,12 +22,18 @@ The "Non Member" rows in seedings represent guest/external teams that do not
 count as Heartland member clubs.
 
 GotSport event IDs: N/A — league does not use GotSport
+
+PURE-FUNCTION PARSER: `parse_html(html, url, league_name)` is exposed as a
+module-level, side-effect-free function so that the `--source replay-html`
+handler (PR #80) can re-run extraction against archived HTML without making
+any network calls. The `@register`-ed `scrape_heartland` entry point wraps
+fetch + parse.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import List, Dict
+from typing import Dict, List
 
 import requests
 from bs4 import BeautifulSoup
@@ -63,12 +69,74 @@ _REC_AGES = [
 ]
 
 
-def _fetch_seedings_clubs() -> set:
+def parse_html(html: str, url: str, league_name: str) -> List[Dict]:
+    """
+    Pure-function parser for a Heartland seedings CGI response.
+
+    Reads the <tr class="textsm"> rows of a single seedings-CGI HTML page,
+    extracts the Club column (td[1]), filters out "Non Member" guest rows,
+    and maps each member abbreviation through ``_ABBR_MAP`` to produce the
+    canonical club record shape used by the pipeline.
+
+    Because a single seedings page covers one level / gender / age combo,
+    callers that want the full Heartland member-club set must aggregate
+    ``parse_html`` results across the full grid. The live
+    ``scrape_heartland`` entry point does exactly that; replay (PR #80)
+    invokes ``parse_html`` per archived page.
+
+    Parameters
+    ----------
+    html:
+        Raw HTML body of a seedings.cgi response. Empty / whitespace-only
+        input yields ``[]``.
+    url:
+        The source URL the HTML came from. Recorded verbatim on each
+        emitted record as ``source_url``.
+    league_name:
+        League name to stamp on every emitted record (e.g.
+        ``"Heartland Soccer Association"``).
+
+    Returns
+    -------
+    List of dicts, one per distinct member-club abbreviation on the page,
+    each with ``club_name``, ``league_name``, ``city``, ``state``,
+    ``source_url``. Unknown abbreviations fall back to ``(abbr, "", "KS")``
+    to match the legacy ``scrape_heartland`` behaviour.
+    """
+    if not html or not html.strip():
+        return []
+
+    soup = BeautifulSoup(html, "lxml")
+    seen_abbrs: set = set()
+    for tr in soup.find_all("tr", class_="textsm"):
+        tds = tr.find_all("td")
+        if len(tds) >= 2:
+            abbr = tds[1].get_text(strip=True)
+            if abbr and abbr != "Non Member":
+                seen_abbrs.add(abbr)
+
+    records: List[Dict] = []
+    for abbr in sorted(seen_abbrs):
+        full_name, city, state = _ABBR_MAP.get(abbr, (abbr, "", "KS"))
+        records.append({
+            "club_name":   full_name,
+            "league_name": league_name,
+            "city":        city,
+            "state":       state,
+            "source_url":  url,
+        })
+    return records
+
+
+def _fetch_seedings_clubs(league_name: str) -> List[Dict]:
     """
     Hit the Heartland seedings CGI endpoint for every level/gender/age group
-    combination and return the set of unique club abbreviations found.
+    combination and aggregate member-club records across the grid.
+
+    Delegates per-page HTML parsing to ``parse_html`` so the exact same code
+    path is exercised by live scraping and by --source replay-html.
     """
-    seen_abbrs: set = set()
+    by_abbr: Dict[str, Dict] = {}
     combos = (
         [("Premier", age) for age in _PREMIER_AGES] +
         [("Recreational", age) for age in _REC_AGES]
@@ -82,16 +150,12 @@ def _fetch_seedings_clubs() -> set:
                 )
                 if r.status_code != 200 or not r.text.strip():
                     continue
-                soup = BeautifulSoup(r.text, "lxml")
-                for tr in soup.find_all("tr", class_="textsm"):
-                    tds = tr.find_all("td")
-                    if len(tds) >= 2:
-                        abbr = tds[1].get_text(strip=True)
-                        if abbr and abbr != "Non Member":
-                            seen_abbrs.add(abbr)
+                for rec in parse_html(r.text, _SEEDINGS_URL, league_name):
+                    # Dedup across pages using canonical club_name
+                    by_abbr.setdefault(rec["club_name"], rec)
             except requests.RequestException:
                 continue
-    return seen_abbrs
+    return list(by_abbr.values())
 
 
 @register(r"heartlandsoccer\.net")
@@ -101,20 +165,12 @@ def scrape_heartland(url: str, league_name: str) -> List[Dict]:
         "Heartland uses proprietary registration (not GotSport)."
     )
 
-    live_abbrs = _fetch_seedings_clubs()
+    records = _fetch_seedings_clubs(league_name)
 
-    if live_abbrs:
-        logger.info("[Heartland custom] CGI returned %d unique member clubs", len(live_abbrs))
-        records = []
-        for abbr in sorted(live_abbrs):
-            full_name, city, state = _ABBR_MAP.get(abbr, (abbr, "", "KS"))
-            records.append({
-                "club_name":   full_name,
-                "league_name": league_name,
-                "city":        city,
-                "state":       state,
-                "source_url":  _SEEDINGS_URL,
-            })
+    if records:
+        logger.info(
+            "[Heartland custom] CGI returned %d unique member clubs", len(records)
+        )
         return records
 
     # Fallback: minimal governance members from public member-clubs page
@@ -129,7 +185,5 @@ def scrape_heartland(url: str, league_name: str) -> List[Dict]:
             "state":       state,
             "source_url":  _MEMBER_CLUBS_URL,
         }
-        for name, city, state in [
-            v for v in _ABBR_MAP.values()
-        ]
+        for name, city, state in _ABBR_MAP.values()
     ]
