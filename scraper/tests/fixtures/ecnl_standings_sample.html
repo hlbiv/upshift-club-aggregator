@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ECNL Standings — Per-Conference</title>
+</head>
+<body>
+<!--
+  Mock of one conference's AthleteOne standings response returned by
+    /get-conference-standings/12345/12/70/0/0
+  (event_id=12345, org_id=12, org_season_id=70)
+
+  Columns (no header row rendered by AthleteOne):
+    rank, team_name, gp, w, l, d, gf, ga, gd, ppg, pts
+-->
+<div id="standings-widget">
+  <select id="event-select" name="event">
+    <option value="12345" selected>ECNL Boys Far West 2025-26</option>
+  </select>
+
+  <table id="standings">
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>
+          <span class="individual-team-item"
+                data-club-id="101"
+                data-team-id="1001"
+                data-event-id="12345">
+            Oregon Premier ECNL B13
+          </span>
+        </td>
+        <td>10</td><td>8</td><td>1</td><td>1</td>
+        <td>30</td><td>8</td><td>22</td><td>2.50</td><td>25</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>
+          <span class="individual-team-item"
+                data-club-id="102"
+                data-team-id="1002"
+                data-event-id="12345">
+            Florida Kraze ECNL B13 Qualification: Champions League
+          </span>
+        </td>
+        <td>10</td><td>7</td><td>2</td><td>1</td>
+        <td>24</td><td>10</td><td>14</td><td>2.20</td><td>22</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>
+          <span class="individual-team-item"
+                data-club-id="103"
+                data-team-id="1003"
+                data-event-id="12345">
+            Seattle United ECNL B13
+          </span>
+        </td>
+        <td>10</td><td>6</td><td>3</td><td>1</td>
+        <td>20</td><td>12</td><td>8</td><td>1.90</td><td>19</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>
+          <span class="individual-team-item"
+                data-club-id="104"
+                data-team-id="1004"
+                data-event-id="12345">
+            San Diego Surf ECNL RL G12
+          </span>
+        </td>
+        <td>10</td><td>5</td><td>4</td><td>1</td>
+        <td>18</td><td>15</td><td>3</td><td>1.60</td><td>16</td>
+      </tr>
+      <tr>
+        <!-- Row that doesn't match _CLUB_RE — should be silently skipped -->
+        <td>5</td>
+        <td>
+          <span class="individual-team-item" data-club-id="" data-team-id="">
+            Random Non-Matching Row
+          </span>
+        </td>
+        <td>10</td><td>0</td><td>10</td><td>0</td>
+        <td>2</td><td>50</td><td>-48</td><td>0.00</td><td>0</td>
+      </tr>
+      <tr>
+        <!-- Single-cell row — should be skipped by the len(tds) < 2 guard -->
+        <td colspan="11">End of standings</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+</body>
+</html>

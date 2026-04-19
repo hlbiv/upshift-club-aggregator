@@ -19,6 +19,21 @@ Org season IDs (org_id=12, current season):
 
 Team name format in standings: "Oregon Premier ECNL B13Qualification:..."
 Club name extraction: strip " ECNL [BG]YY..." suffix.
+
+Replay coverage
+---------------
+``parse_html(html, source_url, league_name)`` dispatches a pre-fetched HTML
+page back through the same parsers used by the live path. It inspects the
+``source_url`` to decide whether the page is a dropdown (discovery) snapshot
+or a per-conference standings page:
+
+* URL shape ``/get-conference-standings/0/<org_id>/<org_season_id>/0/0``
+  → dropdown. Returns ``[]`` — discovery metadata is not a consumable row
+  type for the clubs pipeline, but we still exercise the parser so
+  snapshot-replay doesn't error.
+* URL shape ``/get-conference-standings/<event_id>/<org_id>/<org_season_id>/0/0``
+  with ``event_id > 0`` → per-conference standings. Returns the per-club
+  records the live path writes.
 """
 
 from __future__ import annotations
@@ -59,12 +74,218 @@ _CLUB_RE = re.compile(
 _MIN = 3
 _MAX = 80
 
+# URL dispatch regexes. The canonical URL shape is
+#   /get-conference-standings/<event_id>/<org_id>/<org_season_id>/0/0
+# where event_id == 0 signals the dropdown (discovery) page and any other
+# integer is a per-conference standings page.
+_URL_DROPDOWN_RE = re.compile(
+    r"/get-conference-standings/0/(\d+)/(\d+)/0/0",
+    re.IGNORECASE,
+)
+_URL_STANDINGS_RE = re.compile(
+    r"/get-conference-standings/(\d+)/(\d+)/(\d+)/0/0",
+    re.IGNORECASE,
+)
+
 
 def _api_url(org_season_id: int | str, event_id: int | str = 0) -> str:
     # Correct order: /{event_id}/{org_id}/{org_season_id}/0/0
     # event_id=0 returns default conference + full dropdown listing all conference event_ids
     return f"{_BASE}/{event_id}/{_ORG_ID}/{org_season_id}/0/0"
 
+
+# ---------------------------------------------------------------------------
+# Pure-function parsers (no HTTP)
+# ---------------------------------------------------------------------------
+
+def parse_event_select_dropdown_html(html: str) -> List[Tuple[str, str]]:
+    """
+    Parse a ``<select id="event-select">`` dropdown snapshot.
+
+    Returns a list of ``(event_id, conference_name)`` tuples. Options with
+    ``value`` missing or equal to ``"0"`` (the default "choose a conference"
+    placeholder) are skipped.
+
+    Empty / unrecognised HTML returns an empty list — never raises.
+    """
+    if not html:
+        return []
+
+    soup = BeautifulSoup(html, "lxml")
+    event_sel = soup.find("select", id="event-select")
+    if not event_sel:
+        return []
+
+    events: List[Tuple[str, str]] = []
+    for opt in event_sel.find_all("option"):
+        val = opt.get("value", "").strip()
+        txt = opt.get_text(strip=True)
+        if val and val != "0":
+            events.append((val, txt))
+    return events
+
+
+def parse_conference_standings_html(
+    html: str,
+    *,
+    league_name: str = "",
+    source_url: str = "",
+    org_season_id: str = "",
+    event_id: str = "",
+    conf_name: str = "",
+) -> List[Dict]:
+    """
+    Parse one conference's AthleteOne standings HTML.
+
+    Returns a list of per-team records (one row per team in the standings
+    table). Each record includes the scraped club name plus the full
+    standings stats and AthleteOne IDs.
+
+    The ``league_name``/``source_url``/``org_season_id``/``event_id``/
+    ``conf_name`` kwargs are copied onto each record so the replay path
+    can reproduce the exact same dict shape the live fetch emits. When
+    the caller omits them (e.g. replay with only a URL) we fall back to
+    sensible defaults.
+
+    Empty / unrecognised HTML returns an empty list — never raises.
+    """
+    if not html:
+        return []
+
+    soup = BeautifulSoup(html, "lxml")
+    team_records: List[Dict] = []
+
+    for row in soup.find_all("tr"):
+        tds = row.find_all("td")
+        if len(tds) < 2:
+            continue
+
+        raw_name = tds[1].get_text(separator=" ", strip=True)
+        m = _CLUB_RE.match(raw_name)
+        if not m:
+            continue
+
+        club_name = m.group(1).strip()
+        if not (_MIN < len(club_name) <= _MAX):
+            continue
+
+        club, age_group, gender_letter, qualification = _parse_team_name(raw_name)
+        gender = _GENDER_MAP.get(gender_letter, "")
+
+        # Extract AthleteOne IDs from the individual-team-item span
+        span = tds[1].find("span", class_="individual-team-item")
+        club_id = span.get("data-club-id", "") if span else ""
+        team_id = span.get("data-team-id", "") if span else ""
+        # data-event-id on the span equals the conference event_id we already have
+
+        def _td(i: int) -> str:
+            return tds[i].get_text(strip=True) if i < len(tds) else ""
+
+        team_records.append({
+            "club_name":     club or club_name,
+            "team_name_raw": raw_name,
+            "age_group":     age_group,
+            "gender":        gender,
+            "conference":    conf_name,
+            "org_season_id": str(org_season_id),
+            "event_id":      str(event_id),
+            "club_id":       club_id,
+            "team_id":       team_id,
+            "qualification": qualification,
+            "rank":  _td(0),
+            "gp":    _td(2),
+            "w":     _td(3),
+            "l":     _td(4),
+            "d":     _td(5),
+            "gf":    _td(6),
+            "ga":    _td(7),
+            "gd":    _td(8),
+            "ppg":   _td(9),
+            "pts":   _td(10),
+            "source_url":  source_url,
+            "league_name": league_name,
+        })
+
+    return team_records
+
+
+def parse_html(
+    html: str,
+    source_url: str = "",
+    league_name: str = "",
+) -> List[Dict]:
+    """
+    Pure-function dispatcher exposed to ``--source replay-html``.
+
+    Inspects ``source_url`` to decide which sub-parser to call:
+
+    * Dropdown page (``event_id=0``) → returns ``[]``. The dropdown is
+      discovery metadata (a listing of per-conference event_ids). It
+      doesn't produce club rows, so there's nothing for the clubs
+      pipeline to write. We still invoke the parser so any malformed
+      snapshot surfaces as a log warning instead of silently succeeding.
+    * Per-conference standings (``event_id > 0``) → returns the list of
+      per-team records produced by :func:`parse_conference_standings_html`,
+      post-processed the same way the live path does (``club_name``
+      collapsed + ``league_name`` stamped).
+    * URL with no recognisable ECNL shape → we best-effort treat the HTML
+      as a per-conference standings page. This covers any future archive
+      rows whose ``source_url`` wasn't captured cleanly; the parser is
+      resilient to missing tables and will return ``[]`` in that case.
+
+    Returns a list of club-ish records with keys ``club_name``,
+    ``league_name``, ``city``, ``state``, ``source_url`` (matching the
+    contract used by the rest of the scraper pipeline) for the standings
+    path, or an empty list for the dropdown path.
+    """
+    url = source_url or ""
+
+    if _URL_DROPDOWN_RE.search(url):
+        # Discovery-only page. Parse it so malformed fixtures fail loudly,
+        # but the clubs pipeline gets nothing to write.
+        events = parse_event_select_dropdown_html(html)
+        logger.debug(
+            "[ECNL replay] dropdown snapshot url=%s → %d conferences",
+            url, len(events),
+        )
+        return []
+
+    m = _URL_STANDINGS_RE.search(url)
+    if m:
+        event_id, _org_id, org_season_id = m.group(1), m.group(2), m.group(3)
+    else:
+        event_id, org_season_id = "", ""
+
+    team_records = parse_conference_standings_html(
+        html,
+        league_name=league_name,
+        source_url=url,
+        org_season_id=org_season_id,
+        event_id=event_id,
+        conf_name="",
+    )
+
+    # Collapse to the club-level shape the rest of the pipeline expects.
+    seen: set[str] = set()
+    club_records: List[Dict] = []
+    for rec in team_records:
+        key = rec["club_name"].strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        club_records.append({
+            "club_name":   rec["club_name"],
+            "league_name": league_name,
+            "city":        "",
+            "state":       "",
+            "source_url":  url,
+        })
+    return club_records
+
+
+# ---------------------------------------------------------------------------
+# Fetch wrappers (live path)
+# ---------------------------------------------------------------------------
 
 def _get_conference_event_ids(org_season_id: int | str) -> List[Tuple[str, str]]:
     """
@@ -82,18 +303,10 @@ def _get_conference_event_ids(org_season_id: int | str) -> List[Tuple[str, str]]
         logger.error("Conference list fetch exception (org_season=%s): %s", org_season_id, exc)
         return []
 
-    soup = BeautifulSoup(r.text, "lxml")
-    event_sel = soup.find("select", id="event-select")
-    if not event_sel:
+    events = parse_event_select_dropdown_html(r.text)
+    if not events:
         logger.warning("No event-select found in response for org_season=%s", org_season_id)
         return []
-
-    events = []
-    for opt in event_sel.find_all("option"):
-        val = opt.get("value", "").strip()
-        txt = opt.get_text(strip=True)
-        if val and val != "0":
-            events.append((val, txt))
 
     logger.info("org_season=%s → %d conferences discovered", org_season_id, len(events))
     return events
@@ -152,61 +365,19 @@ def _fetch_clubs_for_event(
         logger.debug("Fetch failed (org_season=%s event=%s): %s", org_season_id, event_id, exc)
         return [], []
 
-    soup = BeautifulSoup(r.text, "lxml")
+    team_records = parse_conference_standings_html(
+        r.text,
+        league_name="",  # filled in by _scrape_org_seasons
+        source_url=url,
+        org_season_id=str(org_season_id),
+        event_id=str(event_id),
+        conf_name=conf_name,
+    )
+
     clubs: set[str] = set()
-    team_records: List[Dict] = []
-
-    for row in soup.find_all("tr"):
-        tds = row.find_all("td")
-        if len(tds) < 2:
-            continue
-
-        raw_name = tds[1].get_text(separator=" ", strip=True)
-        m = _CLUB_RE.match(raw_name)
-        if not m:
-            continue
-
-        club_name = m.group(1).strip()
-        if not (_MIN < len(club_name) <= _MAX):
-            continue
-
-        clubs.add(club_name)
-
-        club, age_group, gender_letter, qualification = _parse_team_name(raw_name)
-        gender = _GENDER_MAP.get(gender_letter, "")
-
-        # Extract AthleteOne IDs from the individual-team-item span
-        span = tds[1].find("span", class_="individual-team-item")
-        club_id = span.get("data-club-id", "") if span else ""
-        team_id = span.get("data-team-id", "") if span else ""
-        # data-event-id on the span equals the conference event_id we already have
-
-        def _td(i: int) -> str:
-            return tds[i].get_text(strip=True) if i < len(tds) else ""
-
-        team_records.append({
-            "club_name":     club or club_name,
-            "team_name_raw": raw_name,
-            "age_group":     age_group,
-            "gender":        gender,
-            "conference":    conf_name,
-            "org_season_id": str(org_season_id),
-            "event_id":      event_id,
-            "club_id":       club_id,
-            "team_id":       team_id,
-            "qualification": qualification,
-            "rank":  _td(0),
-            "gp":    _td(2),
-            "w":     _td(3),
-            "l":     _td(4),
-            "d":     _td(5),
-            "gf":    _td(6),
-            "ga":    _td(7),
-            "gd":    _td(8),
-            "ppg":   _td(9),
-            "pts":   _td(10),
-            "source_url": url,
-        })
+    for rec in team_records:
+        if rec["club_name"]:
+            clubs.add(rec["club_name"])
 
     return list(clubs), team_records
 
