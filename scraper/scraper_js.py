@@ -6,6 +6,16 @@ Falls back to the static scraper automatically when:
   - Playwright can't resolve DNS (sandbox/network restriction)
   - The browser crashes or times out on launch
   - Any other unrecoverable browser error occurs
+
+TODO(raw-html-archive): wire ``utils.html_archive.archive_raw_html``
+after a successful ``page.content()`` capture. The static scraper
+already archives every 2xx fetch (see ``scraper_static.py``). The
+Playwright path is deliberately deferred to a follow-up PR because
+(a) rendered HTML can be multi-MB and naive capture doubles the
+per-page memory footprint, and (b) we want to decide whether to
+archive the pre-JS source, the post-render DOM, or both before
+committing to a shape. Gating follows the same ``ARCHIVE_RAW_HTML_ENABLED``
+env flag as the static hook.
 """
 
 from __future__ import annotations

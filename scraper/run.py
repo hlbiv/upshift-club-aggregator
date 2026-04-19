@@ -583,6 +583,25 @@ def _handle_ussoccer_ynt(args: argparse.Namespace) -> None:
     _ynt_print_summary(summary)
 
 
+def _handle_replay_html(args: argparse.Namespace) -> None:
+    """
+    Stub for the future raw-HTML replay job.
+
+    The plan (separate PR): given one or more source URLs, fetch the
+    matching archive rows, download the gzipped blobs from Replit Object
+    Storage, and pipe them back through the existing extractor registry
+    so we can re-parse without re-fetching. Needs a round-trip through
+    ``extractors.registry`` that currently takes a URL → scraper call;
+    the replay path has to take URL → bytes → parsed dict without
+    touching the network.
+    """
+    logger.error(
+        "--source replay-html: not yet implemented — requires round-trip "
+        "replay of extractors. Coming in a follow-up PR."
+    )
+    sys.exit(2)
+
+
 def _handle_duda_360player_clubs(args: argparse.Namespace) -> None:
     from duda_360player_clubs_runner import (
         run_duda_360player_clubs,
@@ -593,6 +612,19 @@ def _handle_duda_360player_clubs(args: argparse.Namespace) -> None:
         limit=args.limit,
     )
     _d360_print_summary(outcome)
+
+
+def _handle_topdrawer_commitments(args: argparse.Namespace) -> None:
+    from commitments_runner import (
+        run_topdrawer_commitments,
+        print_summary as _tdc_print_summary,
+        DEFAULT_LIMIT as _TDC_DEFAULT_LIMIT,
+    )
+    outcome = run_topdrawer_commitments(
+        dry_run=args.dry_run,
+        limit=args.limit if args.limit is not None else _TDC_DEFAULT_LIMIT,
+    )
+    _tdc_print_summary(outcome)
 
 
 # Kebab-case is the canonical, documented form in the CLI help output;
@@ -606,6 +638,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "sincsports_events": _handle_sincsports_events,
     "link-canonical-clubs": _handle_link_canonical_clubs,
     "link_canonical_clubs": _handle_link_canonical_clubs,
+    "replay-html": _handle_replay_html,
+    "replay_html": _handle_replay_html,
     "sincsports-rosters": _handle_sincsports_rosters,
     "sincsports_rosters": _handle_sincsports_rosters,
     "gotsport-events": _handle_gotsport_events,
@@ -629,6 +663,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "squarespace_clubs": _handle_squarespace_clubs,
     "sportsengine-clubs": _handle_sportsengine_clubs,
     "sportsengine_clubs": _handle_sportsengine_clubs,
+    "topdrawer-commitments": _handle_topdrawer_commitments,
+    "topdrawer_commitments": _handle_topdrawer_commitments,
     "club-enrichment": _handle_club_enrichment,
     "club_enrichment": _handle_club_enrichment,
     "club-dedup": _handle_club_dedup,
@@ -660,11 +696,13 @@ SOURCE_HELP: dict[str, str] = {
     "tryouts-wordpress": "populates tryouts from WordPress club sites",
     "tryouts": "wordpress source + status expiry (see tryouts_runner.py for why GotSport tryout discovery is not supported)",
     "tryouts-gotsport": "removed — GotSport disallows automated event discovery",
+    "topdrawer-commitments": "scrape college commitments from TopDrawerSoccer into commitments table (default --limit 20; expect 403 without proxies)",
     "youth-coaches": "scrapes youth club staff pages into coach_discoveries",
     "squarespace-clubs": "Squarespace + JSON-LD harvest: rosters, coaches, tryouts, enrichment",
     "sportsengine-clubs": "SportsEngine + JSON-LD harvest: rosters, coaches, tryouts, enrichment",
     "duda-360player-clubs": "probe Duda CMS + 360Player club sites; writes Event JSON-LD into tryouts",
     "link-canonical-clubs": "resolves event_teams.canonical_club_id / matches.home_club_id / etc.",
+    "replay-html": "[stub] replay archived HTML through extractors (not yet implemented)",
     "club-enrichment": "enrich canonical_clubs with logo/socials/status",
     "club-dedup": "fuzzy dedup report for canonical_clubs",
     "usclub-sanctioned": "discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events",

@@ -343,6 +343,19 @@ assertTable(schema.scrapeHealth, "scrape_health", {
   ],
 });
 
+assertTable(schema.rawHtmlArchive, "raw_html_archive", {
+  cols: [
+    "run_id",
+    "source_url",
+    "sha256",
+    "bucket_path",
+    "content_bytes",
+    "archived_at",
+  ],
+  uniques: ["raw_html_archive_sha256_uq"],
+  indexes: ["raw_html_archive_run_id_idx"],
+});
+
 // ---------------------------------------------------------------------------
 // Domain 10 — Player iD selections (US Club iD program)
 // ---------------------------------------------------------------------------
@@ -370,6 +383,28 @@ assertTable(schema.playerIdSelections, "player_id_selections", {
     "player_id_selections_club_idx",
   ],
   checks: ["player_id_selections_source_enum"],
+});
+
+// ---------------------------------------------------------------------------
+// Domain 11 — Commitments (TopDrawerSoccer + future sources)
+// ---------------------------------------------------------------------------
+
+assertTable(schema.commitments, "commitments", {
+  cols: [
+    "player_name",
+    "graduation_year",
+    "position",
+    "club_id",
+    "club_name_raw",
+    "college_id",
+    "college_name_raw",
+    "commitment_date",
+    "source_url",
+    "first_seen_at",
+    "last_seen_at",
+  ],
+  uniques: ["commitments_natural_key_uq"],
+  indexes: ["commitments_grad_year_idx"],
 });
 
 // ---------------------------------------------------------------------------

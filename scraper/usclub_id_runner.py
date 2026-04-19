@@ -26,7 +26,11 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from extractors.usclub_id import scrape_soccerwire_id_articles  # noqa: E402
+from extractors.usclub_id import (  # noqa: E402
+    fetch_article_html,
+    parse_article_body,
+    scrape_soccerwire_id_articles,
+)
 from ingest.id_selection_writer import insert_player_id_selections  # noqa: E402
 from scrape_run_logger import ScrapeRunLogger, classify_exception  # noqa: E402
 from alerts import alert_scraper_failure  # noqa: E402
@@ -97,14 +101,34 @@ def run_usclub_id(
     outcome.posts_discovered = len(discovered)
     outcome.discovered = discovered
 
-    # Body parsing into player rows is a follow-up PR. Until it lands
-    # the writer call is a no-op (zero rows). We still wire the call
-    # site so the follow-up just slots in the parser output.
+    # --- Phase 2: per-article body parsing into player rows ---
+    # Each article fetch is independent and fail-soft: a network blip
+    # or template mismatch on one post must not abort the rest of the
+    # run. parse_article_body never raises — it returns [] and warns
+    # for unparseable shapes (image-only rosters, announcement posts).
     rows: List[Dict[str, Any]] = []
+    parse_failures = 0
+    for article in discovered:
+        url = article.get("url") or ""
+        if not url:
+            continue
+        try:
+            html = fetch_article_html(url)
+            if not html:
+                parse_failures += 1
+                continue
+            article_rows = parse_article_body(html, article=article)
+            rows.extend(article_rows)
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.warning(
+                "[usclub-id] unexpected parse failure for %s: %s", url, exc,
+            )
+            parse_failures += 1
+
     counts = insert_player_id_selections(rows, dry_run=dry_run)
     outcome.rows_inserted = counts["inserted"]
     outcome.rows_updated = counts["updated"]
-    outcome.rows_skipped = counts["skipped"]
+    outcome.rows_skipped = counts["skipped"] + parse_failures
 
     if run_log is not None:
         run_log.finish_ok(
@@ -115,9 +139,11 @@ def run_usclub_id(
 
     outcomes.append(outcome)
     logger.info(
-        "[usclub-id] Phase 1 done: %d posts discovered, %d rows written "
-        "(body parsing arrives in follow-up PR)",
-        outcome.posts_discovered, outcome.rows_inserted,
+        "[usclub-id] done: %d posts discovered, %d player rows extracted, "
+        "%d inserted, %d updated, %d skipped (incl. %d unfetchable)",
+        outcome.posts_discovered, len(rows),
+        outcome.rows_inserted, outcome.rows_updated, outcome.rows_skipped,
+        parse_failures,
     )
     return outcomes
 
