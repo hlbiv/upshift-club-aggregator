@@ -11,8 +11,8 @@ import {
   ListClubsResponse,
   GetClubResponse,
   GetRelatedClubsResponse,
-  ClubSearchResponse,
-  ClubStaffResponse,
+  SearchClubsAdvancedResponse,
+  GetClubStaffResponse,
 } from "@hlbiv/api-zod";
 import { parsePagination, buildWhere } from "../lib/pagination";
 
@@ -130,7 +130,7 @@ router.get("/clubs/search", async (req, res, next): Promise<void> => {
       clubIds = [...new Set(affRows.map((r) => r.clubId!).filter(Boolean))];
       if (clubIds.length === 0) {
         res.json(
-          ClubSearchResponse.parse({
+          SearchClubsAdvancedResponse.parse({
             clubs: [],
             total: 0,
             page,
@@ -170,7 +170,7 @@ router.get("/clubs/search", async (req, res, next): Promise<void> => {
       .offset(offset);
 
     res.json(
-      ClubSearchResponse.parse({
+      SearchClubsAdvancedResponse.parse({
         clubs: rows.map((r) => ({
           id: r.id,
           club_name_canonical: r.clubNameCanonical,
@@ -451,7 +451,7 @@ router.get("/clubs/:id/staff", async (req, res, next): Promise<void> => {
       );
 
     res.json(
-      ClubStaffResponse.parse({
+      GetClubStaffResponse.parse({
         club_id: id,
         staff: staff.map((s) => ({
           id: s.id,

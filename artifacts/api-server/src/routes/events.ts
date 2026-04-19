@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { events, eventTeams } from "@workspace/db/schema";
 import { eq, ilike, gte, lte, sql, asc, desc, inArray } from "drizzle-orm";
 import {
-  EventSearchResponse,
+  SearchEventsResponse,
   EventDetailResponse,
   EventBatchResponse,
   EventTeamsResponse,
@@ -340,7 +340,7 @@ router.get("/events/search", async (req, res, next): Promise<void> => {
       .offset(offset);
 
     res.json(
-      EventSearchResponse.parse({
+      SearchEventsResponse.parse({
         events: rows.map((r) => ({
           id: r.teamId,
           club_id: r.canonicalClubId ?? null,

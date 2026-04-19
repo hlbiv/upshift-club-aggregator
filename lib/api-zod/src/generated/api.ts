@@ -54,8 +54,8 @@ export const ListClubsResponse = zod.object({
       state: zod.string(),
       country: zod.string(),
       status: zod.string(),
-      website: zod.string().nullable().optional(),
-      website_status: zod.string().nullable().optional(),
+      website: zod.string().nullish(),
+      website_status: zod.string().nullish(),
     }),
   ),
   total: zod.number(),
@@ -79,8 +79,8 @@ export const GetClubResponse = zod
     state: zod.string(),
     country: zod.string(),
     status: zod.string(),
-    website: zod.string().nullable().optional(),
-    website_status: zod.string().nullable().optional(),
+    website: zod.string().nullish(),
+    website_status: zod.string().nullish(),
   })
   .and(
     zod.object({
@@ -130,8 +130,8 @@ export const GetRelatedClubsResponse = zod.object({
       state: zod.string(),
       country: zod.string(),
       status: zod.string(),
-      website: zod.string().nullable().optional(),
-      website_status: zod.string().nullable().optional(),
+      website: zod.string().nullish(),
+      website_status: zod.string().nullish(),
     }),
   ),
 });
@@ -156,199 +156,10 @@ export const SearchClubsResponse = zod.object({
       state: zod.string(),
       country: zod.string(),
       status: zod.string(),
-      website: zod.string().nullable().optional(),
-      website_status: zod.string().nullable().optional(),
+      website: zod.string().nullish(),
+      website_status: zod.string().nullish(),
     }),
   ),
-});
-
-/**
- * Advanced club search with combinable filters (name, state, league, has_website).
- * @summary Advanced club search
- */
-export const SearchClubsAdvancedQueryParams = zod.object({
-  name: zod.coerce.string().optional().describe("Substring match on club_name_canonical (ILIKE)"),
-  state: zod.coerce.string().optional().describe("US state abbreviation or full name (ILIKE match)"),
-  league: zod.coerce.string().optional().describe("League name substring to filter by affiliation (ILIKE)"),
-  has_website: zod.coerce.boolean().optional().describe("When true, only clubs with a known website are returned"),
-  page: zod.coerce.number().default(1),
-  page_size: zod.coerce.number().max(100).default(20),
-});
-
-export const ClubSearchResponse = zod.object({
-  clubs: zod.array(
-    zod.object({
-      id: zod.number(),
-      club_name_canonical: zod.string(),
-      club_slug: zod.string(),
-      city: zod.string(),
-      state: zod.string(),
-      country: zod.string(),
-      status: zod.string(),
-      website: zod.string().nullable().optional(),
-      website_status: zod.string().nullable().optional(),
-    }),
-  ),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-/**
- * @summary Search league events
- */
-export const SearchEventsQueryParams = zod.object({
-  club_id: zod.coerce.number().optional().describe("Filter events by canonical club ID"),
-  league: zod.coerce.string().optional().describe("League name substring (ILIKE)"),
-  age_group: zod.coerce.string().optional().describe("Age group (e.g. U14, U15)"),
-  gender: zod.coerce.string().optional().describe("Gender filter (boys, girls)"),
-  season: zod.coerce.string().optional().describe("Season identifier (e.g. 2024-2025)"),
-  source: zod.coerce.string().optional().describe("Source URL substring (ILIKE)"),
-  start_date_from: zod.coerce.string().optional().describe("Filter events with start_date >= this date (ISO 8601)"),
-  start_date_to: zod.coerce.string().optional().describe("Filter events with start_date <= this date (ISO 8601)"),
-  page: zod.coerce.number().default(1),
-  page_size: zod.coerce.number().max(100).default(20),
-});
-
-export const EventSearchResponse = zod.object({
-  events: zod.array(
-    zod.object({
-      id: zod.number(),
-      club_id: zod.number().nullable().optional(),
-      league_name: zod.string().nullable().optional(),
-      event_id: zod.string().nullable().optional(),
-      org_season_id: zod.string().nullable().optional(),
-      age_group: zod.string().nullable().optional(),
-      gender: zod.string().nullable().optional(),
-      division: zod.string().nullable().optional(),
-      conference: zod.string().nullable().optional(),
-      season: zod.string().nullable().optional(),
-      start_date: zod.string().nullable().optional(),
-      end_date: zod.string().nullable().optional(),
-      source_url: zod.string().nullable().optional(),
-    }),
-  ),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-/**
- * @summary Single event detail with embedded teams
- */
-export const EventDetailResponse = zod.object({
-  id: zod.number(),
-  name: zod.string(),
-  slug: zod.string(),
-  league_name: zod.string().nullable().optional(),
-  season: zod.string().nullable().optional(),
-  age_group: zod.string().nullable().optional(),
-  gender: zod.string().nullable().optional(),
-  division: zod.string().nullable().optional(),
-  location_city: zod.string().nullable().optional(),
-  location_state: zod.string().nullable().optional(),
-  start_date: zod.string().nullable().optional(),
-  end_date: zod.string().nullable().optional(),
-  registration_url: zod.string().nullable().optional(),
-  source_url: zod.string().nullable().optional(),
-  source: zod.string().nullable().optional(),
-  platform_event_id: zod.string().nullable().optional(),
-  teams: zod.array(
-    zod.object({
-      id: zod.number(),
-      canonical_club_id: zod.number().nullable().optional(),
-      team_name_raw: zod.string(),
-      team_name_canonical: zod.string().nullable().optional(),
-      age_group: zod.string().nullable().optional(),
-      gender: zod.string().nullable().optional(),
-      division_code: zod.string().nullable().optional(),
-      source_url: zod.string().nullable().optional(),
-    }),
-  ),
-});
-
-/**
- * @summary Batch event lookup
- */
-export const EventBatchResponse = zod.object({
-  events: zod.array(EventDetailResponse.omit({ teams: true })),
-  total: zod.number(),
-});
-
-/**
- * @summary Paginated teams for a single event
- */
-export const EventTeamItem = zod.object({
-  id: zod.number(),
-  event_id: zod.number(),
-  canonical_club_id: zod.number().nullable().optional(),
-  team_name_raw: zod.string(),
-  team_name_canonical: zod.string().nullable().optional(),
-  age_group: zod.string().nullable().optional(),
-  gender: zod.string().nullable().optional(),
-  division_code: zod.string().nullable().optional(),
-  source_url: zod.string().nullable().optional(),
-});
-
-export const EventTeamsResponse = zod.object({
-  teams: zod.array(EventTeamItem),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-/**
- * @summary Search coaches
- */
-export const SearchCoachesQueryParams = zod.object({
-  club_id: zod.coerce.number().optional().describe("Filter coaches by canonical club ID"),
-  name: zod.coerce.string().optional().describe("Coach name substring (ILIKE)"),
-  title: zod.coerce.string().optional().describe("Title keyword substring (ILIKE)"),
-  min_confidence: zod.coerce.number().min(0).max(1).optional().describe("Minimum confidence score (0–1)"),
-  page: zod.coerce.number().default(1),
-  page_size: zod.coerce.number().max(100).default(20),
-});
-
-export const CoachSearchResponse = zod.object({
-  coaches: zod.array(
-    zod.object({
-      id: zod.number(),
-      club_id: zod.number().nullable().optional(),
-      name: zod.string(),
-      title: zod.string().nullable().optional(),
-      email: zod.string().nullable().optional(),
-      phone: zod.string().nullable().optional(),
-      confidence_score: zod.number().nullable().optional(),
-      source_url: zod.string().nullable().optional(),
-    }),
-  ),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-/**
- * @summary Get discovered coaches and staff for a club
- */
-export const GetClubStaffParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const CoachDiscovery = zod.object({
-  id: zod.number(),
-  club_id: zod.number().nullable().optional(),
-  name: zod.string(),
-  title: zod.string().nullable().optional(),
-  email: zod.string().nullable().optional(),
-  source_url: zod.string().nullable().optional(),
-  scraped_at: zod.string().nullable().optional(),
-  confidence: zod.number().nullable().optional(),
-  platform_family: zod.string().nullable().optional(),
-});
-
-export const ClubStaffResponse = zod.object({
-  club_id: zod.number(),
-  staff: zod.array(CoachDiscovery),
 });
 
 /**
@@ -392,31 +203,57 @@ export const GetLeagueClubsResponse = zod.object({
       state: zod.string(),
       country: zod.string(),
       status: zod.string(),
-      website: zod.string().nullable().optional(),
-      website_status: zod.string().nullable().optional(),
+      website: zod.string().nullish(),
+      website_status: zod.string().nullish(),
     }),
   ),
 });
 
 /**
- * @summary Detect near-duplicate clubs by normalized name and state
+ * Search clubs by name keyword, state, league affiliation, and/or website presence. All filters are combinable. Returns paginated results ordered alphabetically by canonical name.
+
+ * @summary Advanced club search with combinable filters
  */
-export const AnalyticsDuplicatesQueryParams = zod.object({
-  state: zod.coerce.string().optional().describe("Limit to a single US state"),
-  min_clubs: zod.coerce.number().min(2).default(2).describe("Minimum cluster size to flag"),
-  page: zod.coerce.number().default(1),
-  page_size: zod.coerce.number().max(100).default(20),
+export const searchClubsAdvancedQueryPageDefault = 1;
+export const searchClubsAdvancedQueryPageSizeDefault = 20;
+export const searchClubsAdvancedQueryPageSizeMax = 100;
+
+export const SearchClubsAdvancedQueryParams = zod.object({
+  name: zod.coerce
+    .string()
+    .optional()
+    .describe("Substring match on club_name_canonical (ILIKE)"),
+  state: zod.coerce
+    .string()
+    .optional()
+    .describe("US state abbreviation or full name (ILIKE match)"),
+  league: zod.coerce
+    .string()
+    .optional()
+    .describe("League name substring to filter by affiliation (ILIKE)"),
+  has_website: zod.coerce
+    .boolean()
+    .optional()
+    .describe("When true, only clubs with a known website are returned"),
+  page: zod.coerce.number().default(searchClubsAdvancedQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(searchClubsAdvancedQueryPageSizeMax)
+    .default(searchClubsAdvancedQueryPageSizeDefault),
 });
 
-export const DuplicatesResponse = zod.object({
-  duplicates: zod.array(
+export const SearchClubsAdvancedResponse = zod.object({
+  clubs: zod.array(
     zod.object({
-      normalized_name: zod.string(),
-      state: zod.string().nullable().optional(),
-      club_count: zod.number(),
-      club_ids: zod.array(zod.number()),
-      club_names: zod.array(zod.string()),
-      sources: zod.array(zod.string()).describe("Distinct league/source names the clustered clubs appear in"),
+      id: zod.number(),
+      club_name_canonical: zod.string(),
+      club_slug: zod.string(),
+      city: zod.string(),
+      state: zod.string(),
+      country: zod.string(),
+      status: zod.string(),
+      website: zod.string().nullish(),
+      website_status: zod.string().nullish(),
     }),
   ),
   total: zod.number(),
@@ -425,23 +262,239 @@ export const DuplicatesResponse = zod.object({
 });
 
 /**
- * @summary Coverage gaps — per-state and per-league club counts
+ * @summary Search league events by club, league, season, and source
  */
-export const AnalyticsCoverageQueryParams = zod.object({
-  min_clubs: zod.coerce.number().min(1).default(5).describe("States below this threshold are flagged"),
+export const searchEventsQueryPageDefault = 1;
+export const searchEventsQueryPageSizeDefault = 20;
+export const searchEventsQueryPageSizeMax = 100;
+
+export const SearchEventsQueryParams = zod.object({
+  club_id: zod.coerce
+    .number()
+    .optional()
+    .describe("Filter events by canonical club ID"),
+  league: zod.coerce
+    .string()
+    .optional()
+    .describe("League name substring (ILIKE)"),
+  age_group: zod.coerce
+    .string()
+    .optional()
+    .describe("Age group (e.g. U14, U15)"),
+  gender: zod.coerce
+    .string()
+    .optional()
+    .describe("Gender filter (boys, girls)"),
+  season: zod.coerce
+    .string()
+    .optional()
+    .describe("Season identifier (e.g. 2024-2025)"),
+  source: zod.coerce
+    .string()
+    .optional()
+    .describe("Source URL substring (ILIKE)"),
+  start_date_from: zod
+    .date()
+    .optional()
+    .describe(
+      "Filter events with start_date >= this date (ISO 8601, e.g. 2024-08-01)",
+    ),
+  start_date_to: zod
+    .date()
+    .optional()
+    .describe(
+      "Filter events with start_date <= this date (ISO 8601, e.g. 2025-06-30)",
+    ),
+  page: zod.coerce.number().default(searchEventsQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(searchEventsQueryPageSizeMax)
+    .default(searchEventsQueryPageSizeDefault),
 });
 
-export const CoverageResponse = zod.object({
-  summary: zod.object({
-    total_clubs: zod.number(),
-    total_states: zod.number(),
-    states_below_threshold: zod.number(),
-    threshold: zod.number(),
-    website_coverage: zod.object({
-      with_website: zod.number(),
-      without_website: zod.number(),
-      pct: zod.number(),
+export const SearchEventsResponse = zod.object({
+  events: zod.array(
+    zod.object({
+      id: zod.number(),
+      club_id: zod.number().nullish(),
+      league_name: zod.string().nullish(),
+      event_id: zod.string().nullish(),
+      org_season_id: zod.string().nullish(),
+      age_group: zod.string().nullish(),
+      gender: zod.string().nullish(),
+      division: zod.string().nullish(),
+      conference: zod.string().nullish(),
+      season: zod.string().nullish(),
+      start_date: zod.string().nullish(),
+      end_date: zod.string().nullish(),
+      source_url: zod.string().nullish(),
     }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
+ * Returns all coach and staff records discovered by the staff page scraper for the given club. Records are ordered by confidence descending, then by name ascending.
+
+ * @summary Get discovered coaches and staff for a club
+ */
+export const GetClubStaffParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetClubStaffResponse = zod.object({
+  club_id: zod.number(),
+  staff: zod.array(
+    zod.object({
+      id: zod.number(),
+      club_id: zod.number().nullish(),
+      name: zod.string(),
+      title: zod.string().nullish(),
+      email: zod.string().nullish(),
+      source_url: zod.string().nullish(),
+      scraped_at: zod.string().nullish(),
+      confidence: zod.number().nullish(),
+      platform_family: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Search coaches by club, title, and minimum confidence score
+ */
+export const searchCoachesQueryMinConfidenceMin = 0;
+export const searchCoachesQueryMinConfidenceMax = 1;
+
+export const searchCoachesQueryPageDefault = 1;
+export const searchCoachesQueryPageSizeDefault = 20;
+export const searchCoachesQueryPageSizeMax = 100;
+
+export const SearchCoachesQueryParams = zod.object({
+  club_id: zod.coerce
+    .number()
+    .optional()
+    .describe("Filter coaches by canonical club ID"),
+  name: zod.coerce.string().optional().describe("Coach name substring (ILIKE)"),
+  title: zod.coerce
+    .string()
+    .optional()
+    .describe("Title keyword substring (ILIKE)"),
+  min_confidence: zod.coerce
+    .number()
+    .min(searchCoachesQueryMinConfidenceMin)
+    .max(searchCoachesQueryMinConfidenceMax)
+    .optional()
+    .describe("Minimum confidence score (0–1)"),
+  page: zod.coerce.number().default(searchCoachesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(searchCoachesQueryPageSizeMax)
+    .default(searchCoachesQueryPageSizeDefault),
+});
+
+export const SearchCoachesResponse = zod.object({
+  coaches: zod.array(
+    zod.object({
+      id: zod.number(),
+      club_id: zod.number().nullish(),
+      name: zod.string(),
+      title: zod.string().nullish(),
+      email: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      confidence_score: zod.number().nullish(),
+      source_url: zod.string().nullish(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
+ * Groups clubs by a normalized name (common suffixes like FC, SC, United, Academy stripped) within the same state. Returns clusters with two or more clubs, indicating likely duplicates or near-duplicates.
+
+ * @summary Detect near-duplicate clubs by normalized name and state
+ */
+export const analyticsDuplicatesQueryMinClubsDefault = 2;
+export const analyticsDuplicatesQueryMinClubsMin = 2;
+
+export const analyticsDuplicatesQueryPageDefault = 1;
+export const analyticsDuplicatesQueryPageSizeDefault = 20;
+export const analyticsDuplicatesQueryPageSizeMax = 100;
+
+export const AnalyticsDuplicatesQueryParams = zod.object({
+  state: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Limit duplicate detection to a single US state (abbreviation or full name)",
+    ),
+  min_clubs: zod.coerce
+    .number()
+    .min(analyticsDuplicatesQueryMinClubsMin)
+    .default(analyticsDuplicatesQueryMinClubsDefault)
+    .describe("Minimum number of clubs in a cluster to be flagged"),
+  page: zod.coerce.number().default(analyticsDuplicatesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(analyticsDuplicatesQueryPageSizeMax)
+    .default(analyticsDuplicatesQueryPageSizeDefault),
+});
+
+export const AnalyticsDuplicatesResponse = zod.object({
+  duplicates: zod.array(
+    zod.object({
+      normalized_name: zod
+        .string()
+        .describe(
+          "Club name after stripping common suffixes (FC, SC, United, Academy, etc.)",
+        ),
+      state: zod.string().nullish(),
+      club_count: zod.number(),
+      club_ids: zod.array(zod.number()),
+      club_names: zod.array(zod.string()),
+      sources: zod
+        .array(zod.string())
+        .describe(
+          "Distinct league\/source names the clustered clubs appear in",
+        ),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
+ * Returns club counts aggregated by US state and by league affiliation, highlighting states below a configurable minimum threshold.
+
+ * @summary Coverage gaps — per-state and per-league club counts
+ */
+export const analyticsCoverageQueryMinClubsDefault = 5;
+
+export const AnalyticsCoverageQueryParams = zod.object({
+  min_clubs: zod.coerce
+    .number()
+    .min(1)
+    .default(analyticsCoverageQueryMinClubsDefault)
+    .describe("States with fewer clubs than this threshold are flagged"),
+});
+
+export const AnalyticsCoverageResponse = zod.object({
+  summary: zod.object({
+    total_clubs: zod.number().optional(),
+    total_states: zod.number().optional(),
+    states_below_threshold: zod.number().optional(),
+    threshold: zod.number().optional(),
+    website_coverage: zod
+      .object({
+        with_website: zod.number().optional(),
+        without_website: zod.number().optional(),
+        pct: zod.number().optional(),
+      })
+      .optional(),
   }),
   states: zod.array(
     zod.object({
@@ -459,23 +512,46 @@ export const CoverageResponse = zod.object({
 });
 
 /**
+ * Returns clubs that appear in more than one league or region directory, useful for detecting incorrect source associations or legitimately cross-affiliated clubs.
+
  * @summary Clubs with multiple league affiliations
  */
+export const analyticsOverlapQueryMinLeaguesDefault = 2;
+export const analyticsOverlapQueryMinLeaguesMin = 2;
+
+export const analyticsOverlapQueryPageDefault = 1;
+export const analyticsOverlapQueryPageSizeDefault = 20;
+export const analyticsOverlapQueryPageSizeMax = 100;
+
 export const AnalyticsOverlapQueryParams = zod.object({
-  state: zod.coerce.string().optional().describe("Limit to a single US state"),
-  min_leagues: zod.coerce.number().min(2).default(2).describe("Minimum distinct league count"),
-  page: zod.coerce.number().default(1),
-  page_size: zod.coerce.number().max(100).default(20),
+  state: zod.coerce
+    .string()
+    .optional()
+    .describe("Limit results to a single US state"),
+  min_leagues: zod.coerce
+    .number()
+    .min(analyticsOverlapQueryMinLeaguesMin)
+    .default(analyticsOverlapQueryMinLeaguesDefault)
+    .describe("Minimum number of distinct leagues to be returned"),
+  page: zod.coerce.number().default(analyticsOverlapQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(analyticsOverlapQueryPageSizeMax)
+    .default(analyticsOverlapQueryPageSizeDefault),
 });
 
-export const OverlapResponse = zod.object({
+export const AnalyticsOverlapResponse = zod.object({
   clubs: zod.array(
     zod.object({
       id: zod.number(),
       club_name_canonical: zod.string(),
-      normalized_name: zod.string().describe("Club name after stripping common suffixes"),
-      city: zod.string().nullable().optional(),
-      state: zod.string().nullable().optional(),
+      normalized_name: zod
+        .string()
+        .describe(
+          "Club name after stripping common suffixes (for dedup cross-referencing)",
+        ),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
       league_count: zod.number(),
       leagues: zod.array(zod.string()),
       gender_programs: zod.array(zod.string()),
@@ -484,421 +560,4 @@ export const OverlapResponse = zod.object({
   total: zod.number(),
   page: zod.number(),
   page_size: zod.number(),
-});
-
-// ---------------------------------------------------------------------------
-// Coach detail, career, movements, effectiveness, leaderboard (D3.2)
-// ---------------------------------------------------------------------------
-
-const CoachCareerHistoryItem = zod.object({
-  id: zod.number(),
-  coach_id: zod.number(),
-  entity_type: zod.string(),
-  entity_id: zod.number(),
-  entity_name: zod.string().nullable().optional(),
-  role: zod.string(),
-  start_year: zod.number().nullable().optional(),
-  end_year: zod.number().nullable().optional(),
-  is_current: zod.boolean(),
-  source: zod.string().nullable().optional(),
-  source_url: zod.string().nullable().optional(),
-  confidence: zod.number().nullable().optional(),
-});
-
-const CoachEffectivenessItem = zod.object({
-  id: zod.number(),
-  coach_id: zod.number(),
-  players_placed_d1: zod.number(),
-  players_placed_d2: zod.number(),
-  players_placed_d3: zod.number(),
-  players_placed_naia: zod.number(),
-  players_placed_njcaa: zod.number(),
-  players_placed_total: zod.number(),
-  clubs_coached: zod.number(),
-  seasons_tracked: zod.number(),
-  last_calculated_at: zod.string().nullable().optional(),
-});
-
-const CoachMovementItem = zod.object({
-  id: zod.number(),
-  coach_id: zod.number(),
-  event_type: zod.string(),
-  from_entity_type: zod.string().nullable().optional(),
-  from_entity_id: zod.number().nullable().optional(),
-  from_entity_name: zod.string().nullable().optional(),
-  to_entity_type: zod.string().nullable().optional(),
-  to_entity_id: zod.number().nullable().optional(),
-  to_entity_name: zod.string().nullable().optional(),
-  from_role: zod.string().nullable().optional(),
-  to_role: zod.string().nullable().optional(),
-  detected_at: zod.string(),
-  confidence: zod.number().nullable().optional(),
-});
-
-/**
- * @summary Single coach with career history and effectiveness
- */
-export const CoachDetailResponse = zod.object({
-  id: zod.number(),
-  person_hash: zod.string(),
-  display_name: zod.string(),
-  primary_email: zod.string().nullable().optional(),
-  first_seen_at: zod.string().nullable().optional(),
-  last_seen_at: zod.string().nullable().optional(),
-  career: zod.array(CoachCareerHistoryItem),
-  effectiveness: CoachEffectivenessItem.nullable().optional(),
-});
-
-/**
- * @summary Paginated career history for a coach
- */
-export const CoachCareerResponse = zod.object({
-  career: zod.array(CoachCareerHistoryItem),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-/**
- * @summary Paginated movement events for a coach
- */
-export const CoachMovementsResponse = zod.object({
-  movements: zod.array(CoachMovementItem),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-/**
- * @summary Single effectiveness record for a coach
- */
-export const CoachEffectivenessResponse = CoachEffectivenessItem;
-
-/**
- * @summary Top coaches by placements
- */
-export const CoachLeaderboardResponse = zod.object({
-  coaches: zod.array(
-    zod.object({
-      id: zod.number(),
-      display_name: zod.string(),
-      players_placed_total: zod.number(),
-      players_placed_d1: zod.number(),
-      players_placed_d2: zod.number(),
-      players_placed_d3: zod.number(),
-      players_placed_naia: zod.number(),
-      players_placed_njcaa: zod.number(),
-      clubs_coached: zod.number(),
-      seasons_tracked: zod.number(),
-    }),
-  ),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-// ---------------------------------------------------------------------------
-// Matches (D5.2)
-// ---------------------------------------------------------------------------
-
-const MatchItem = zod.object({
-  id: zod.number(),
-  event_id: zod.number().nullable().optional(),
-  home_club_id: zod.number().nullable().optional(),
-  away_club_id: zod.number().nullable().optional(),
-  home_team_name: zod.string(),
-  away_team_name: zod.string(),
-  home_club_name: zod.string().nullable().optional(),
-  away_club_name: zod.string().nullable().optional(),
-  home_score: zod.number().nullable().optional(),
-  away_score: zod.number().nullable().optional(),
-  match_date: zod.string().nullable().optional(),
-  age_group: zod.string().nullable().optional(),
-  gender: zod.string().nullable().optional(),
-  division: zod.string().nullable().optional(),
-  season: zod.string().nullable().optional(),
-  league: zod.string().nullable().optional(),
-  status: zod.string(),
-  source: zod.string().nullable().optional(),
-  source_url: zod.string().nullable().optional(),
-  platform_match_id: zod.string().nullable().optional(),
-  scraped_at: zod.string(),
-});
-
-/**
- * @summary Paginated match search
- */
-export const MatchSearchResponse = zod.object({
-  matches: zod.array(MatchItem),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-/**
- * @summary Single match detail
- */
-export const MatchDetailResponse = MatchItem;
-
-/**
- * @summary Batch match lookup
- */
-export const MatchBatchResponse = zod.object({
-  matches: zod.array(MatchItem),
-  total: zod.number(),
-});
-
-// ---------------------------------------------------------------------------
-// Rosters (D5.2)
-// ---------------------------------------------------------------------------
-
-const RosterSnapshotItem = zod.object({
-  id: zod.number(),
-  club_id: zod.number().nullable().optional(),
-  club_name_raw: zod.string(),
-  season: zod.string(),
-  age_group: zod.string(),
-  gender: zod.string(),
-  division: zod.string().nullable().optional(),
-  player_name: zod.string(),
-  jersey_number: zod.string().nullable().optional(),
-  position: zod.string().nullable().optional(),
-  grad_year: zod.number().nullable().optional(),
-  hometown: zod.string().nullable().optional(),
-  state: zod.string().nullable().optional(),
-  country: zod.string().nullable().optional(),
-  nationality: zod.string().nullable().optional(),
-  college_commitment: zod.string().nullable().optional(),
-  academic_year: zod.string().nullable().optional(),
-  prev_club: zod.string().nullable().optional(),
-  league: zod.string().nullable().optional(),
-  source_url: zod.string().nullable().optional(),
-  snapshot_date: zod.string().nullable().optional(),
-  scraped_at: zod.string(),
-  source: zod.string().nullable().optional(),
-  event_id: zod.number().nullable().optional(),
-});
-
-/**
- * @summary Paginated roster snapshot search
- */
-export const RosterSnapshotSearchResponse = zod.object({
-  snapshots: zod.array(RosterSnapshotItem),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-const RosterDiffItem = zod.object({
-  id: zod.number(),
-  club_id: zod.number().nullable().optional(),
-  club_name_raw: zod.string(),
-  season: zod.string().nullable().optional(),
-  age_group: zod.string().nullable().optional(),
-  gender: zod.string().nullable().optional(),
-  player_name: zod.string(),
-  diff_type: zod.string(),
-  from_jersey_number: zod.string().nullable().optional(),
-  to_jersey_number: zod.string().nullable().optional(),
-  from_position: zod.string().nullable().optional(),
-  to_position: zod.string().nullable().optional(),
-  detected_at: zod.string(),
-});
-
-/**
- * @summary Paginated roster diff search
- */
-export const RosterDiffSearchResponse = zod.object({
-  diffs: zod.array(RosterDiffItem),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-// ---------------------------------------------------------------------------
-// Standings (D5.2)
-// ---------------------------------------------------------------------------
-
-const StandingItem = zod.object({
-  id: zod.number(),
-  club_id: zod.number(),
-  club_name: zod.string().nullable().optional(),
-  season: zod.string(),
-  league: zod.string().nullable().optional(),
-  division: zod.string().nullable().optional(),
-  age_group: zod.string().nullable().optional(),
-  gender: zod.string().nullable().optional(),
-  wins: zod.number(),
-  losses: zod.number(),
-  draws: zod.number(),
-  goals_for: zod.number(),
-  goals_against: zod.number(),
-  matches_played: zod.number(),
-  last_calculated_at: zod.string(),
-});
-
-/**
- * @summary Paginated standings search
- */
-export const StandingsSearchResponse = zod.object({
-  standings: zod.array(StandingItem),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-// ---------------------------------------------------------------------------
-// Colleges (D2)
-// ---------------------------------------------------------------------------
-
-const CollegeItem = zod.object({
-  id: zod.number(),
-  name: zod.string(),
-  slug: zod.string(),
-  ncaa_id: zod.string().nullable().optional(),
-  division: zod.string(),
-  conference: zod.string().nullable().optional(),
-  state: zod.string().nullable().optional(),
-  city: zod.string().nullable().optional(),
-  website: zod.string().nullable().optional(),
-  soccer_program_url: zod.string().nullable().optional(),
-  gender_program: zod.string(),
-  enrollment: zod.number().nullable().optional(),
-  scholarship_available: zod.boolean().nullable().optional(),
-  logo_url: zod.string().nullable().optional(),
-  twitter: zod.string().nullable().optional(),
-  last_scraped_at: zod.string().nullable().optional(),
-  scrape_confidence: zod.number().nullable().optional(),
-});
-
-/**
- * @summary Paginated college list
- */
-export const CollegeListResponse = zod.object({
-  colleges: zod.array(CollegeItem),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-/**
- * @summary Single college detail
- */
-export const CollegeDetailResponse = CollegeItem;
-
-const CollegeCoachItem = zod.object({
-  id: zod.number(),
-  college_id: zod.number(),
-  coach_id: zod.number().nullable().optional(),
-  name: zod.string(),
-  title: zod.string().nullable().optional(),
-  email: zod.string().nullable().optional(),
-  phone: zod.string().nullable().optional(),
-  twitter: zod.string().nullable().optional(),
-  linkedin: zod.string().nullable().optional(),
-  is_head_coach: zod.boolean(),
-  source: zod.string().nullable().optional(),
-  source_url: zod.string().nullable().optional(),
-  scraped_at: zod.string().nullable().optional(),
-  confidence: zod.number().nullable().optional(),
-  first_seen_at: zod.string().nullable().optional(),
-  last_seen_at: zod.string().nullable().optional(),
-});
-
-/**
- * @summary Coaches for a college
- */
-export const CollegeCoachesResponse = zod.object({
-  coaches: zod.array(CollegeCoachItem),
-});
-
-const CollegeRosterItem = zod.object({
-  id: zod.number(),
-  college_id: zod.number(),
-  player_name: zod.string(),
-  position: zod.string().nullable().optional(),
-  year: zod.string().nullable().optional(),
-  academic_year: zod.string(),
-  hometown: zod.string().nullable().optional(),
-  prev_club: zod.string().nullable().optional(),
-  jersey_number: zod.string().nullable().optional(),
-  scraped_at: zod.string().nullable().optional(),
-});
-
-/**
- * @summary Paginated roster history for a college
- */
-export const CollegeRostersResponse = zod.object({
-  roster: zod.array(CollegeRosterItem),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-// ---------------------------------------------------------------------------
-// D7 — Tryout listings
-// ---------------------------------------------------------------------------
-
-/** Shape of a single tryout row returned by the API. */
-export const TryoutItem = zod.object({
-  id: zod.number(),
-  club_id: zod.number().nullable().optional(),
-  club_name_raw: zod.string(),
-  age_group: zod.string().nullable().optional(),
-  gender: zod.string().nullable().optional(),
-  division: zod.string().nullable().optional(),
-  tryout_date: zod.string().nullable().optional(),
-  registration_deadline: zod.string().nullable().optional(),
-  location_name: zod.string().nullable().optional(),
-  location_address: zod.string().nullable().optional(),
-  location_city: zod.string().nullable().optional(),
-  location_state: zod.string().nullable().optional(),
-  cost: zod.string().nullable().optional(),
-  url: zod.string().nullable().optional(),
-  notes: zod.string().nullable().optional(),
-  source: zod.string(),
-  status: zod.string(),
-  detected_at: zod.string().optional(),
-  scraped_at: zod.string().optional(),
-  expires_at: zod.string().nullable().optional(),
-});
-
-/** Query parameters for GET /api/tryouts/search. */
-export const TryoutSearchParams = zod.object({
-  club_name: zod.string().optional(),
-  age_group: zod.string().optional(),
-  gender: zod.string().optional(),
-  state: zod.string().optional(),
-  status: zod.string().optional(),
-  source: zod.string().optional(),
-  page: zod.coerce.number().optional(),
-  page_size: zod.coerce.number().optional(),
-});
-
-/** Paginated response for tryout search / listing endpoints. */
-export const TryoutSearchResponse = zod.object({
-  items: zod.array(TryoutItem),
-  total: zod.number(),
-  page: zod.number(),
-  page_size: zod.number(),
-});
-
-/** Body for POST /api/tryouts/submit (manual tryout submission). */
-export const TryoutSubmitBody = zod.object({
-  club_name_raw: zod.string().min(1),
-  age_group: zod.string().optional(),
-  gender: zod.string().optional(),
-  tryout_date: zod.string().optional(),
-  location_name: zod.string().optional(),
-  location_city: zod.string().optional(),
-  location_state: zod.string().optional(),
-  url: zod.string().optional(),
-  notes: zod.string().optional(),
-});
-
-/** Response for GET /api/tryouts/stats. */
-export const TryoutStatsResponse = zod.object({
-  total: zod.number(),
-  by_status: zod.record(zod.string(), zod.number()),
-  by_source: zod.record(zod.string(), zod.number()),
 });
