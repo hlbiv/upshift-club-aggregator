@@ -261,6 +261,7 @@ export * from "./colleges";
 export * from "./coaches";
 export * from "./commitments";
 export * from "./events";
+export * from "./hs";
 export * from "./matches";
 export * from "./odp";
 export * from "./rosters-and-tryouts";
