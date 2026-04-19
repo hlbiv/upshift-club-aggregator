@@ -92,6 +92,36 @@
         </tr>
       </tbody>
     </table>
+
+    <!--
+      Second table exercises the real-world TDS header "Commitment"
+      (the college name appears under that column). The extractor must
+      alias "Commitment" → college_name_raw or this whole table yields
+      zero rows (issue #83).
+    -->
+    <h2>Boys College Commitments — Class of 2026</h2>
+    <table class="commitments-table">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>Position</th>
+          <th>Class</th>
+          <th>Club</th>
+          <th>Commitment</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="/player/201">Noah Carrington</a></td>
+          <td>Midfielder</td>
+          <td>2026</td>
+          <td>FC Dallas Academy</td>
+          <td><a href="/college/duke">Duke University</a></td>
+          <td>March 3, 2026</td>
+        </tr>
+      </tbody>
+    </table>
   </main>
   <footer>
     <p>&copy; TopDrawerSoccer</p>
