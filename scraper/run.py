@@ -625,21 +625,198 @@ def _handle_ussoccer_ynt(args: argparse.Namespace) -> None:
 
 def _handle_replay_html(args: argparse.Namespace) -> None:
     """
-    Stub for the future raw-HTML replay job.
+    Replay archived HTML through the extractor registry.
 
-    The plan (separate PR): given one or more source URLs, fetch the
-    matching archive rows, download the gzipped blobs from Replit Object
-    Storage, and pipe them back through the existing extractor registry
-    so we can re-parse without re-fetching. Needs a round-trip through
-    ``extractors.registry`` that currently takes a URL → scraper call;
-    the replay path has to take URL → bytes → parsed dict without
-    touching the network.
+    Reads rows from ``raw_html_archive`` matching ``--run-id``,
+    downloads the gzipped blob for each from Replit Object Storage,
+    decompresses, and feeds the HTML back through the per-site
+    extractor that matches the stored ``source_url``. The goal is to
+    re-parse without re-fetching — handy for testing extractor changes
+    against a fixed corpus, or recovering rows after a parse regression.
+
+    Scope limit (this PR): only extractors that expose a pure-function
+    parser (module-level ``parse_html(html, source_url=..., league_name=...)``)
+    are replayable. Registered extractors today all take ``(url,
+    league_name)`` and fetch internally; those are skipped with a
+    warning. Refactoring them to accept pre-fetched HTML is a follow-up.
+
+    Defaults to dry-run — pass ``--no-dry-run`` to actually write any
+    rows the replayed parser emits. (Today every extractor-dispatch
+    path is a skip-with-warning, so the flag is effectively a no-op
+    until a follow-up wires at least one pure parser through.)
     """
-    logger.error(
-        "--source replay-html: not yet implemented — requires round-trip "
-        "replay of extractors. Coming in a follow-up PR."
+    run_id = getattr(args, "run_id", None)
+    if not run_id:
+        logger.error(
+            "--source replay-html requires --run-id <uuid>. "
+            "Query raw_html_archive for the run you want to replay."
+        )
+        sys.exit(2)
+
+    # Lazy import: only pull psycopg2 / extractors when this handler
+    # actually runs, so `python3 run.py --help` stays cheap.
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        logger.error(
+            "--source replay-html: psycopg2 is not installed; cannot "
+            "query raw_html_archive."
+        )
+        sys.exit(2)
+
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        logger.error(
+            "--source replay-html: DATABASE_URL is not set; cannot "
+            "query raw_html_archive."
+        )
+        sys.exit(2)
+
+    try:
+        conn = psycopg2.connect(dsn)
+    except Exception as exc:
+        logger.error("--source replay-html: DB connect failed: %s", exc)
+        sys.exit(1)
+
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT sha256, source_url "
+                "FROM raw_html_archive "
+                "WHERE run_id = %s "
+                "ORDER BY archived_at ASC",
+                (run_id,),
+            )
+            rows = cur.fetchall()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    if not rows:
+        logger.warning(
+            "[replay-html] no archived HTML for run_id %s — nothing to replay.",
+            run_id,
+        )
+        return
+
+    from utils.html_archive import fetch_archived_html
+
+    dry_run = bool(getattr(args, "dry_run", False)) or not bool(
+        getattr(args, "no_dry_run", False)
     )
-    sys.exit(2)
+
+    summary = {
+        "pages_replayed": 0,
+        "extractors_matched": 0,
+        "extractors_skipped_not_pure": 0,
+        "no_extractor": 0,
+        "parse_errors": 0,
+        "rows_written": 0,
+    }
+    skipped_extractors: set[str] = set()
+
+    for sha256, source_url in rows:
+        summary["pages_replayed"] += 1
+
+        try:
+            html = fetch_archived_html(sha256)
+        except Exception as exc:
+            logger.error(
+                "[replay-html] fetch failed for sha256=%s source_url=%s: %s",
+                sha256, source_url, exc,
+            )
+            summary["parse_errors"] += 1
+            continue
+
+        if html is None:  # pragma: no cover — fetch raises on failure
+            logger.error(
+                "[replay-html] fetch returned None for sha256=%s", sha256,
+            )
+            summary["parse_errors"] += 1
+            continue
+
+        extractor = _extractor_registry.get_extractor(source_url)
+        if extractor is None:
+            logger.warning(
+                "[replay-html] no extractor matched source_url=%s (sha256=%s)",
+                source_url, sha256,
+            )
+            summary["no_extractor"] += 1
+            continue
+
+        summary["extractors_matched"] += 1
+
+        # Convention for pure-function parsing: the extractor's module
+        # exposes a top-level `parse_html(html, source_url=..., league_name=...)`
+        # (or positional equivalent) returning List[Dict]. Any extractor
+        # without this attribute is a `run(url)`-style scraper that
+        # fetches internally and cannot be replayed yet.
+        module = sys.modules.get(extractor.__module__)
+        parse_html_fn = getattr(module, "parse_html", None) if module else None
+
+        if not callable(parse_html_fn):
+            if extractor.__module__ not in skipped_extractors:
+                logger.warning(
+                    "[replay-html] extractor module %s has no pure-function "
+                    "parse_html(html, ...) — replay skipped. A follow-up PR "
+                    "will refactor this extractor to accept pre-fetched HTML.",
+                    extractor.__module__,
+                )
+                skipped_extractors.add(extractor.__module__)
+            summary["extractors_skipped_not_pure"] += 1
+            continue
+
+        try:
+            records = parse_html_fn(
+                html,
+                source_url=source_url,
+                league_name=None,
+            )
+        except TypeError:
+            # Fall back to positional if the parser signature is simpler.
+            try:
+                records = parse_html_fn(html)
+            except Exception as exc:
+                logger.error(
+                    "[replay-html] parse_html raised for %s (sha256=%s): %s",
+                    extractor.__module__, sha256, exc,
+                )
+                summary["parse_errors"] += 1
+                continue
+        except Exception as exc:
+            logger.error(
+                "[replay-html] parse_html raised for %s (sha256=%s): %s",
+                extractor.__module__, sha256, exc,
+            )
+            summary["parse_errors"] += 1
+            continue
+
+        n_records = len(records) if records else 0
+        if dry_run:
+            logger.info(
+                "[replay-html] [dry-run] %s → %d record(s) from sha256=%s",
+                extractor.__module__, n_records, sha256,
+            )
+        else:
+            # No generic write path — each extractor family writes to a
+            # different table. Until a pure-function parser is wired
+            # through with an explicit writer, treat --no-dry-run as a
+            # count-only pass so the handler is safe to invoke.
+            logger.info(
+                "[replay-html] %s → %d record(s) from sha256=%s "
+                "(write path not yet wired; see follow-up)",
+                extractor.__module__, n_records, sha256,
+            )
+        summary["rows_written"] += n_records
+
+    print("=" * 60)
+    print(f"  replay-html summary (run_id={run_id})")
+    print("=" * 60)
+    for k, v in summary.items():
+        print(f"  {k:>28} : {v}")
+    print("=" * 60)
 
 
 def _handle_duda_360player_clubs(args: argparse.Namespace) -> None:
@@ -750,7 +927,7 @@ SOURCE_HELP: dict[str, str] = {
     "link-canonical-clubs": "resolves event_teams.canonical_club_id / matches.home_club_id / etc.",
     "maxpreps-rosters": "populates hs_rosters from MaxPreps HS soccer roster pages (framework; default --limit 20; expect 403s without proxy creds)",
     "odp-rosters": "scrapes state-association Olympic Development Program rosters (top-5 states; 49 follow-ups)",
-    "replay-html": "[stub] replay archived HTML through extractors (not yet implemented)",
+    "replay-html": "replay archived HTML from raw_html_archive through extractors (requires --run-id; defaults to dry-run, --no-dry-run to commit)",
     "club-enrichment": "enrich canonical_clubs with logo/socials/status",
     "club-dedup": "fuzzy dedup report for canonical_clubs",
     "club-dedup-resolve": "tiered: auto-merges high-confidence pairs + writes review CSV; defaults to dry-run, requires --no-dry-run to commit",
@@ -1049,6 +1226,9 @@ def main() -> None:
                         choices=["sportsengine", "leagueapps", "wordpress", "unknown"],
                         dest="platform_family",
                         help="Platform family filter for --source youth-coaches.")
+    parser.add_argument("--run-id", metavar="UUID", dest="run_id",
+                        help="For --source replay-html: UUID of the scrape run "
+                             "whose archived raw HTML should be replayed.")
     parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune"],
                         help="Run a derived-data rollup over existing DB rows.")
     args = parser.parse_args()

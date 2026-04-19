@@ -296,6 +296,174 @@ def _upload_blob(bucket: Any, key: str, gz_bytes: bytes) -> bool:
     return False
 
 
+def _download_blob(bucket: Any, key: str) -> Optional[bytes]:
+    """
+    Download a blob by key from ``bucket``. Returns raw gzip bytes on
+    success, ``None`` when no known download method exists on the SDK
+    surface. Any SDK-level exception is re-raised to the caller — unlike
+    the upload path, replay fetch must fail loud so the caller can tell
+    a missing blob apart from a bug.
+    """
+    # Preferred API: bucket.download_as_bytes(key) → bytes.
+    for attr in ("download_as_bytes", "download_bytes", "read", "get"):
+        fn = getattr(bucket, attr, None)
+        if callable(fn):
+            return fn(key)
+    return None
+
+
+def fetch_archived_html(sha256: str) -> Optional[str]:
+    """
+    Fetch the archived HTML for a given sha256 from Replit Object Storage.
+
+    This is the inverse of :func:`archive_raw_html`: given the content hash
+    of a previously archived page, look up the bucket path in
+    ``raw_html_archive``, download the gzipped blob, decompress, and
+    return the uncompressed HTML string.
+
+    Parameters
+    ----------
+    sha256:
+        Hex-encoded sha256 of the uncompressed HTML bytes. This is the
+        same value stored in ``raw_html_archive.sha256`` and embedded in
+        ``raw_html_archive.bucket_path``.
+
+    Returns
+    -------
+    str
+        Decoded (UTF-8) HTML content on success. Raises otherwise —
+        replay code MUST fail loud rather than silently return ``None``
+        on a missing or corrupt blob, because a parse run over partial
+        data is worse than no run at all.
+
+    Raises
+    ------
+    RuntimeError
+        ``ARCHIVE_RAW_HTML_ENABLED`` is not ``"true"`` (replay requires
+        archival to be turned on).
+    RuntimeError
+        Replit Object Storage SDK could not be initialised (package
+        missing, credentials absent, etc.).
+    LookupError
+        ``raw_html_archive`` has no row matching ``sha256``.
+    RuntimeError
+        Blob download or gzip decompression failed.
+    """
+    if not _is_enabled():
+        raise RuntimeError(
+            "fetch_archived_html: ARCHIVE_RAW_HTML_ENABLED is not 'true'; "
+            "replay requires archival to be enabled so the bucket client "
+            "can be initialised."
+        )
+
+    if not _init_client():
+        raise RuntimeError(
+            "fetch_archived_html: Replit Object Storage client failed to "
+            "initialise (see prior warning); cannot fetch archived HTML."
+        )
+
+    # Look up the bucket path + run_id from the DB. The bucket path is
+    # authoritative — we never reconstruct it from sha256 + archived_at
+    # because the key-prefix format may change over time.
+    try:
+        import psycopg2  # type: ignore
+    except ImportError as exc:  # pragma: no cover — Replit has psycopg2
+        raise RuntimeError(
+            "fetch_archived_html: psycopg2 is required to look up the "
+            "bucket path from raw_html_archive."
+        ) from exc
+
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        raise RuntimeError(
+            "fetch_archived_html: DATABASE_URL is not set; cannot look up "
+            "the bucket path for sha256."
+        )
+
+    try:
+        conn = psycopg2.connect(dsn)
+    except Exception as exc:
+        raise RuntimeError(
+            f"fetch_archived_html: failed to connect to DATABASE_URL "
+            f"({exc!s})"
+        ) from exc
+
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT bucket_path FROM raw_html_archive "
+                "WHERE sha256 = %s LIMIT 1",
+                (sha256,),
+            )
+            row = cur.fetchone()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    if not row:
+        raise LookupError(
+            f"fetch_archived_html: no raw_html_archive row for "
+            f"sha256={sha256}"
+        )
+
+    bucket_path = row[0]
+
+    # bucket_path is stored as "upshift-raw-html/YYYY/MM/DD/<sha>.html.gz"
+    # but the Replit bucket client takes the key relative to the bucket.
+    key = bucket_path
+    prefix = f"{_BUCKET_NAME}/"
+    if key.startswith(prefix):
+        key = key[len(prefix):]
+
+    assert _BUCKET is not None  # guaranteed by _init_client() above
+    try:
+        gz_bytes = _download_blob(_BUCKET, key)
+    except Exception as exc:
+        raise RuntimeError(
+            f"fetch_archived_html: blob download failed for key={key!r} "
+            f"({exc!s})"
+        ) from exc
+
+    if gz_bytes is None:
+        raise RuntimeError(
+            "fetch_archived_html: Replit Object Storage SDK surface "
+            "unrecognised; no known download method on bucket object."
+        )
+    if not isinstance(gz_bytes, (bytes, bytearray)):
+        raise RuntimeError(
+            f"fetch_archived_html: expected bytes from bucket download, "
+            f"got {type(gz_bytes).__name__}"
+        )
+
+    try:
+        raw_bytes = gzip.decompress(bytes(gz_bytes))
+    except Exception as exc:
+        raise RuntimeError(
+            f"fetch_archived_html: gzip decompression failed for "
+            f"sha256={sha256} (key={key!r}): {exc!s}"
+        ) from exc
+
+    # Integrity check — the sha256 we just downloaded should match the
+    # one we were asked for. A mismatch means the bucket blob is corrupt
+    # or the DB row points at the wrong key.
+    actual_sha = hashlib.sha256(raw_bytes).hexdigest()
+    if actual_sha != sha256:
+        raise RuntimeError(
+            f"fetch_archived_html: sha256 mismatch for key={key!r} — "
+            f"expected {sha256}, got {actual_sha}"
+        )
+
+    try:
+        return raw_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(
+            f"fetch_archived_html: failed to decode UTF-8 for "
+            f"sha256={sha256}: {exc!s}"
+        ) from exc
+
+
 def archive_raw_html(
     source_url: str,
     html: str,
