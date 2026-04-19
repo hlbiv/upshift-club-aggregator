@@ -18,8 +18,10 @@ import {
   real,
   timestamp,
   unique,
+  uniqueIndex,
   check,
   index,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -109,5 +111,51 @@ export const scrapeHealth = pgTable(
     ),
     unique("scrape_health_entity_uq").on(t.entityType, t.entityId),
     index("scrape_health_status_scraped_idx").on(t.status, t.lastScrapedAt),
+  ],
+);
+
+/**
+ * raw_html_archive — Point-in-time record of every successful HTML fetch.
+ *
+ * The scraper gzips the response body, hashes the uncompressed bytes with
+ * sha256, and uploads the gzip blob to Replit Object Storage (bucket
+ * `upshift-raw-html`, key layout `YYYY/MM/DD/<sha256>.html.gz`). One row
+ * here lets downstream replay / re-parse tools find the blob without
+ * needing to re-fetch the source URL — which is both slower and may be
+ * blocked by the origin.
+ *
+ * `sha256` is the content-addressable identifier; collisions on the same
+ * HTML payload are skipped via the unique index (same bytes → same sha →
+ * no-op insert via ON CONFLICT DO NOTHING).
+ *
+ * `run_id` is nullable because the hook sits beneath the per-league run
+ * lifecycle — ad-hoc extractor calls that don't allocate a ScrapeRunLogger
+ * still archive. When present it's a UUID tagging the archive row to a
+ * logical scrape run (not an FK to scrape_run_logs.id, which is a serial).
+ *
+ * Writes happen through scraper/ingest/raw_html_archive_writer.py.
+ * Archiving is gated on env `ARCHIVE_RAW_HTML_ENABLED=true`; with the
+ * flag unset, the hook no-ops and this table stays empty.
+ */
+export const rawHtmlArchive = pgTable(
+  "raw_html_archive",
+  {
+    id: serial("id").primaryKey(),
+    runId: uuid("run_id"),
+    sourceUrl: text("source_url").notNull(),
+    sha256: text("sha256").notNull(),
+    // Object Storage key, e.g. "upshift-raw-html/2026/04/18/<sha>.html.gz".
+    bucketPath: text("bucket_path").notNull(),
+    // Compressed (gzip) size in bytes. The uncompressed size is not
+    // stored — if a consumer needs it they can GET the blob and check
+    // the gunzipped length.
+    contentBytes: integer("content_bytes").notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("raw_html_archive_sha256_uq").on(t.sha256),
+    index("raw_html_archive_run_id_idx").on(t.runId),
   ],
 );

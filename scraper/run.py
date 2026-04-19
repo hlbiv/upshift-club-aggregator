@@ -574,6 +574,25 @@ def _handle_usclub_id(args: argparse.Namespace) -> None:
     _uid_print_summary(outcomes)
 
 
+def _handle_replay_html(args: argparse.Namespace) -> None:
+    """
+    Stub for the future raw-HTML replay job.
+
+    The plan (separate PR): given one or more source URLs, fetch the
+    matching archive rows, download the gzipped blobs from Replit Object
+    Storage, and pipe them back through the existing extractor registry
+    so we can re-parse without re-fetching. Needs a round-trip through
+    ``extractors.registry`` that currently takes a URL → scraper call;
+    the replay path has to take URL → bytes → parsed dict without
+    touching the network.
+    """
+    logger.error(
+        "--source replay-html: not yet implemented — requires round-trip "
+        "replay of extractors. Coming in a follow-up PR."
+    )
+    sys.exit(2)
+
+
 def _handle_duda_360player_clubs(args: argparse.Namespace) -> None:
     from duda_360player_clubs_runner import (
         run_duda_360player_clubs,
@@ -597,6 +616,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "sincsports_events": _handle_sincsports_events,
     "link-canonical-clubs": _handle_link_canonical_clubs,
     "link_canonical_clubs": _handle_link_canonical_clubs,
+    "replay-html": _handle_replay_html,
+    "replay_html": _handle_replay_html,
     "sincsports-rosters": _handle_sincsports_rosters,
     "sincsports_rosters": _handle_sincsports_rosters,
     "gotsport-events": _handle_gotsport_events,
@@ -654,6 +675,7 @@ SOURCE_HELP: dict[str, str] = {
     "sportsengine-clubs": "SportsEngine + JSON-LD harvest: rosters, coaches, tryouts, enrichment",
     "duda-360player-clubs": "probe Duda CMS + 360Player club sites; writes Event JSON-LD into tryouts",
     "link-canonical-clubs": "resolves event_teams.canonical_club_id / matches.home_club_id / etc.",
+    "replay-html": "[stub] replay archived HTML through extractors (not yet implemented)",
     "club-enrichment": "enrich canonical_clubs with logo/socials/status",
     "club-dedup": "fuzzy dedup report for canonical_clubs",
     "usclub-sanctioned": "discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events",
