@@ -202,8 +202,15 @@ class _FakeCursor:
     def __exit__(self, *exc):
         return False
 
-    def execute(self, sql: str, params: tuple):
-        self.executed.append((sql.strip().split()[0].upper(), params))
+    def execute(self, sql: str, params: tuple = None):
+        # Transaction-control statements (SAVEPOINT / RELEASE / ROLLBACK TO)
+        # are called without params by the writer. They're not part of the
+        # data-level contract the tests care about, so don't record them or
+        # consume scripted fetch results.
+        verb = sql.strip().split()[0].upper()
+        if verb in ("SAVEPOINT", "RELEASE", "ROLLBACK"):
+            return
+        self.executed.append((verb, params))
         # Script controls what fetchone returns for the next call.
         if self.script:
             row, rc = self.script.pop(0)
@@ -328,7 +335,7 @@ def test_upsert_rolls_back_on_exception():
     meta, teams = parse_sincsports_teamlist(html, tid="GULFC")
 
     class _BoomCursor(_FakeCursor):
-        def execute(self, sql, params):
+        def execute(self, sql, params=None):
             super().execute(sql, params)
             if len(self.executed) == 2:
                 raise RuntimeError("simulated DB error")
