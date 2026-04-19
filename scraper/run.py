@@ -605,6 +605,19 @@ def _handle_duda_360player_clubs(args: argparse.Namespace) -> None:
     _d360_print_summary(outcome)
 
 
+def _handle_topdrawer_commitments(args: argparse.Namespace) -> None:
+    from commitments_runner import (
+        run_topdrawer_commitments,
+        print_summary as _tdc_print_summary,
+        DEFAULT_LIMIT as _TDC_DEFAULT_LIMIT,
+    )
+    outcome = run_topdrawer_commitments(
+        dry_run=args.dry_run,
+        limit=args.limit if args.limit is not None else _TDC_DEFAULT_LIMIT,
+    )
+    _tdc_print_summary(outcome)
+
+
 # Kebab-case is the canonical, documented form in the CLI help output;
 # snake-case aliases exist only because early scripts sometimes passed
 # them. Keep both in SOURCE_HANDLERS but ONLY kebab in SOURCE_HELP (snake
@@ -641,6 +654,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "squarespace_clubs": _handle_squarespace_clubs,
     "sportsengine-clubs": _handle_sportsengine_clubs,
     "sportsengine_clubs": _handle_sportsengine_clubs,
+    "topdrawer-commitments": _handle_topdrawer_commitments,
+    "topdrawer_commitments": _handle_topdrawer_commitments,
     "club-enrichment": _handle_club_enrichment,
     "club_enrichment": _handle_club_enrichment,
     "club-dedup": _handle_club_dedup,
@@ -670,6 +685,7 @@ SOURCE_HELP: dict[str, str] = {
     "tryouts-wordpress": "populates tryouts from WordPress club sites",
     "tryouts": "wordpress source + status expiry (see tryouts_runner.py for why GotSport tryout discovery is not supported)",
     "tryouts-gotsport": "removed — GotSport disallows automated event discovery",
+    "topdrawer-commitments": "scrape college commitments from TopDrawerSoccer into commitments table (default --limit 20; expect 403 without proxies)",
     "youth-coaches": "scrapes youth club staff pages into coach_discoveries",
     "squarespace-clubs": "Squarespace + JSON-LD harvest: rosters, coaches, tryouts, enrichment",
     "sportsengine-clubs": "SportsEngine + JSON-LD harvest: rosters, coaches, tryouts, enrichment",

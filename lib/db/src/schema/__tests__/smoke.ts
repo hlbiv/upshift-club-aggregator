@@ -386,6 +386,28 @@ assertTable(schema.playerIdSelections, "player_id_selections", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain 11 — Commitments (TopDrawerSoccer + future sources)
+// ---------------------------------------------------------------------------
+
+assertTable(schema.commitments, "commitments", {
+  cols: [
+    "player_name",
+    "graduation_year",
+    "position",
+    "club_id",
+    "club_name_raw",
+    "college_id",
+    "college_name_raw",
+    "commitment_date",
+    "source_url",
+    "first_seen_at",
+    "last_seen_at",
+  ],
+  uniques: ["commitments_natural_key_uq"],
+  indexes: ["commitments_grad_year_idx"],
+});
+
+// ---------------------------------------------------------------------------
 // Domain 9 — API keys (M2M auth)
 // ---------------------------------------------------------------------------
 
