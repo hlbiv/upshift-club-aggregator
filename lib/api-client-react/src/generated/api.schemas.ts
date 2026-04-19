@@ -21,6 +21,8 @@ export interface Club {
   state: string;
   country: string;
   status: string;
+  website?: string | null;
+  website_status?: string | null;
 }
 
 export interface Alias {
@@ -91,6 +93,139 @@ export interface LeagueClubsResponse {
   clubs: Club[];
 }
 
+export interface Event {
+  id: number;
+  club_id?: number | null;
+  league_name?: string | null;
+  event_id?: string | null;
+  org_season_id?: string | null;
+  age_group?: string | null;
+  gender?: string | null;
+  division?: string | null;
+  conference?: string | null;
+  season?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  source_url?: string | null;
+}
+
+export interface Coach {
+  id: number;
+  club_id?: number | null;
+  name: string;
+  title?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  confidence_score?: number | null;
+  source_url?: string | null;
+}
+
+export interface CoachDiscovery {
+  id: number;
+  club_id?: number | null;
+  name: string;
+  title?: string | null;
+  email?: string | null;
+  source_url?: string | null;
+  scraped_at?: string | null;
+  confidence?: number | null;
+  platform_family?: string | null;
+}
+
+export interface ClubStaffResponse {
+  club_id: number;
+  staff: CoachDiscovery[];
+}
+
+export interface ClubSearchResponse {
+  clubs: Club[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface EventSearchResponse {
+  events: Event[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface CoachSearchResponse {
+  coaches: Coach[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface DuplicateCluster {
+  /** Club name after stripping common suffixes (FC, SC, United, Academy, etc.) */
+  normalized_name: string;
+  state?: string | null;
+  club_count: number;
+  club_ids: number[];
+  club_names: string[];
+  /** Distinct league/source names the clustered clubs appear in */
+  sources: string[];
+}
+
+export interface DuplicatesResponse {
+  duplicates: DuplicateCluster[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface StateCoverage {
+  state: string;
+  club_count: number;
+  below_threshold: boolean;
+}
+
+export interface LeagueCoverage {
+  league: string;
+  club_count: number;
+}
+
+export type CoverageResponseSummaryWebsiteCoverage = {
+  with_website?: number;
+  without_website?: number;
+  pct?: number;
+};
+
+export type CoverageResponseSummary = {
+  total_clubs?: number;
+  total_states?: number;
+  states_below_threshold?: number;
+  threshold?: number;
+  website_coverage?: CoverageResponseSummaryWebsiteCoverage;
+};
+
+export interface CoverageResponse {
+  summary: CoverageResponseSummary;
+  states: StateCoverage[];
+  leagues: LeagueCoverage[];
+}
+
+export interface OverlapClub {
+  id: number;
+  club_name_canonical: string;
+  /** Club name after stripping common suffixes (for dedup cross-referencing) */
+  normalized_name: string;
+  city?: string | null;
+  state?: string | null;
+  league_count: number;
+  leagues: string[];
+  gender_programs: string[];
+}
+
+export interface OverlapResponse {
+  clubs: OverlapClub[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export type ListClubsParams = {
   /**
    * Filter by US state abbreviation or full name (ILIKE match)
@@ -116,4 +251,136 @@ export type SearchClubsParams = {
    * Search query
    */
   q: string;
+};
+
+export type SearchClubsAdvancedParams = {
+  /**
+   * Substring match on club_name_canonical (ILIKE)
+   */
+  name?: string;
+  /**
+   * US state abbreviation or full name (ILIKE match)
+   */
+  state?: string;
+  /**
+   * League name substring to filter by affiliation (ILIKE)
+   */
+  league?: string;
+  /**
+   * When true, only clubs with a known website are returned
+   */
+  has_website?: boolean;
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
+};
+
+export type SearchEventsParams = {
+  /**
+   * Filter events by canonical club ID
+   */
+  club_id?: number;
+  /**
+   * League name substring (ILIKE)
+   */
+  league?: string;
+  /**
+   * Age group (e.g. U14, U15)
+   */
+  age_group?: string;
+  /**
+   * Gender filter (boys, girls)
+   */
+  gender?: string;
+  /**
+   * Season identifier (e.g. 2024-2025)
+   */
+  season?: string;
+  /**
+   * Source URL substring (ILIKE)
+   */
+  source?: string;
+  /**
+   * Filter events with start_date >= this date (ISO 8601, e.g. 2024-08-01)
+   */
+  start_date_from?: string;
+  /**
+   * Filter events with start_date <= this date (ISO 8601, e.g. 2025-06-30)
+   */
+  start_date_to?: string;
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
+};
+
+export type SearchCoachesParams = {
+  /**
+   * Filter coaches by canonical club ID
+   */
+  club_id?: number;
+  /**
+   * Coach name substring (ILIKE)
+   */
+  name?: string;
+  /**
+   * Title keyword substring (ILIKE)
+   */
+  title?: string;
+  /**
+   * Minimum confidence score (0–1)
+   * @minimum 0
+   * @maximum 1
+   */
+  min_confidence?: number;
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
+};
+
+export type AnalyticsDuplicatesParams = {
+  /**
+   * Limit duplicate detection to a single US state (abbreviation or full name)
+   */
+  state?: string;
+  /**
+   * Minimum number of clubs in a cluster to be flagged
+   * @minimum 2
+   */
+  min_clubs?: number;
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
+};
+
+export type AnalyticsCoverageParams = {
+  /**
+   * States with fewer clubs than this threshold are flagged
+   * @minimum 1
+   */
+  min_clubs?: number;
+};
+
+export type AnalyticsOverlapParams = {
+  /**
+   * Limit results to a single US state
+   */
+  state?: string;
+  /**
+   * Minimum number of distinct leagues to be returned
+   * @minimum 2
+   */
+  min_leagues?: number;
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
 };

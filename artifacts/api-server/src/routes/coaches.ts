@@ -11,7 +11,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, ilike, gte, desc, sql, asc } from "drizzle-orm";
 import {
-  CoachSearchResponse,
+  SearchCoachesResponse,
   CoachDetailResponse,
   CoachCareerResponse,
   CoachMovementsResponse,
@@ -84,7 +84,7 @@ router.get("/coaches/search", async (req, res, next): Promise<void> => {
       .offset(offset);
 
     res.json(
-      CoachSearchResponse.parse({
+      SearchCoachesResponse.parse({
         coaches: rows.map((r) => ({
           id: r.id,
           club_id: r.clubId ?? null,
