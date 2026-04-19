@@ -574,6 +574,15 @@ def _handle_usclub_id(args: argparse.Namespace) -> None:
     _uid_print_summary(outcomes)
 
 
+def _handle_ussoccer_ynt(args: argparse.Namespace) -> None:
+    from ynt_runner import run_ussoccer_ynt, print_summary as _ynt_print_summary
+    summary = run_ussoccer_ynt(
+        dry_run=args.dry_run,
+        limit=args.limit,
+    )
+    _ynt_print_summary(summary)
+
+
 def _handle_duda_360player_clubs(args: argparse.Namespace) -> None:
     from duda_360player_clubs_runner import (
         run_duda_360player_clubs,
@@ -630,6 +639,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "usclub_seeds": _handle_usclub_seeds,
     "usclub-id": _handle_usclub_id,
     "usclub_id": _handle_usclub_id,
+    "ussoccer-ynt": _handle_ussoccer_ynt,
+    "ussoccer_ynt": _handle_ussoccer_ynt,
     "duda-360player-clubs": _handle_duda_360player_clubs,
     "duda_360player_clubs": _handle_duda_360player_clubs,
 }
@@ -659,6 +670,7 @@ SOURCE_HELP: dict[str, str] = {
     "usclub-sanctioned": "discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events",
     "usclub-seeds": "seed only — National Cup + NPL Finals GotSport events, skip discovery",
     "usclub-id": "discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API (scaffold)",
+    "ussoccer-ynt": "scrape US Soccer Youth National Team (YNT) call-ups from ussoccer.com press releases into ynt_call_ups",
 }
 
 

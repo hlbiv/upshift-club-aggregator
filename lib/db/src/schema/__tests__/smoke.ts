@@ -389,6 +389,30 @@ assertTable(schema.apiKeys, "api_keys", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain — US Soccer YNT call-ups
+// ---------------------------------------------------------------------------
+
+assertTable(schema.yntCallUps, "ynt_call_ups", {
+  cols: [
+    "player_name",
+    "graduation_year",
+    "position",
+    "club_id",
+    "club_name_raw",
+    "age_group",
+    "gender",
+    "camp_event",
+    "camp_start_date",
+    "camp_end_date",
+    "source_url",
+    "first_seen_at",
+    "last_seen_at",
+  ],
+  uniques: ["ynt_call_ups_natural_key_uq"],
+  indexes: ["ynt_call_ups_age_group_gender_idx"],
+});
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 
