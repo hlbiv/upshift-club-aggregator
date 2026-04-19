@@ -12,6 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from config import MAX_RETRIES, RETRY_BASE_DELAY_SECONDS
+from utils.http import get as http_get
 from utils.retry import retry_with_backoff, TransientError
 
 logger = logging.getLogger(__name__)
@@ -185,8 +186,12 @@ def scrape_static(url: str, league_name: str) -> List[Dict]:
     logger.info("Static scrape: %s", url)
 
     def _fetch() -> requests.Response:
+        # http_get() wraps requests.get with per-domain proxy rotation
+        # (see scraper/utils/http.py). The retry wrapper around this
+        # function still owns the "try again on transient failure"
+        # behaviour; each retry re-enters http_get and re-picks a proxy.
         try:
-            r = requests.get(url, headers=HEADERS, timeout=20)
+            r = http_get(url, headers=HEADERS, timeout=20)
             r.raise_for_status()
             return r
         except requests.RequestException as exc:
