@@ -6,19 +6,57 @@ Falls back to the static scraper automatically when:
   - Playwright can't resolve DNS (sandbox/network restriction)
   - The browser crashes or times out on launch
   - Any other unrecoverable browser error occurs
+
+TODO(raw-html-archive): wire ``utils.html_archive.archive_raw_html``
+after a successful ``page.content()`` capture. The static scraper
+already archives every 2xx fetch (see ``scraper_static.py``). The
+Playwright path is deliberately deferred to a follow-up PR because
+(a) rendered HTML can be multi-MB and naive capture doubles the
+per-page memory footprint, and (b) we want to decide whether to
+archive the pre-JS source, the post-render DOM, or both before
+committing to a shape. Gating follows the same ``ARCHIVE_RAW_HTML_ENABLED``
+env flag as the static hook.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout, Error as PlaywrightError
 
 from config import PLAYWRIGHT_TIMEOUT, PLAYWRIGHT_WAIT_FOR
+from utils.http import pick_proxy_server
 
 logger = logging.getLogger(__name__)
+
+
+def _playwright_proxy_for(url: str) -> Optional[Dict[str, str]]:
+    """
+    Return a Playwright proxy kwarg for ``url``, or ``None`` if no
+    proxy is configured for the host.
+
+    The returned dict is shaped for ``browser.new_context(proxy=...)``.
+    On an empty pool we return ``None`` so the existing behaviour
+    (direct connection) is preserved bit-for-bit.
+
+    TODO(proxy-cooldown): This helper asks the shared config for a
+    single non-cooldown proxy and passes it to the browser context.
+    It does NOT (yet) implement the 429-driven rotation loop that the
+    ``requests`` path in ``utils.http`` has — Playwright contexts
+    can't swap proxies mid-flight without recreating the browser, so
+    the cooldown loop needs a different architecture (likely: launch
+    per proxy, rotate on failure, reuse the static-scraper fallback).
+    Tracked for a follow-up PR; out of scope for the initial
+    abstraction.
+    """
+    hostname = urlparse(url).hostname or ""
+    proxy_url = pick_proxy_server(hostname)
+    if proxy_url is None:
+        return None
+    return {"server": proxy_url}
 
 # Chromium flags needed for sandboxed/container environments (Replit, Docker, CI)
 _CHROMIUM_ARGS = [
@@ -85,11 +123,16 @@ def scrape_js(url: str, league_name: str) -> List[Dict]:
                 headless=True,
                 args=_CHROMIUM_ARGS,
             )
-            context = browser.new_context(
-                user_agent=(
+            context_kwargs: Dict = {
+                "user_agent": (
                     "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"
                 )
-            )
+            }
+            proxy = _playwright_proxy_for(url)
+            if proxy is not None:
+                context_kwargs["proxy"] = proxy
+                logger.info("JS scrape via proxy %s", proxy["server"])
+            context = browser.new_context(**context_kwargs)
             page = context.new_page()
 
             try:

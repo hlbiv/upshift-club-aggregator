@@ -73,6 +73,16 @@ WHERE started_at < NOW() - INTERVAL '90 days'
 # coach_scrape_snapshots — keep last 5 per (club_id) ordered by
 # scraped_at DESC, id DESC (id breaks ties for snapshots taken in the
 # same second).
+#
+# DECISION (PR #51 follow-up): partition by `(club_id)` only — NOT
+# `(club_id, coach_id)`. The schema in lib/db/src/schema/coaches.ts
+# does not have a `coach_id` column on `coach_scrape_snapshots`; the
+# table stores `raw_staff` JSONB which carries per-coach detail
+# embedded inside the snapshot. Because the only consumer is
+# diff/trend reconstruction over the snapshot-as-a-whole, partitioning
+# by `(club_id)` is the correct grain. If a future schema migration
+# adds a top-level `coach_id`, extend this PARTITION BY and bump the
+# keep-count as appropriate.
 _DELETE_COACH_SCRAPE_SNAPSHOTS_SQL = """
 DELETE FROM coach_scrape_snapshots
 WHERE id IN (

@@ -52,7 +52,23 @@ try:
 except ImportError:  # pragma: no cover — tested envs have psycopg2
     psycopg2 = None  # type: ignore
 
+try:
+    # `utils.retry` is a sibling module under scraper/. If the package
+    # layout changes (e.g. running this file directly with a weird
+    # sys.path) we fall back to a no-retry connect rather than crashing
+    # the logger import — the JSONL fallback still catches the failure.
+    from utils.retry import retry_with_backoff  # type: ignore
+except Exception:  # pragma: no cover — defensive
+    retry_with_backoff = None  # type: ignore
+
 log = logging.getLogger("scrape_run_logger")
+
+# Retry budget for the initial psycopg2 connect. Small + fast on purpose:
+# we don't want to block scraping on a sustained outage (the JSONL
+# fallback is the durable safety net), but a one-second hiccup at process
+# start shouldn't dump a session's worth of telemetry to disk.
+_CONNECT_MAX_RETRIES = 2  # → up to 3 attempts total
+_CONNECT_BASE_DELAY_SECONDS = 0.5
 
 
 class FailureKind(str, Enum):
@@ -185,16 +201,46 @@ def _db_configured() -> bool:
     return psycopg2 is not None and bool(os.environ.get("DATABASE_URL"))
 
 
+def _raw_connect() -> Any:
+    """One-shot psycopg2 connect. Raises on failure."""
+    c = psycopg2.connect(os.environ["DATABASE_URL"])
+    c.autocommit = True
+    return c
+
+
 def _try_connect() -> Optional[Any]:
-    """Attempt a raw psycopg2 connect. Returns None on failure."""
+    """Attempt a psycopg2 connect with bounded retries. Returns None on failure.
+
+    Wrapped in `retry_with_backoff` so a transient blip (DNS flap,
+    pgbouncer restart, server-side connection limit churn) doesn't dump
+    the entire scrape session into the JSONL fallback. After the retry
+    budget is exhausted we still fall through to JSONL — the retry is
+    additive, not a replacement for the durable on-disk safety net.
+
+    The retry treats *any* exception during connect as transient
+    (`retryable_check=lambda _: True`). psycopg2 raises `OperationalError`
+    for most network-level failures, but the precise class varies by
+    pgbouncer/proxy in front of the DB, so a permissive check is safer
+    than enumerating types here. The budget is small enough (≤3 attempts,
+    sub-second base delay) that genuine outages still fall through
+    quickly to the JSONL fallback.
+    """
     if not _db_configured():
         return None
     try:
-        c = psycopg2.connect(os.environ["DATABASE_URL"])
-        c.autocommit = True
-        return c
+        if retry_with_backoff is None:
+            return _raw_connect()
+        return retry_with_backoff(
+            _raw_connect,
+            max_retries=_CONNECT_MAX_RETRIES,
+            base_delay=_CONNECT_BASE_DELAY_SECONDS,
+            retryable_check=lambda _exc: True,
+            label="scrape_run_logger.connect",
+        )
     except Exception as exc:
-        log.warning("scrape_run_logger: connect failed — %s", exc)
+        log.warning(
+            "scrape_run_logger: connect failed after retries — %s", exc,
+        )
         return None
 
 
@@ -345,8 +391,9 @@ def _drain_events_to_db(conn, events: List[Dict[str, Any]]) -> int:
                 INSERT INTO scrape_run_logs
                     (scraper_key, league_name, started_at, completed_at,
                      status, failure_kind, records_created, records_updated,
-                     records_failed, error_message, source_url)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     records_failed, error_message, source_url,
+                     triggered_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     scraper_key,
@@ -360,6 +407,9 @@ def _drain_events_to_db(conn, events: List[Dict[str, Any]]) -> int:
                     int(ev.get("records_failed") or 0),
                     error_message,
                     ev.get("source_url"),
+                    # Fall back to 'manual' if an older JSONL row (pre
+                    # this PR) is drained — matches the column default.
+                    ev.get("triggered_by") or "manual",
                 ),
             )
             inserted += 1
@@ -445,6 +495,21 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _triggered_by() -> str:
+    """Return the trigger source for this process.
+
+    Read from `SCRAPE_TRIGGERED_BY` at log time (not import time) so
+    per-invocation env vars set by wrapper scripts like
+    `scraper/scheduled/*.sh` are honoured. Unset / empty string falls
+    back to `manual`, which matches the DB column default on
+    `scrape_run_logs` — any operator-invoked run without the wrapper
+    gets stamped `manual`. Keep in sync with the
+    `scrape_run_logs.triggered_by` column in
+    lib/db/src/schema/scrape-health.ts.
+    """
+    return os.environ.get("SCRAPE_TRIGGERED_BY") or "manual"
+
+
 @dataclass
 class ScrapeRunLogger:
     """
@@ -473,6 +538,10 @@ class ScrapeRunLogger:
     )
     _started_at_iso: Optional[str] = field(default=None, init=False)
     _source_url: Optional[str] = field(default=None, init=False)
+    # Set from SCRAPE_TRIGGERED_BY env var inside start(). Declared here
+    # so accessors (fallback writers, finish()) don't trip AttributeError
+    # if they fire before start() runs. Matches the DB column default.
+    _triggered_by: str = field(default="manual", init=False)
 
     def start(self, source_url: Optional[str] = None) -> None:
         # No DB configured → silent no-op. Matches pre-PR behaviour for
@@ -488,6 +557,9 @@ class ScrapeRunLogger:
 
         self._source_url = source_url
         self._started_at_iso = _now_iso()
+        # Capture at start-time so start/finish/drain all see the same
+        # value even if the env var is mutated mid-run.
+        self._triggered_by = _triggered_by()
 
         conn = _conn()
         if conn is None:
@@ -498,11 +570,17 @@ class ScrapeRunLogger:
                 cur.execute(
                     """
                     INSERT INTO scrape_run_logs
-                        (scraper_key, league_name, status, source_url)
-                    VALUES (%s, %s, 'running', %s)
+                        (scraper_key, league_name, status, source_url,
+                         triggered_by)
+                    VALUES (%s, %s, 'running', %s, %s)
                     RETURNING id, started_at
                     """,
-                    (self.scraper_key, self.league_name, source_url),
+                    (
+                        self.scraper_key,
+                        self.league_name,
+                        source_url,
+                        self._triggered_by,
+                    ),
                 )
                 row = cur.fetchone()
                 if row is not None:
@@ -531,6 +609,7 @@ class ScrapeRunLogger:
             "started_at": self._started_at_iso,
             "status": "running",
             "source_url": self._source_url,
+            "triggered_by": self._triggered_by,
         })
 
     def _finish(
@@ -562,6 +641,7 @@ class ScrapeRunLogger:
             "records_failed": records_failed,
             "error_message": (error_message or "")[:4000] or None,
             "source_url": self._source_url,
+            "triggered_by": self._triggered_by,
         }
 
         conn = _conn()

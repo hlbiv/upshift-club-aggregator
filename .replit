@@ -40,6 +40,11 @@ name = "daily-club-results-rollup"
 cron = "0 4 * * *"
 command = "cd scraper && python3 run.py --rollup club-results"
 
+[[deployment.scheduledJobs]]
+name = "daily-scrape-health-rollup"
+cron = "0 5 * * *"
+command = "cd scraper && python3 run.py --rollup scrape-health"
+
 [nix]
 channel = "stable-25_05"
 packages = ["gitFull", "glibcLocales", "playwright-driver", "rapidfuzz-cpp", "taskflow", "xcodebuild", "zlib"]
