@@ -63,10 +63,14 @@ def test_parse_fixture_extracts_all_expected_rows():
         html,
         source_url="https://www.topdrawersoccer.com/college-soccer-commitments/girls/2026",
     )
-    # Fixture has 7 <tr> rows; the last is malformed (no player name)
-    # and must be dropped → 6 valid commitments.
+    # Fixture has two tables:
+    #   Table 1: 7 <tr> rows; the last is malformed (no player name)
+    #            and must be dropped → 6 valid commitments.
+    #   Table 2: 1 <tr> row using the "Commitment" header alias
+    #            (issue #83) → 1 valid commitment.
+    # Total → 7 valid commitments.
     assert len(rows) >= 5, f"expected >=5 parsed rows, got {len(rows)}"
-    assert len(rows) == 6, f"expected exactly 6 parsed rows, got {len(rows)}"
+    assert len(rows) == 7, f"expected exactly 7 parsed rows, got {len(rows)}"
 
     # Every row must have the required contract fields.
     for r in rows:
@@ -117,6 +121,25 @@ def test_parse_fixture_handles_numeric_date():
     lila = next((r for r in rows if r["player_name"] == "Lila Okonkwo"), None)
     assert lila is not None
     assert lila["commitment_date"] == _date(2025, 7, 12)
+
+
+def test_parse_fixture_commitment_header_aliases_to_college():
+    """Issue #83: TDS's literal 'Commitment' column header must alias
+    to ``college_name_raw``. Without the alias, rows in that table are
+    dropped because the parser requires college_name_raw to be mapped.
+    """
+    html = _read_fixture()
+    rows = parse_topdrawer_commitments_html(
+        html,
+        source_url="https://www.topdrawersoccer.com/college-soccer-commitments/boys/2026",
+    )
+    noah = next((r for r in rows if r["player_name"] == "Noah Carrington"), None)
+    assert noah is not None, "row under 'Commitment' header was dropped (#83)"
+    assert noah["college_name_raw"] == "Duke University"
+    assert noah["club_name_raw"] == "FC Dallas Academy"
+    assert noah["position"] == "Midfielder"
+    assert noah["graduation_year"] == 2026
+    assert noah["commitment_date"] == _date(2026, 3, 3)
 
 
 def test_parse_empty_html_returns_empty_list():
