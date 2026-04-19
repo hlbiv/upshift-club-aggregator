@@ -105,6 +105,7 @@ states:
     # at a HubSpot-hosted URL. Public (515KB PDF, binary-verified).
     # Last verified 2026-04-19.
     platform: hubspot-pdf
+    parser: calnorth
     program_year: "2025-26"
     urls:
       - https://www.calnorth.org/hubfs/2026.State%20Pool%20List%20Letter.pdf
