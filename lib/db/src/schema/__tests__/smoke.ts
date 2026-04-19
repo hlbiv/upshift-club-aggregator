@@ -73,8 +73,20 @@ assertTable(schema.canonicalClubs, "canonical_clubs", {
     "website_last_checked_at",
     "last_scraped_at",
     "scrape_confidence",
+    "manually_merged",
   ],
   checks: ["canonical_clubs_website_status_enum"],
+});
+
+assertTable(schema.clubAliases, "club_aliases", {
+  cols: [
+    "club_id",
+    "alias_name",
+    "alias_slug",
+    "merged_from_canonical_id",
+    "merged_at",
+  ],
+  uniques: ["club_aliases_club_alias_uq"],
 });
 
 assertTable(schema.coachDiscoveries, "coach_discoveries", {
@@ -446,6 +458,30 @@ assertTable(schema.apiKeys, "api_keys", {
     "revoked_at",
     "scopes",
   ],
+});
+
+// ---------------------------------------------------------------------------
+// Domain — US Soccer YNT call-ups
+// ---------------------------------------------------------------------------
+
+assertTable(schema.yntCallUps, "ynt_call_ups", {
+  cols: [
+    "player_name",
+    "graduation_year",
+    "position",
+    "club_id",
+    "club_name_raw",
+    "age_group",
+    "gender",
+    "camp_event",
+    "camp_start_date",
+    "camp_end_date",
+    "source_url",
+    "first_seen_at",
+    "last_seen_at",
+  ],
+  uniques: ["ynt_call_ups_natural_key_uq"],
+  indexes: ["ynt_call_ups_age_group_gender_idx"],
 });
 
 // ---------------------------------------------------------------------------

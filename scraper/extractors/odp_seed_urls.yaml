@@ -1,0 +1,72 @@
+# ODP (Olympic Development Program) state-association roster seed URLs.
+#
+# Each US state association publishes its ODP roster or player-pool list
+# under a different URL shape — some USYS-hosted, some standalone. URLs
+# below were confirmed manually (see PR description for the confirmation
+# date). If a state is listed with an empty `urls: []`, no public roster
+# URL could be verified — do NOT fabricate one; file a follow-up and
+# ship the state separately once an operator supplies a URL.
+#
+# The `parser` key maps to a function in scraper/extractors/odp_rosters.py
+# (registry dict `PARSERS`). Shared parsers are reused across states
+# with similar DOM shape; when in doubt ship a per-state parser first
+# and factor it up only after two or more states demonstrably share
+# layout.
+#
+# Top 5 states (by youth-soccer registration) are scoped here. The
+# remaining 49 state associations are intentional follow-ups — they
+# should ship one-by-one as operators confirm URLs.
+
+states:
+  CA:
+    # Cal South (Southern California) — PRO+ ODP player pools.
+    # Player-pool hub links to per-age-group roster news releases.
+    parser: calsouth
+    program_year: "2025-26"
+    urls:
+      - https://calsouth.com/pro-odp-player-pools/
+
+  TX:
+    # North Texas State Soccer Association — ODP player pools.
+    # South Texas (STXsoccer) uses a different URL shape; add as a
+    # separate row when confirmed.
+    parser: ntxsoccer
+    program_year: "2025-26"
+    urls:
+      - https://www.ntxsoccer.org/odp/north-texas-odp-player-pools-2025-2026/
+
+  FL:
+    # Florida Youth Soccer Association — ODP selections hub.
+    # Posts per-age-group PDFs + HTML-embedded name lists once
+    # tryouts conclude.
+    parser: fysa
+    program_year: "2025-26"
+    urls:
+      - https://www.fysa.com/odp-selections/
+
+  NY:
+    # Eastern New York Youth Soccer Association — Regional/National
+    # Pool selections. Western NY (nyswysa) has a separate hub; add
+    # as a separate row keyed "NY-W" when confirmed.
+    parser: enysoccer
+    program_year: "2025-26"
+    urls:
+      - https://www.enysoccer.com/odp/interregional-pool-selections/
+
+  PA:
+    # Eastern Pennsylvania Youth Soccer — Boys U15+ rosters hub. A
+    # separate girls hub exists under the same /odp-*-rosters/ shape.
+    # Western PA (pawest-soccer) has its own URL family; add later.
+    parser: epysa
+    program_year: "2025-26"
+    urls:
+      - https://www.epysa.org/odp-boys-rosters/
+
+# --- follow-ups -------------------------------------------------------
+# AK, AL, AR, AZ, CO, CT, DE, GA, HI, IA, ID, IL, IN, KS, KY, LA, MA,
+# MD, ME, MI, MN, MO, MS, MT, NC, ND, NE, NH, NJ, NM, NV, OH, OK, OR,
+# RI, SC, SD, TN, UT, VA, VT, WA, WI, WV, WY, plus sub-state assocs
+# (CA-North, NY-West, PA-West, South Texas, etc.) are all pending.
+# No public URL has been verified for them at the time this PR
+# shipped. DO NOT add speculative URLs here — they will 404 and
+# pollute scrape_run_logs with `zero_results` failures.

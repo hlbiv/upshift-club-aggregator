@@ -399,6 +399,16 @@ def _handle_gotsport_matches(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_odp_rosters(args: argparse.Namespace) -> None:
+    from odp_runner import run_odp_rosters, print_summary as _odp_print_summary
+    summary = run_odp_rosters(
+        dry_run=args.dry_run,
+        limit=args.limit,
+        state=args.state,
+    )
+    _odp_print_summary(summary)
+
+
 def _handle_sincsports_events(args: argparse.Namespace) -> None:
     from events_runner import run_sincsports_events, print_summary
     outcomes = run_sincsports_events(dry_run=args.dry_run, only_tid=args.tid)
@@ -556,6 +566,26 @@ def _handle_club_dedup(args: argparse.Namespace) -> None:
     print_report(pairs)
 
 
+def _handle_club_dedup_resolve(args: argparse.Namespace) -> None:
+    # Tiered resolver — auto-merges high-confidence pairs, writes a
+    # review CSV for the rest. **DEFAULTS TO DRY-RUN** even when
+    # --dry-run is absent; pass --no-dry-run to actually mutate.
+    # (--dry-run remains supported for symmetry with other --source
+    # jobs, and forces dry-run regardless of --no-dry-run.)
+    from dedup.__main__ import run_resolve, print_summary
+    commit = bool(getattr(args, "no_dry_run", False)) and not args.dry_run
+    try:
+        summary = run_resolve(
+            threshold=0.85,
+            state=args.state if hasattr(args, "state") else None,
+            dry_run=not commit,
+        )
+    except RuntimeError as exc:
+        logger.error("club-dedup-resolve: %s", exc)
+        sys.exit(1)
+    print_summary(summary)
+
+
 def _handle_usclub_sanctioned(args: argparse.Namespace) -> None:
     from usclub_events_runner import run_usclub_events, print_summary as _uc_print_summary
     outcomes = run_usclub_events(
@@ -582,6 +612,15 @@ def _handle_usclub_id(args: argparse.Namespace) -> None:
         limit=args.limit,
     )
     _uid_print_summary(outcomes)
+
+
+def _handle_ussoccer_ynt(args: argparse.Namespace) -> None:
+    from ynt_runner import run_ussoccer_ynt, print_summary as _ynt_print_summary
+    summary = run_ussoccer_ynt(
+        dry_run=args.dry_run,
+        limit=args.limit,
+    )
+    _ynt_print_summary(summary)
 
 
 def _handle_replay_html(args: argparse.Namespace) -> None:
@@ -641,6 +680,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "link_canonical_clubs": _handle_link_canonical_clubs,
     "maxpreps-rosters": _handle_maxpreps_rosters,
     "maxpreps_rosters": _handle_maxpreps_rosters,
+    "odp-rosters": _handle_odp_rosters,
+    "odp_rosters": _handle_odp_rosters,
     "replay-html": _handle_replay_html,
     "replay_html": _handle_replay_html,
     "sincsports-rosters": _handle_sincsports_rosters,
@@ -672,12 +713,16 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "club_enrichment": _handle_club_enrichment,
     "club-dedup": _handle_club_dedup,
     "club_dedup": _handle_club_dedup,
+    "club-dedup-resolve": _handle_club_dedup_resolve,
+    "club_dedup_resolve": _handle_club_dedup_resolve,
     "usclub-sanctioned": _handle_usclub_sanctioned,
     "usclub_sanctioned": _handle_usclub_sanctioned,
     "usclub-seeds": _handle_usclub_seeds,
     "usclub_seeds": _handle_usclub_seeds,
     "usclub-id": _handle_usclub_id,
     "usclub_id": _handle_usclub_id,
+    "ussoccer-ynt": _handle_ussoccer_ynt,
+    "ussoccer_ynt": _handle_ussoccer_ynt,
     "duda-360player-clubs": _handle_duda_360player_clubs,
     "duda_360player_clubs": _handle_duda_360player_clubs,
 }
@@ -704,12 +749,15 @@ SOURCE_HELP: dict[str, str] = {
     "duda-360player-clubs": "probe Duda CMS + 360Player club sites; writes Event JSON-LD into tryouts",
     "link-canonical-clubs": "resolves event_teams.canonical_club_id / matches.home_club_id / etc.",
     "maxpreps-rosters": "populates hs_rosters from MaxPreps HS soccer roster pages (framework; default --limit 20; expect 403s without proxy creds)",
+    "odp-rosters": "scrapes state-association Olympic Development Program rosters (top-5 states; 49 follow-ups)",
     "replay-html": "[stub] replay archived HTML through extractors (not yet implemented)",
     "club-enrichment": "enrich canonical_clubs with logo/socials/status",
     "club-dedup": "fuzzy dedup report for canonical_clubs",
+    "club-dedup-resolve": "tiered: auto-merges high-confidence pairs + writes review CSV; defaults to dry-run, requires --no-dry-run to commit",
     "usclub-sanctioned": "discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events",
     "usclub-seeds": "seed only — National Cup + NPL Finals GotSport events, skip discovery",
     "usclub-id": "discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API (scaffold)",
+    "ussoccer-ynt": "scrape US Soccer Youth National Team (YNT) call-ups from ussoccer.com press releases into ynt_call_ups",
 }
 
 
@@ -992,6 +1040,11 @@ def main() -> None:
                         help="State filter for --source youth-coaches or club-dedup (e.g. GA, CA).")
     parser.add_argument("--force", action="store_true",
                         help="For --source club-enrichment: re-enrich clubs that already have data.")
+    parser.add_argument("--no-dry-run", action="store_true", dest="no_dry_run",
+                        help="For --source club-dedup-resolve: explicitly opt in to "
+                             "committing auto-merge tier merges. Without this flag the "
+                             "resolver runs in dry-run mode regardless. Ignored by other "
+                             "sources.")
     parser.add_argument("--platform-family",
                         choices=["sportsengine", "leagueapps", "wordpress", "unknown"],
                         dest="platform_family",
