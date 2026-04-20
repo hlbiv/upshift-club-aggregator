@@ -10,7 +10,7 @@ import ScraperHealthPage from "./pages/ScraperHealth";
  *   /login         → LoginPage (public)
  *   /scraper-health → ScraperHealthPage (wrapped in ProtectedRoute)
  *
- * ProtectedRoute calls GET /v1/admin/me on mount. 200 → render children,
+ * ProtectedRoute calls GET /api/v1/admin/me on mount. 200 → render children,
  * 401 → <Navigate to="/login" />. Phase B.3 only ships these two pages;
  * scheduler / dedup / data-quality pages are future work.
  */

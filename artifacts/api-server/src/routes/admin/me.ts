@@ -1,5 +1,5 @@
 /**
- * `/v1/admin/me` — echo the current admin identity from req.adminAuth.
+ * `/api/v1/admin/me` — echo the current admin identity from req.adminAuth.
  *
  * For session auth, the email and role come straight from the DB lookup in
  * requireAdmin. For API-key auth there is no user — we synthesize a

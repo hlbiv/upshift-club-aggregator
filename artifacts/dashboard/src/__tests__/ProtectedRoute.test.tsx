@@ -31,7 +31,7 @@ describe("ProtectedRoute", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders children when /v1/admin/me returns 200", async () => {
+  it("renders children when /api/v1/admin/me returns 200", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       new Response(
         JSON.stringify({ id: 1, email: "admin@example.com", role: "admin" }),
@@ -45,12 +45,12 @@ describe("ProtectedRoute", () => {
       expect(screen.getByText("protected content")).toBeInTheDocument();
     });
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/v1/admin/me"),
+      expect.stringContaining("/api/v1/admin/me"),
       expect.objectContaining({ credentials: "include" }),
     );
   });
 
-  it("redirects to /login when /v1/admin/me returns 401", async () => {
+  it("redirects to /login when /api/v1/admin/me returns 401", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),
     );
@@ -63,7 +63,7 @@ describe("ProtectedRoute", () => {
     expect(screen.queryByText("protected content")).not.toBeInTheDocument();
   });
 
-  it("redirects to /login when /v1/admin/me network-errors", async () => {
+  it("redirects to /login when /api/v1/admin/me network-errors", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(
       new TypeError("Failed to fetch"),
     );

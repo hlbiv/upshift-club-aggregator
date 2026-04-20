@@ -1,5 +1,5 @@
 /**
- * `/v1/admin` sub-app. Two exports:
+ * `/api/v1/admin` sub-app. Two exports:
  *
  *   - `unauthAdminRouter` — the single public route on the admin surface,
  *     `POST /auth/login`. Must NOT be behind requireAdmin (it IS the auth

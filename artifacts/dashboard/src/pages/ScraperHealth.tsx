@@ -10,8 +10,8 @@ import { adminFetch } from "../lib/api";
 /**
  * Scraper health dashboard.
  *
- *   GET /v1/admin/scrape-health         → ScrapeHealthList (rollup)
- *   GET /v1/admin/scrape-runs?limit=50  → ScrapeRunLogList (recent)
+ *   GET /api/v1/admin/scrape-health         → ScrapeHealthList (rollup)
+ *   GET /api/v1/admin/scrape-runs?limit=50  → ScrapeRunLogList (recent)
  *
  * Both requests run in parallel on mount. No polling this phase — refresh
  * = full page reload. Filters / pagination / "Run now" are future work.
@@ -35,7 +35,7 @@ export default function ScraperHealthPage() {
   useEffect(() => {
     let cancelled = false;
 
-    adminFetch("/v1/admin/scrape-health")
+    adminFetch("/api/v1/admin/scrape-health")
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) {
@@ -53,7 +53,7 @@ export default function ScraperHealthPage() {
         });
       });
 
-    adminFetch("/v1/admin/scrape-runs?limit=50")
+    adminFetch("/api/v1/admin/scrape-runs?limit=50")
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) {
