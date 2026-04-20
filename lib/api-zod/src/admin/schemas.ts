@@ -202,3 +202,58 @@ export const CoverageTrendResponse = z.object({
   windowDays: z.number().int(),
 });
 export type CoverageTrendResponse = z.infer<typeof CoverageTrendResponse>;
+
+/**
+ * Scheduler queue row — one admin-triggered scraper invocation.
+ *
+ * Mirrors `scheduler_jobs` (lib/db/src/schema/scheduler-jobs.ts). Timestamps
+ * are serialized as ISO-8601 strings across the wire. `stdout_tail` and
+ * `stderr_tail` hold the last N lines of the child-process output (see
+ * `tailLines` in artifacts/api-server/src/scheduler/worker.ts).
+ */
+export const SchedulerJob = z.object({
+  id: z.number().int(),
+  jobKey: z.string(),
+  args: z.record(z.unknown()).nullable(),
+  status: z.enum(["pending", "running", "success", "failed", "canceled"]),
+  requestedBy: z.number().int().nullable(),
+  requestedAt: z.string().datetime(),
+  startedAt: z.string().datetime().nullable(),
+  completedAt: z.string().datetime().nullable(),
+  exitCode: z.number().int().nullable(),
+  stdoutTail: z.string().nullable(),
+  stderrTail: z.string().nullable(),
+});
+export type SchedulerJob = z.infer<typeof SchedulerJob>;
+
+/** Paginated envelope of SchedulerJob rows. */
+export const SchedulerJobList = z.object({
+  jobs: z.array(SchedulerJob),
+  total: z.number().int(),
+});
+export type SchedulerJobList = z.infer<typeof SchedulerJobList>;
+
+/**
+ * Request body for POST /v1/admin/scheduler/run-now — enqueue a scraper.
+ *
+ * `args` is forwarded as CLI flags by the worker: `{ 'event-id': '123',
+ * 'dry-run': true }` → `['--event-id', '123', '--dry-run']`. Boolean values
+ * become presence flags (no value).
+ */
+export const RunNowRequest = z.object({
+  jobKey: z.string().min(1),
+  args: z.record(z.unknown()).optional(),
+});
+export type RunNowRequest = z.infer<typeof RunNowRequest>;
+
+/**
+ * Response body for POST /v1/admin/scheduler/run-now — row inserted at
+ * status=pending; the in-process worker will pick it up on its next tick.
+ */
+export const RunNowResponse = z.object({
+  id: z.number().int(),
+  jobKey: z.string(),
+  status: z.literal("pending"),
+  requestedAt: z.string().datetime(),
+});
+export type RunNowResponse = z.infer<typeof RunNowResponse>;
