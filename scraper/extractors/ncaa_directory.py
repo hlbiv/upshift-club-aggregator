@@ -199,26 +199,63 @@ def fetch_d1_programs(
 
 
 # ---------------------------------------------------------------------------
-# soccer_program_url resolver (PR-2)
+# soccer_program_url resolver (PR-2 + PR-3 multi-path probe)
 # ---------------------------------------------------------------------------
 
-_SIDEARM_PATH = {
-    "mens": "/sports/mens-soccer/roster",
-    "womens": "/sports/womens-soccer/roster",
+# Ordered candidate paths per gender. First 200 wins. Patterns observed
+# across real D1 SIDEARM sites (2025-26 season):
+#
+#   /sports/mens-soccer/roster    — canonical (Georgetown, UNC, Duke, ...)
+#   /sports/msoc/roster           — 4-letter abbreviation (Kentucky, Iowa)
+#   /sports/soccer/roster         — combined page (Purdue, Nebraska — one
+#                                   page serves both gender programs)
+#   /sports/m-soccer/roster       — dash variant (rare but observed)
+#
+# The same shape applies to D2/D3/NAIA/NJCAA — SIDEARM's routing
+# conventions are consistent across divisions. Adding a new path here
+# improves every division at once.
+_SIDEARM_PATHS: dict[str, tuple[str, ...]] = {
+    "mens": (
+        "/sports/mens-soccer/roster",
+        "/sports/msoc/roster",
+        "/sports/soccer/roster",
+        "/sports/m-soccer/roster",
+    ),
+    "womens": (
+        "/sports/womens-soccer/roster",
+        "/sports/wsoc/roster",
+        "/sports/soccer/roster",
+        "/sports/w-soccer/roster",
+    ),
 }
 
+# Back-compat alias — earlier PR-2 tests reference _SIDEARM_PATH[gender]
+# expecting a single string. Keep it pointing at the canonical (first)
+# path so old call sites still work.
+_SIDEARM_PATH = {g: paths[0] for g, paths in _SIDEARM_PATHS.items()}
 
-def compose_sidearm_roster_url(website: str, gender_program: str) -> str:
-    """Pure: return the conventional SIDEARM roster URL for a site + gender.
 
-    The athletics-site `website` may include a scheme or a trailing slash
-    or path; we normalize to the origin + canonical SIDEARM path. The
-    result is *candidate*, not verified — ``resolve_soccer_program_url``
+def compose_sidearm_roster_url(
+    website: str,
+    gender_program: str,
+    *,
+    path: Optional[str] = None,
+) -> str:
+    """Pure: return a SIDEARM roster URL for a site + gender.
+
+    When ``path`` is omitted, composes the canonical path (first entry
+    in ``_SIDEARM_PATHS[gender_program]``) — this preserves the PR-2
+    signature and existing tests. Pass ``path`` explicitly to compose a
+    non-canonical variant during multi-path probing.
+
+    The athletics-site ``website`` may include a scheme or a trailing
+    slash or path; we normalize to ``scheme://host`` + the chosen path.
+    The result is *candidate*, not verified — ``resolve_soccer_program_url``
     is the function that probes it.
     """
     if not website:
         raise ValueError("website must be non-empty")
-    if gender_program not in _SIDEARM_PATH:
+    if gender_program not in _SIDEARM_PATHS:
         raise ValueError(
             f"gender_program must be 'mens' or 'womens' (got {gender_program!r})"
         )
@@ -227,12 +264,21 @@ def compose_sidearm_roster_url(website: str, gender_program: str) -> str:
     if not re.match(r"^https?://", normalized, re.IGNORECASE):
         normalized = f"https://{normalized}"
     normalized = normalized.rstrip("/")
-    # Strip any trailing path — we want scheme://host only
     from urllib.parse import urlparse, urlunparse
 
     parsed = urlparse(normalized)
     origin = urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
-    return f"{origin}{_SIDEARM_PATH[gender_program]}"
+    chosen_path = path if path is not None else _SIDEARM_PATHS[gender_program][0]
+    return f"{origin}{chosen_path}"
+
+
+def _final_url_matches_path(final_url: str, path: str) -> bool:
+    """A 200 that redirected away from the probed path is a false positive.
+
+    Catches the 'catch-all 301 → homepage' case where a non-existent
+    roster path 200s because the site silently redirects to /.
+    """
+    return path in (final_url or "")
 
 
 def resolve_soccer_program_url(
@@ -242,24 +288,25 @@ def resolve_soccer_program_url(
     session: Optional[requests.Session] = None,
     timeout: int = 10,
 ) -> Optional[str]:
-    """Probe the SIDEARM roster URL for a college website.
+    """Probe candidate SIDEARM roster URLs; return first match or None.
 
-    Pre-flight check on the reference D1 sample returned 10/10 hits, so
-    this is intentionally Try-1-only: if the HEAD returns 200, return
-    the candidate URL; any other status (404, 4xx, 5xx, redirect-away,
-    or network error) returns ``None``. Missed rows are left for the
-    operator to fill manually — the caller logs them.
+    Tries each path in ``_SIDEARM_PATHS[gender_program]`` in order. For
+    each candidate, HEADs the URL; if the response is 200 AND the final
+    URL still contains the probed path (guarding against catch-all
+    redirects), returns the candidate. Otherwise tries the next path.
+    All paths exhausted / all non-200 / all network errors → returns
+    ``None``; the caller logs misses for operator review.
 
-    A ``HEAD`` request is cheaper than ``GET`` and sufficient: the
-    athletics site returns a 200 for a valid roster path and a 404 for
-    an invalid one. A handful of sites don't support HEAD cleanly; the
-    caller treats connection errors the same as a 404 miss.
+    Pre-flight check on the reference D1 sample (Georgetown, UNC, UVA,
+    Stanford, Indiana, Duke, Maryland, Notre Dame, Creighton, Wake
+    Forest) hit the canonical path 10/10. The additional paths were
+    added after PR-2's first Replit run surfaced ~15 misses; live logs
+    showed Iowa + Kentucky using ``/sports/wsoc/roster``, Purdue +
+    Nebraska using ``/sports/soccer/roster``, etc.
     """
     if not website:
         return None
-    try:
-        candidate = compose_sidearm_roster_url(website, gender_program)
-    except ValueError:
+    if gender_program not in _SIDEARM_PATHS:
         return None
 
     own_session = session is None
@@ -273,25 +320,31 @@ def resolve_soccer_program_url(
         )
 
     try:
-        try:
-            resp = session.head(
-                candidate, timeout=timeout, allow_redirects=True
-            )
-        except requests.RequestException as exc:
-            log.debug("[ncaa-resolver] HEAD %s failed: %s", candidate, exc)
-            return None
+        for path in _SIDEARM_PATHS[gender_program]:
+            try:
+                candidate = compose_sidearm_roster_url(
+                    website, gender_program, path=path
+                )
+            except ValueError:
+                return None
 
-        if resp.status_code != 200:
-            return None
+            try:
+                resp = session.head(
+                    candidate, timeout=timeout, allow_redirects=True
+                )
+            except requests.RequestException as exc:
+                log.debug("[ncaa-resolver] HEAD %s failed: %s", candidate, exc)
+                continue  # try next path
 
-        # Guard against a 200 that landed on the site's homepage after a
-        # catch-all redirect. If the final URL doesn't still end with the
-        # canonical path, treat it as a miss.
-        final_url = resp.url or candidate
-        if _SIDEARM_PATH[gender_program] not in final_url:
-            return None
+            if resp.status_code != 200:
+                continue
+            final_url = resp.url or candidate
+            if not _final_url_matches_path(final_url, path):
+                continue
 
-        return candidate
+            return candidate
+
+        return None
     finally:
         if own_session:
             try:
