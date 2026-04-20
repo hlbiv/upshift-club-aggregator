@@ -5,21 +5,33 @@ Groups clubs by state, then compares names within each state using
 Levenshtein distance and token-set similarity. Pairs above a
 configurable threshold are flagged as potential duplicates.
 
-Output is REPORT-ONLY — no auto-merge. Writes to stdout.
+Default behaviour is REPORT-ONLY — no auto-merge, stdout only. Pass
+``--persist`` to also queue pending pairs into ``club_duplicates`` for the
+admin review UI. Persistence is idempotent: the table enforces ordered-pair
+uniqueness via ``LEAST(left_club_id, right_club_id),
+GREATEST(left_club_id, right_club_id)``, and the writer uses
+``ON CONFLICT DO NOTHING`` so re-running the sweep (including with flipped
+pair ordering) will never double-queue a pair.
 
 Usage:
     python -m dedup.club_dedup [--threshold 0.85] [--dry-run] [--state GA]
+                               [--persist]
+
+Run the sweep on Replit cron with ``--persist`` to feed the admin dedup
+review queue; operators doing local dry-runs should omit the flag so the
+queue isn't polluted with noise.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -219,6 +231,96 @@ def find_duplicate_pairs(
     return pairs
 
 
+# ---------------------------------------------------------------------------
+# Persistence — club_duplicates review queue
+# ---------------------------------------------------------------------------
+
+# Method label written to club_duplicates.method. Kept as a constant so the
+# admin UI can filter by it and the test suite can assert on it.
+DEFAULT_METHOD = "name_fuzzy_88"
+
+
+def upsert_pending_duplicate(
+    cur,
+    left_id: int,
+    right_id: int,
+    score: float,
+    method: str,
+    left_snapshot: Dict[str, Any],
+    right_snapshot: Dict[str, Any],
+) -> None:
+    """Queue a pending duplicate pair.
+
+    Idempotent — the table's ordered-pair unique index on
+    ``(LEAST(left_club_id, right_club_id), GREATEST(left_club_id, right_club_id))``
+    collapses flipped pairs, and ``ON CONFLICT DO NOTHING`` means re-running
+    the sweep never double-queues a row.
+    """
+    cur.execute(
+        """
+        INSERT INTO club_duplicates (
+            left_club_id, right_club_id, score, method, status,
+            left_snapshot, right_snapshot
+        )
+        VALUES (%s, %s, %s, %s, 'pending', %s::jsonb, %s::jsonb)
+        ON CONFLICT (
+            (LEAST(left_club_id, right_club_id)),
+            (GREATEST(left_club_id, right_club_id))
+        ) DO NOTHING
+        """,
+        (
+            left_id,
+            right_id,
+            score,
+            method,
+            json.dumps(left_snapshot),
+            json.dumps(right_snapshot),
+        ),
+    )
+
+
+def _snapshot_from_pair(pair: DedupPair, side: str) -> Dict[str, Any]:
+    """Build a denormalized snapshot for one side of a pair."""
+    if side == "left":
+        return {
+            "id": pair.club_a_id,
+            "name": pair.club_a_name,
+            "state": pair.state,
+        }
+    return {
+        "id": pair.club_b_id,
+        "name": pair.club_b_name,
+        "state": pair.state,
+    }
+
+
+def persist_pending_duplicates(
+    conn,
+    pairs: List[DedupPair],
+    *,
+    method: str = DEFAULT_METHOD,
+) -> int:
+    """Persist all pairs to ``club_duplicates``; return rows attempted.
+
+    Actual inserts may be fewer due to ON CONFLICT DO NOTHING on re-runs.
+    """
+    attempted = 0
+    with conn.cursor() as cur:
+        for p in pairs:
+            upsert_pending_duplicate(
+                cur,
+                left_id=p.club_a_id,
+                right_id=p.club_b_id,
+                score=p.similarity,
+                method=method,
+                left_snapshot=_snapshot_from_pair(p, "left"),
+                right_snapshot=_snapshot_from_pair(p, "right"),
+            )
+            attempted += 1
+    conn.commit()
+    return attempted
+
+
 def print_report(pairs: List[DedupPair]) -> None:
     """Print a formatted dedup report to stdout."""
     print("\n" + "=" * 80)
@@ -247,22 +349,42 @@ def run_club_dedup(
     threshold: float = 0.85,
     dry_run: bool = False,
     state: Optional[str] = None,
+    persist: bool = False,
+    method: str = DEFAULT_METHOD,
 ) -> List[DedupPair]:
-    """Run the fuzzy dedup analysis."""
+    """Run the fuzzy dedup analysis.
+
+    When ``persist`` is True, candidate pairs are written to
+    ``club_duplicates`` with ``status='pending'`` for admin review. The
+    queue is idempotent — repeat runs hit ``ON CONFLICT DO NOTHING``.
+    """
     conn = _get_connection()
     try:
         clubs = _fetch_all_clubs(conn, state_filter=state)
+
+        logger.info("Loaded %d clubs for dedup analysis", len(clubs))
+
+        if dry_run:
+            logger.info(
+                "[dry-run] Would compare clubs with threshold=%.2f", threshold
+            )
+            return []
+
+        pairs = find_duplicate_pairs(clubs, threshold=threshold)
+
+        if persist and pairs:
+            attempted = persist_pending_duplicates(conn, pairs, method=method)
+            logger.info(
+                "Queued %d candidate pair(s) into club_duplicates "
+                "(duplicates from prior sweeps skipped via ON CONFLICT)",
+                attempted,
+            )
+        elif persist:
+            logger.info("No pairs to persist.")
+
+        return pairs
     finally:
         conn.close()
-
-    logger.info("Loaded %d clubs for dedup analysis", len(clubs))
-
-    if dry_run:
-        logger.info("[dry-run] Would compare clubs with threshold=%.2f", threshold)
-        return []
-
-    pairs = find_duplicate_pairs(clubs, threshold=threshold)
-    return pairs
 
 
 def main() -> None:
@@ -281,12 +403,21 @@ def main() -> None:
         "--state", metavar="ST",
         help="Only compare clubs in this state (e.g. GA, CA)",
     )
+    parser.add_argument(
+        "--persist", action="store_true",
+        help=(
+            "Queue candidate pairs into club_duplicates as status='pending'. "
+            "Idempotent via ordered-pair unique index + ON CONFLICT DO "
+            "NOTHING. Default off so dry-runs don't pollute the review queue."
+        ),
+    )
     args = parser.parse_args()
 
     pairs = run_club_dedup(
         threshold=args.threshold,
         dry_run=args.dry_run,
         state=args.state,
+        persist=args.persist,
     )
     print_report(pairs)
 
