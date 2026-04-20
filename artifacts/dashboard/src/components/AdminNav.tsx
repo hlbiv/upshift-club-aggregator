@@ -1,12 +1,11 @@
 import { NavLink } from "react-router-dom";
 
 /**
- * Minimal admin nav shown at the top of admin pages. Two links for now —
- * Scraper health and Dedup review. The current page is bold/underlined.
+ * Minimal admin nav shown at the top of admin pages. Links for Scraper
+ * health, Dedup review, and Data quality. The current page is bold/underlined.
  *
- * No sidebar, no logo — internal tool, low ceremony. When a third page
- * arrives we'll graduate to a sidebar; until then, two text links is the
- * right amount of chrome.
+ * No sidebar, no logo — internal tool, low ceremony. Plain text links keep
+ * the chrome appropriately minimal for an internal dashboard.
  */
 export default function AdminNav() {
   return (
@@ -34,6 +33,16 @@ export default function AdminNav() {
         }
       >
         Dedup review
+      </NavLink>
+      <NavLink
+        to="/data-quality"
+        className={({ isActive }) =>
+          isActive
+            ? "font-semibold text-neutral-900 underline underline-offset-4"
+            : "text-neutral-500 hover:text-neutral-800"
+        }
+      >
+        Data quality
       </NavLink>
     </nav>
   );
