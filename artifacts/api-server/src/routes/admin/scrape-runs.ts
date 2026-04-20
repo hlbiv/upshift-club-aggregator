@@ -1,8 +1,8 @@
 /**
- * `/v1/admin/scrape-runs` — read-only admin view onto `scrape_run_logs`.
+ * `/api/v1/admin/scrape-runs` — read-only admin view onto `scrape_run_logs`.
  *
- *   GET /v1/admin/scrape-runs?since=&source=&status=&limit=&page=
- *   GET /v1/admin/scrape-runs/:id
+ *   GET /api/v1/admin/scrape-runs?since=&source=&status=&limit=&page=
+ *   GET /api/v1/admin/scrape-runs/:id
  *
  * The DB schema (see lib/db/src/schema/scrape-health.ts) and the API
  * contract (docs/planning/upshift-data-admin-api-contract.md) diverge on

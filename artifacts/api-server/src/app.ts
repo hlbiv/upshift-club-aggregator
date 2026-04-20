@@ -39,7 +39,7 @@ app.use(
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// Cookie parser — needed for `/v1/admin/*` which uses the
+// Cookie parser — needed for `/api/v1/admin/*` which uses the
 // `upshift_admin_sid` session cookie. Harmless for the public `/api/*`
 // surface (M2M callers don't set cookies).
 app.use(cookieParser());
@@ -108,11 +108,11 @@ if (docsRouter) {
 app.use("/api", router);
 
 // --------------------------------------------------------------------------
-// Admin surface — `/v1/admin/*`.
+// Admin surface — `/api/v1/admin/*`.
 //
 // Two mounts, in this order:
 //
-//   1. `POST /v1/admin/auth/login` is mounted OUTSIDE the requireAdmin
+//   1. `POST /api/v1/admin/auth/login` is mounted OUTSIDE the requireAdmin
 //      guard — it IS the auth entry point and can't require an already-
 //      authenticated caller. Rate-limited at 10/min per IP to slow password
 //      spraying (tighter than the 120/min read limit on everything else).
@@ -127,12 +127,12 @@ app.use("/api", router);
 // auth protocol.
 // --------------------------------------------------------------------------
 app.use(
-  "/v1/admin",
+  "/api/v1/admin",
   buildRateLimiter({ authLimit: 10, ipLimit: 10 }),
   unauthAdminRouter,
 );
 app.use(
-  "/v1/admin",
+  "/api/v1/admin",
   requireAdmin,
   buildRateLimiter({ authLimit: 120, ipLimit: 120 }),
   authedAdminRouter,
@@ -148,10 +148,10 @@ const frontendDist = path.resolve(__dirname, "../../mockup-sandbox/dist");
 
 app.use(express.static(frontendDist));
 app.get("/{*path}", (_req, res, next) => {
-  // Don't intercept /api or /v1/admin routes that didn't match — let them
+  // Don't intercept /api or /api/v1/admin routes that didn't match — let them
   // 404 as JSON instead of falling through to the SPA's index.html.
   if (_req.path.startsWith("/api")) return next();
-  if (_req.path.startsWith("/v1/admin")) return next();
+  if (_req.path.startsWith("/api/v1/admin")) return next();
   res.sendFile(path.join(frontendDist, "index.html"), (err) => {
     if (err) next();
   });

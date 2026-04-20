@@ -1,5 +1,5 @@
 /**
- * requireAdmin — authentication guard for `/v1/admin/*` routes.
+ * requireAdmin — authentication guard for `/api/v1/admin/*` routes.
  *
  * Two supported auth paths, checked in this order:
  *

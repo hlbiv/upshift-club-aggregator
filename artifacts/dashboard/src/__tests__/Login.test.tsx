@@ -49,7 +49,7 @@ describe("LoginPage", () => {
 
     const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
       .calls[0] as [string, RequestInit];
-    expect(url).toContain("/v1/admin/auth/login");
+    expect(url).toContain("/api/v1/admin/auth/login");
     expect(init.method).toBe("POST");
     expect(init.credentials).toBe("include");
     expect(JSON.parse(init.body as string)).toEqual({

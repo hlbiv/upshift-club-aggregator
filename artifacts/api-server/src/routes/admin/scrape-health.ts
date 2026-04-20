@@ -1,8 +1,8 @@
 /**
- * `/v1/admin/scrape-health` — read-only admin view onto `scrape_health`.
+ * `/api/v1/admin/scrape-health` — read-only admin view onto `scrape_health`.
  *
- *   GET /v1/admin/scrape-health
- *   GET /v1/admin/scrape-health/:entity_type/:entity_id
+ *   GET /api/v1/admin/scrape-health
+ *   GET /api/v1/admin/scrape-health/:entity_type/:entity_id
  *
  * The `scrape_health` table has an `(entity_type, entity_id)` composite key
  * — not a surrogate serial — so the detail route is 2-segment. Status

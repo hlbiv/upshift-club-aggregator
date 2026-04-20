@@ -24,7 +24,7 @@ describe("ScraperHealthPage", () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
       (url: RequestInfo | URL) => {
         const u = typeof url === "string" ? url : url.toString();
-        if (u.includes("/v1/admin/scrape-health")) {
+        if (u.includes("/api/v1/admin/scrape-health")) {
           return Promise.resolve(
             jsonResponse({
               rows: [
@@ -51,7 +51,7 @@ describe("ScraperHealthPage", () => {
             }),
           );
         }
-        if (u.includes("/v1/admin/scrape-runs")) {
+        if (u.includes("/api/v1/admin/scrape-runs")) {
           return Promise.resolve(
             jsonResponse({
               runs: [
@@ -123,7 +123,7 @@ describe("ScraperHealthPage", () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
       (url: RequestInfo | URL) => {
         const u = typeof url === "string" ? url : url.toString();
-        if (u.includes("/v1/admin/scrape-health")) {
+        if (u.includes("/api/v1/admin/scrape-health")) {
           return Promise.resolve(jsonResponse({ error: "boom" }, 500));
         }
         return Promise.resolve(

@@ -6,7 +6,7 @@ import { adminFetch } from "../lib/api";
 /**
  * Admin login page.
  *
- *   POST /v1/admin/auth/login { email, password }
+ *   POST /api/v1/admin/auth/login { email, password }
  *     - 200 → response matches AdminLoginResponse; a session cookie is
  *       set via Set-Cookie. Navigate to /scraper-health.
  *     - 4xx → show {error} body as a red inline message.
@@ -29,7 +29,7 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const res = await adminFetch("/v1/admin/auth/login", {
+      const res = await adminFetch("/api/v1/admin/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });

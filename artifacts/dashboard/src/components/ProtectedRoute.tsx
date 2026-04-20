@@ -3,7 +3,7 @@ import { Navigate } from "react-router-dom";
 import { adminFetch } from "../lib/api";
 
 /**
- * Gate that calls GET /v1/admin/me on mount.
+ * Gate that calls GET /api/v1/admin/me on mount.
  *   - 200 → render children
  *   - 401 / network error → redirect to /login
  *   - while the check is in flight → render a small loading shell
@@ -24,7 +24,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   useEffect(() => {
     let cancelled = false;
-    adminFetch("/v1/admin/me", { method: "GET" })
+    adminFetch("/api/v1/admin/me", { method: "GET" })
       .then((res) => {
         if (cancelled) return;
         setState(res.ok ? "authed" : "unauthed");

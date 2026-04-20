@@ -1,10 +1,10 @@
 /**
- * `/v1/admin/auth/*` and `/v1/admin/me` — admin identity endpoints.
+ * `/api/v1/admin/auth/*` and `/api/v1/admin/me` — admin identity endpoints.
  *
- *   POST /v1/admin/auth/login   → loginRouter    (NOT behind requireAdmin)
- *   POST /v1/admin/auth/logout  → logoutRouter   (behind requireAdmin)
+ *   POST /api/v1/admin/auth/login   → loginRouter    (NOT behind requireAdmin)
+ *   POST /api/v1/admin/auth/logout  → logoutRouter   (behind requireAdmin)
  *
- * `/v1/admin/me` lives in me.ts.
+ * `/api/v1/admin/me` lives in me.ts.
  *
  * The login route can't require admin auth (it IS the auth entry point) so
  * it is exported as a separate router and mounted OUTSIDE the requireAdmin
