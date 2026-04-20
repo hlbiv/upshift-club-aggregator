@@ -15,6 +15,16 @@ export default function AdminNav() {
       className="mb-6 flex items-center gap-6 border-b border-neutral-200 pb-3 text-sm"
     >
       <NavLink
+        to="/scheduler"
+        className={({ isActive }) =>
+          isActive
+            ? "font-semibold text-neutral-900 underline underline-offset-4"
+            : "text-neutral-500 hover:text-neutral-800"
+        }
+      >
+        Scheduler
+      </NavLink>
+      <NavLink
         to="/scraper-health"
         end
         className={({ isActive }) =>

@@ -6,6 +6,7 @@ import DedupPage from "./pages/Dedup";
 import DedupDetailPage from "./pages/DedupDetail";
 import DataQualityPage from "./pages/DataQuality";
 import GrowthPage from "./pages/Growth";
+import SchedulerPage from "./pages/Scheduler";
 
 /**
  * Admin dashboard router.
@@ -17,6 +18,7 @@ import GrowthPage from "./pages/Growth";
  *   /dedup/:id       → DedupDetailPage (single pair, merge/reject)
  *   /data-quality    → DataQualityPage (GA Premier orphan cleanup)
  *   /growth          → GrowthPage (stat cards + coverage-trend chart)
+ *   /scheduler       → SchedulerPage (Run now + recent runs for jobKeys)
  *
  * ProtectedRoute calls GET /api/v1/admin/me on mount. 200 → render children,
  * 401 → <Navigate to="/login" />.
@@ -62,6 +64,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <GrowthPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/scheduler"
+        element={
+          <ProtectedRoute>
+            <SchedulerPage />
           </ProtectedRoute>
         }
       />
