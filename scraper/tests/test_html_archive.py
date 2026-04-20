@@ -214,7 +214,7 @@ def test_archive_success_returns_sha256_and_bucket_path(monkeypatch):
         result = html_archive.archive_raw_html(
             "https://example.com/page",
             html,
-            run_id="0000-run-uuid",
+            scrape_run_log_id=42,
         )
     finally:
         _cleanup_fake_replit_sdk()

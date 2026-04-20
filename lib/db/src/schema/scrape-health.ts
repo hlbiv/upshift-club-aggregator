@@ -21,7 +21,6 @@ import {
   uniqueIndex,
   check,
   index,
-  uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -128,10 +127,15 @@ export const scrapeHealth = pgTable(
  * HTML payload are skipped via the unique index (same bytes → same sha →
  * no-op insert via ON CONFLICT DO NOTHING).
  *
- * `run_id` is nullable because the hook sits beneath the per-league run
- * lifecycle — ad-hoc extractor calls that don't allocate a ScrapeRunLogger
- * still archive. When present it's a UUID tagging the archive row to a
- * logical scrape run (not an FK to scrape_run_logs.id, which is a serial).
+ * `scrape_run_log_id` is a nullable FK to `scrape_run_logs.id`. It's
+ * nullable because the hook sits beneath the per-league run lifecycle —
+ * ad-hoc extractor calls that don't allocate a ScrapeRunLogger still
+ * archive. When present it's the integer id of the owning
+ * `scrape_run_logs` row, which lets KPI 4 (raw HTML archive gap) in
+ * docs/design/data-quality-slas.md join archive rows to their run
+ * directly. ON DELETE SET NULL preserves the archived blob's metadata
+ * even if the run-log row is ever pruned; the bucket_path still
+ * identifies the object.
  *
  * Writes happen through scraper/ingest/raw_html_archive_writer.py.
  * Archiving is gated on env `ARCHIVE_RAW_HTML_ENABLED=true`; with the
@@ -141,7 +145,10 @@ export const rawHtmlArchive = pgTable(
   "raw_html_archive",
   {
     id: serial("id").primaryKey(),
-    runId: uuid("run_id"),
+    scrapeRunLogId: integer("scrape_run_log_id").references(
+      () => scrapeRunLogs.id,
+      { onDelete: "set null" },
+    ),
     sourceUrl: text("source_url").notNull(),
     sha256: text("sha256").notNull(),
     // Object Storage key, e.g. "upshift-raw-html/2026/04/18/<sha>.html.gz".
@@ -156,6 +163,6 @@ export const rawHtmlArchive = pgTable(
   },
   (t) => [
     uniqueIndex("raw_html_archive_sha256_uq").on(t.sha256),
-    index("raw_html_archive_run_id_idx").on(t.runId),
+    index("raw_html_archive_scrape_run_log_id_idx").on(t.scrapeRunLogId),
   ],
 );
