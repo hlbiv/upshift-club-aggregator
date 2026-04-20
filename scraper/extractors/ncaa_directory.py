@@ -1,13 +1,21 @@
 """
-ncaa_directory.py — Seed ``colleges`` from stats.ncaa.org's D1 team directory.
+ncaa_directory.py — Seed ``colleges`` from stats.ncaa.org's D1 team
+directory + resolve ``colleges.soccer_program_url`` via SIDEARM probing.
 
-Solves the PR-1 gap from the NCAA enumeration plan: the bulk enumerator
-``scrape_college_rosters()`` in ``ncaa_rosters.py`` iterates the
-``colleges`` table, so an empty table means nothing to iterate. This
-module walks stats.ncaa.org's sport-code=MSO/WSO D1 listings and writes
-seed rows via ``ingest.ncaa_roster_writer.upsert_college`` (same natural
-key ``colleges_name_division_gender_uq`` the single-school path uses —
-idempotent across re-runs).
+PR-1 (merged) — ``CollegeSeed`` + ``parse_directory_html`` +
+``fetch_d1_programs``: walks stats.ncaa.org's sport-code=MSO/WSO
+listings and writes seed rows via ``ingest.ncaa_roster_writer.upsert_college``.
+
+PR-2 (this extension) — ``compose_sidearm_roster_url`` +
+``resolve_soccer_program_url``: given a school's ``website`` (athletics
+site homepage), probe ``/sports/{mens,womens}-soccer/roster`` and
+return the valid URL if the athletics site serves it. Pre-flight check
+before this PR measured a 10/10 hit rate on the reference D1 sample
+(Georgetown, UNC, UVA, Stanford, Indiana, Duke, Maryland, Notre Dame,
+Creighton, Wake Forest), so the resolver is Try-1-only by design. The
+fallback conditional branches were deliberately not written; if the
+operator-observed miss rate climbs, a Try-2 strategy is a follow-up PR
+against the same function.
 
 URL format
 ----------
@@ -23,7 +31,6 @@ cell.
 Out of scope for this module
 ----------------------------
 
-- ``soccer_program_url`` resolution (athletics-site roster URL) — PR-2
 - State / city — stats.ncaa.org doesn't expose these on inst_team_list
 - Non-D1 divisions — same parser extends trivially but out of scope
 """
@@ -189,3 +196,105 @@ def fetch_d1_programs(
     seeds = parse_directory_html(response.text, gender)
     log.info("[ncaa-directory] fetched %d %s D1 programs", len(seeds), gender)
     return seeds
+
+
+# ---------------------------------------------------------------------------
+# soccer_program_url resolver (PR-2)
+# ---------------------------------------------------------------------------
+
+_SIDEARM_PATH = {
+    "mens": "/sports/mens-soccer/roster",
+    "womens": "/sports/womens-soccer/roster",
+}
+
+
+def compose_sidearm_roster_url(website: str, gender_program: str) -> str:
+    """Pure: return the conventional SIDEARM roster URL for a site + gender.
+
+    The athletics-site `website` may include a scheme or a trailing slash
+    or path; we normalize to the origin + canonical SIDEARM path. The
+    result is *candidate*, not verified — ``resolve_soccer_program_url``
+    is the function that probes it.
+    """
+    if not website:
+        raise ValueError("website must be non-empty")
+    if gender_program not in _SIDEARM_PATH:
+        raise ValueError(
+            f"gender_program must be 'mens' or 'womens' (got {gender_program!r})"
+        )
+
+    normalized = website.strip()
+    if not re.match(r"^https?://", normalized, re.IGNORECASE):
+        normalized = f"https://{normalized}"
+    normalized = normalized.rstrip("/")
+    # Strip any trailing path — we want scheme://host only
+    from urllib.parse import urlparse, urlunparse
+
+    parsed = urlparse(normalized)
+    origin = urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+    return f"{origin}{_SIDEARM_PATH[gender_program]}"
+
+
+def resolve_soccer_program_url(
+    website: Optional[str],
+    gender_program: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 10,
+) -> Optional[str]:
+    """Probe the SIDEARM roster URL for a college website.
+
+    Pre-flight check on the reference D1 sample returned 10/10 hits, so
+    this is intentionally Try-1-only: if the HEAD returns 200, return
+    the candidate URL; any other status (404, 4xx, 5xx, redirect-away,
+    or network error) returns ``None``. Missed rows are left for the
+    operator to fill manually — the caller logs them.
+
+    A ``HEAD`` request is cheaper than ``GET`` and sufficient: the
+    athletics site returns a 200 for a valid roster path and a 404 for
+    an invalid one. A handful of sites don't support HEAD cleanly; the
+    caller treats connection errors the same as a 404 miss.
+    """
+    if not website:
+        return None
+    try:
+        candidate = compose_sidearm_roster_url(website, gender_program)
+    except ValueError:
+        return None
+
+    own_session = session is None
+    if own_session:
+        session = requests.Session()
+        session.headers.update(
+            {
+                "User-Agent": USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml,*/*",
+            }
+        )
+
+    try:
+        try:
+            resp = session.head(
+                candidate, timeout=timeout, allow_redirects=True
+            )
+        except requests.RequestException as exc:
+            log.debug("[ncaa-resolver] HEAD %s failed: %s", candidate, exc)
+            return None
+
+        if resp.status_code != 200:
+            return None
+
+        # Guard against a 200 that landed on the site's homepage after a
+        # catch-all redirect. If the final URL doesn't still end with the
+        # canonical path, treat it as a miss.
+        final_url = resp.url or candidate
+        if _SIDEARM_PATH[gender_program] not in final_url:
+            return None
+
+        return candidate
+    finally:
+        if own_session:
+            try:
+                session.close()
+            except Exception:
+                pass
