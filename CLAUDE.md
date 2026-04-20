@@ -21,7 +21,9 @@ Upshift Data is the reference-data backend for Upshift soccer club/coach intelli
 - Local: `pnpm typecheck`, `pnpm test`, `pnpm install` are fine on macOS.
 - Never run DB operations (`pnpm --filter @workspace/db run push`, seed, migrations) locally — always on Replit.
 - Never run scrapers locally — always on Replit.
-- `gh` CLI is authenticated as `hlbiv`. Use it directly for PRs.
+- GitHub tooling depends on how Claude Code is invoked. In an interactive local shell, `gh` CLI is authenticated as `hlbiv` — use it for PRs. In a Claude Code session spawned by the web/CI harness, `gh` is NOT available; use the `mcp__github__*` tools (scoped to `hlbiv/upshift-data`) for every PR, issue, comment, and CI check.
+- **pnpm package quarantine.** `pnpm-workspace.yaml` sets `minimumReleaseAge: 1440` (1-day quarantine against supply-chain attacks). Packages published in the last 24h will fail to install. The `minimumReleaseAgeExclude` allowlist covers `@replit/*` + `stripe-replit-sync`. Do not disable the setting to unblock an install — add a narrowly-scoped allowlist entry and remove it after 24h.
+- **Catalog-pinned frontend deps.** React 19.1.0, Vite 7, Tailwind 4, React Query 5, Zod, TS types, and the Replit Vite plugins are all defined once in the `catalog:` block of `pnpm-workspace.yaml`. Every `artifacts/*` app references them via `"react": "catalog:"` — don't hard-pin a version in a package manifest, or the workspace will drift.
 
 ### Commit & Push Ritual
 
@@ -30,7 +32,7 @@ Every "commit and push" is composite:
 1. `git fetch origin master && git merge origin/master --no-edit`
 2. Commit
 3. Push
-4. `gh pr create` (or update existing PR)
+4. Open or update the PR — `gh pr create` / `gh pr edit` locally, or `mcp__github__create_pull_request` / `mcp__github__update_pull_request` in a harness-spawned session.
 
 Pushing without a PR is incomplete — Replit pulls from master, so only merged PRs are visible.
 
@@ -56,18 +58,28 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 ├── lib/
 │   ├── db/                      # Drizzle schema, seed script, DB client
 │   │   └── src/schema/
-│   │       ├── index.ts                # legacy tables + canonical_clubs extensions + coach_discoveries extensions
+│   │       ├── index.ts                # legacy tables + canonical_clubs/coach_discoveries extensions
+│   │       ├── api-keys.ts             # api_keys (M2M auth)
 │   │       ├── coaches.ts              # coaches master + career/movement/snapshot/effectiveness
 │   │       ├── colleges.ts             # colleges + college_coaches + college_roster_history
 │   │       ├── events.ts               # events + event_teams
 │   │       ├── matches.ts              # matches + club_results
 │   │       ├── rosters-and-tryouts.ts  # roster_diffs + tryouts
 │   │       ├── clubs-extended.ts       # club_roster_snapshots + club_site_changes
-│   │       └── scrape-health.ts        # scrape_run_logs + scrape_health
+│   │       ├── scrape-health.ts        # scrape_run_logs + scrape_health + raw_html_archive
+│   │       ├── commitments.ts          # college commitment announcements (TopDrawerSoccer)
+│   │       ├── player-id-selections.ts # US Club Soccer iD pool / Training Center honors
+│   │       ├── ynt.ts                  # US Soccer Youth National Team call-ups
+│   │       ├── hs.ts                   # High-school rosters (MaxPreps)
+│   │       └── odp.ts                  # Olympic Development Program state rosters
 │   ├── api-spec/                # OpenAPI 3.1 YAML
-│   └── api-zod/                 # Orval-generated Zod validators + TS types
+│   ├── api-zod/                 # Orval-generated Zod validators + TS types
+│   ├── api-client-fetch/        # Published `@hlbiv/api-client-fetch` — native fetch SDK for external consumers
+│   └── api-client-react/        # `@workspace/api-client-react` — React Query hooks used by artifacts/dashboard
 ├── artifacts/
-│   └── api-server/src/routes/   # Express routers (clubs, events, coaches, leagues, analytics, search)
+│   ├── api-server/src/routes/   # Express routers (clubs, events, coaches, leagues, analytics, search)
+│   ├── dashboard/               # Vite 7 + React 19 + shadcn/ui + wouter. Currently renders `/api/analytics/summary` as a domain-status page. Consumes `@workspace/api-client-react`.
+│   └── mockup-sandbox/          # UI mockup staging area (shadcn/ui); previews via `mockupPreviewPlugin.ts`
 └── scripts/
     └── src/backfill-coaches-master.ts  # Idempotent coaches master backfill
 ```
@@ -76,7 +88,7 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 
 ## Database Model (Path A)
 
-26 tables. Schema pushed with `pnpm --filter @workspace/db run push` on Replit.
+31 tables across the domains below. Schema pushed with `pnpm --filter @workspace/db run push` on Replit.
 
 ### Legacy / core (in `schema/index.ts`)
 
@@ -89,7 +101,7 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 | `club_affiliations` | League associations per club (unique `club_id + source_name`) |
 | `coach_discoveries` | Primary coach read model + Path A extensions (`coach_id` FK → `coaches.id`, `person_hash`, `phone`, `first_seen_at`, `last_seen_at`) |
 
-### Path A new tables (18 total)
+### Path A + follow-on tables
 
 | File | Tables | Purpose |
 |---|---|---|
@@ -99,7 +111,13 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 | `matches.ts` | `matches`, `club_results` | Game records + aggregated results |
 | `rosters-and-tryouts.ts` | `roster_diffs`, `tryouts` | Roster change log (per-player events: `added`/`removed`/`jersey_changed`/`position_changed`) + tryout announcements. Both tables use the canonical-club-linker pattern — scrapers write `club_name_raw`; linker resolves `club_id`. |
 | `clubs-extended.ts` | `club_roster_snapshots`, `club_site_changes` | Point-in-time roster diffing + website change detection. `club_roster_snapshots` uses the canonical-club-linker pattern (scrapers write `club_name_raw` + `source_url` + `snapshot_date`; `club_id` resolved by linker). |
-| `scrape-health.ts` | `scrape_run_logs`, `scrape_health` | Per-run telemetry + rolling health rollups |
+| `scrape-health.ts` | `scrape_run_logs`, `scrape_health`, `raw_html_archive` | Per-run telemetry + rolling health rollups + raw HTML snapshot storage |
+| `api-keys.ts` | `api_keys` | M2M credentials (sha256 hashes only). Written via `scripts/src/create-api-key.ts` / `revoke-api-key.ts`. |
+| `commitments.ts` | `commitments` | College commitment announcements from TopDrawerSoccer. Club side uses canonical-club-linker pattern; college side tries exact `colleges` match at write time. Natural key: `(player_name, graduation_year, college_name_raw)`. |
+| `player-id-selections.ts` | `player_id_selections` | US Club Soccer iD pool / Training Center honors. Natural key: `(player_name, selection_year, birth_year, gender, pool_tier)`. Deliberately NOT a roster table (per-player honor semantics differ). |
+| `ynt.ts` | `ynt_call_ups` | US Soccer Youth National Team camp call-ups. Canonical-club-linker pattern. Natural key: `(player_name, age_group, gender, camp_event)`. |
+| `hs.ts` | `hs_rosters` | High-school rosters (MaxPreps). No HS canonical-school linker yet — scrapers write `school_name_raw` + `school_state` only. |
+| `odp.ts` | `odp_roster_entries` | Olympic Development Program state rosters. Canonical-club-linker pattern for any club the ODP site prints. Natural key: `(player_name, state, program_year, age_group, gender)`. |
 
 ### Key rules
 

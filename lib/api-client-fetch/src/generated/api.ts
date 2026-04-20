@@ -16,6 +16,8 @@ import type {
   ClubStaffResponse,
   CoachSearchResponse,
   CoverageResponse,
+  DuplicateReviewDecision,
+  DuplicateReviewRequest,
   DuplicatesResponse,
   EventSearchResponse,
   HealthStatus,
@@ -291,9 +293,9 @@ export const searchCoaches = async (
 };
 
 /**
- * Groups clubs by a normalized name (common suffixes like FC, SC, United, Academy stripped) within the same state. Returns clusters with two or more clubs, indicating likely duplicates or near-duplicates.
+ * Returns unordered pairs (`club_a_id < club_b_id`) derived from normalized-name/state clusters. Each pair includes any persisted review decision so an admin UI can walk the queue without a second query. The default `status=pending` view hides pairs that were already decided as merged or rejected.
 
- * @summary Detect near-duplicate clubs by normalized name and state
+ * @summary List near-duplicate club pairs with review state
  */
 export const getAnalyticsDuplicatesUrl = (
   params?: AnalyticsDuplicatesParams,
@@ -321,6 +323,30 @@ export const analyticsDuplicates = async (
     ...options,
     method: "GET",
   });
+};
+
+/**
+ * Upserts a `duplicate_review_decisions` row keyed on the normalized pair (`club_a_id < club_b_id`; the server swaps the ids if needed). `decided_by` is populated from the caller's API key name when available, else null. Only records the decision — does not merge.
+
+ * @summary Record a review decision for a near-duplicate club pair
+ */
+export const getAnalyticsDuplicatesReviewUrl = () => {
+  return `/api/analytics/duplicates/review`;
+};
+
+export const analyticsDuplicatesReview = async (
+  duplicateReviewRequest: DuplicateReviewRequest,
+  options?: RequestInit,
+): Promise<DuplicateReviewDecision> => {
+  return customFetch<DuplicateReviewDecision>(
+    getAnalyticsDuplicatesReviewUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(duplicateReviewRequest),
+    },
+  );
 };
 
 /**

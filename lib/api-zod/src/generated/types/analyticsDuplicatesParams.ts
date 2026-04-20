@@ -5,6 +5,7 @@
  * Upshift Data API — youth soccer club graph database
  * OpenAPI spec version: 0.2.0
  */
+import type { AnalyticsDuplicatesStatus } from "./analyticsDuplicatesStatus";
 
 export type AnalyticsDuplicatesParams = {
   /**
@@ -16,6 +17,11 @@ export type AnalyticsDuplicatesParams = {
    * @minimum 2
    */
   min_clubs?: number;
+  /**
+ * Review-state filter. `pending` (default) hides pairs already decided as merged or rejected. `all` returns every pair with review state attached. `rejected` / `merged` return only pairs with that decision.
+
+ */
+  status?: AnalyticsDuplicatesStatus;
   page?: number;
   /**
    * @maximum 100

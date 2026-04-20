@@ -158,15 +158,45 @@ export interface CoachSearchResponse {
   page_size: number;
 }
 
+export type DuplicateReviewDecisionProperty =
+  (typeof DuplicateReviewDecisionProperty)[keyof typeof DuplicateReviewDecisionProperty];
+
+export const DuplicateReviewDecisionProperty = {
+  pending: "pending",
+  merged: "merged",
+  rejected: "rejected",
+} as const;
+
+/**
+ * Review decision attached to a duplicate pair (null when no row exists)
+ */
+export interface DuplicateReview {
+  decision: DuplicateReviewDecisionProperty;
+  decided_by?: string | null;
+  decided_at?: string | null;
+  notes?: string | null;
+}
+
+/**
+ * One near-duplicate pair (the enclosing cluster's context is included for UI display).
+ */
 export interface DuplicateCluster {
   /** Club name after stripping common suffixes (FC, SC, United, Academy, etc.) */
   normalized_name: string;
   state?: string | null;
+  /** Number of clubs in the enclosing cluster (>= 2) */
   club_count: number;
   club_ids: number[];
   club_names: string[];
   /** Distinct league/source names the clustered clubs appear in */
   sources: string[];
+  /** Lower-id member of the pair (normalized so club_a_id < club_b_id) */
+  club_a_id: number;
+  /** Higher-id member of the pair */
+  club_b_id: number;
+  club_a_name: string;
+  club_b_name: string;
+  review?: DuplicateReview | null;
 }
 
 export interface DuplicatesResponse {
@@ -174,6 +204,46 @@ export interface DuplicatesResponse {
   total: number;
   page: number;
   page_size: number;
+}
+
+export type DuplicateReviewRequestDecision =
+  (typeof DuplicateReviewRequestDecision)[keyof typeof DuplicateReviewRequestDecision];
+
+export const DuplicateReviewRequestDecision = {
+  pending: "pending",
+  merged: "merged",
+  rejected: "rejected",
+} as const;
+
+export interface DuplicateReviewRequest {
+  /** @minimum 1 */
+  club_a_id: number;
+  /**
+   * Must differ from club_a_id; server normalizes so the stored row has the lower id first.
+   * @minimum 1
+   */
+  club_b_id: number;
+  decision: DuplicateReviewRequestDecision;
+  notes?: string;
+}
+
+export type DuplicateReviewDecisionDecision =
+  (typeof DuplicateReviewDecisionDecision)[keyof typeof DuplicateReviewDecisionDecision];
+
+export const DuplicateReviewDecisionDecision = {
+  pending: "pending",
+  merged: "merged",
+  rejected: "rejected",
+} as const;
+
+export interface DuplicateReviewDecision {
+  id: number;
+  club_a_id: number;
+  club_b_id: number;
+  decision: DuplicateReviewDecisionDecision;
+  decided_by?: string | null;
+  decided_at?: string | null;
+  notes?: string | null;
 }
 
 export interface StateCoverage {
@@ -353,12 +423,27 @@ export type AnalyticsDuplicatesParams = {
    * @minimum 2
    */
   min_clubs?: number;
+  /**
+ * Review-state filter. `pending` (default) hides pairs already decided as merged or rejected. `all` returns every pair with review state attached. `rejected` / `merged` return only pairs with that decision.
+
+ */
+  status?: AnalyticsDuplicatesStatus;
   page?: number;
   /**
    * @maximum 100
    */
   page_size?: number;
 };
+
+export type AnalyticsDuplicatesStatus =
+  (typeof AnalyticsDuplicatesStatus)[keyof typeof AnalyticsDuplicatesStatus];
+
+export const AnalyticsDuplicatesStatus = {
+  pending: "pending",
+  all: "all",
+  rejected: "rejected",
+  merged: "merged",
+} as const;
 
 export type AnalyticsCoverageParams = {
   /**

@@ -1,6 +1,7 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { AnalyticsDuplicatesReviewBody } from "@hlbiv/api-zod";
 import { parsePagination } from "../lib/pagination";
 import { normalizeClubName, PG_NORMALIZE_EXPR } from "../lib/analytics";
 
@@ -8,19 +9,53 @@ const router: IRouter = Router();
 
 type Row = Record<string, unknown>;
 
-async function execRows(query: ReturnType<typeof sql>): Promise<Row[]> {
+/**
+ * Module-level query executor. Default wraps the live `db`; tests can
+ * swap it via `__setExecRowsForTests` to exercise this router against
+ * an in-memory fake without needing a real Postgres. Kept here rather
+ * than threaded through every handler signature so the route bodies
+ * stay readable. Mirrors the testing pattern used by `apiKeyAuth`
+ * (which accepts a lookup fn via a factory) — only difference is we
+ * have many handlers, so we share one module-local hook instead of
+ * rewriting the router into a factory.
+ */
+type ExecRowsFn = (query: ReturnType<typeof sql>) => Promise<Row[]>;
+
+const defaultExecRows: ExecRowsFn = async (query) => {
   const result = await db.execute(query);
   if (Array.isArray(result)) return result as Row[];
   if (result && typeof result === "object" && "rows" in result) {
     return (result as { rows: Row[] }).rows;
   }
   return [];
+};
+
+let currentExecRows: ExecRowsFn = defaultExecRows;
+
+async function execRows(query: ReturnType<typeof sql>): Promise<Row[]> {
+  return currentExecRows(query);
+}
+
+/** Test hook — swap the query executor. Production code must not call this. */
+export function __setExecRowsForTests(fn: ExecRowsFn | null): void {
+  currentExecRows = fn ?? defaultExecRows;
+}
+
+const REVIEW_STATUS_VALUES = ["pending", "all", "rejected", "merged"] as const;
+type ReviewStatus = (typeof REVIEW_STATUS_VALUES)[number];
+
+function parseReviewStatus(raw: unknown): ReviewStatus {
+  if (typeof raw === "string" && (REVIEW_STATUS_VALUES as readonly string[]).includes(raw)) {
+    return raw as ReviewStatus;
+  }
+  return "pending";
 }
 
 router.get("/analytics/duplicates", async (req, res, next): Promise<void> => {
   try {
     const stateFilter = req.query.state as string | undefined;
     const minClubs = Math.max(2, Number(req.query.min_clubs) || 2);
+    const status = parseReviewStatus(req.query.status);
     const { page, pageSize, offset } = parsePagination(
       req.query.page,
       req.query.page_size,
@@ -30,29 +65,32 @@ router.get("/analytics/duplicates", async (req, res, next): Promise<void> => {
       ? sql`AND lower(state) = lower(${stateFilter})`
       : sql``;
 
-    const countRows = await execRows(sql`
-      WITH normalized AS (
-        SELECT
-          id,
-          ${sql.raw(PG_NORMALIZE_EXPR)} AS normalized_name,
-          state
-        FROM canonical_clubs
-        WHERE status = 'active' OR status IS NULL
-      ),
-      clusters AS (
-        SELECT normalized_name, state, COUNT(*) AS club_count
-        FROM normalized
-        WHERE length(normalized_name) >= 2
-        ${stateCondition}
-        GROUP BY normalized_name, state
-        HAVING COUNT(*) >= ${minClubs}
-      )
-      SELECT COUNT(*)::int AS total FROM clusters
-    `);
+    // Per-status review filter applied to the pair stream:
+    //   pending  — exclude pairs that have a merged/rejected decision
+    //   all      — no filter
+    //   rejected — only pairs with decision = 'rejected'
+    //   merged   — only pairs with decision = 'merged'
+    //
+    // A pair with decision = 'pending' is treated the same as a pair with
+    // no row at all: both fall into the "pending" default view. That keeps
+    // the write API simple (decision=pending is a no-op as far as filtering
+    // is concerned but still records the reviewer's touch).
+    const reviewFilter =
+      status === "pending"
+        ? sql`(drd.decision IS NULL OR drd.decision = 'pending')`
+        : status === "all"
+          ? sql`TRUE`
+          : status === "rejected"
+            ? sql`drd.decision = 'rejected'`
+            : sql`drd.decision = 'merged'`;
 
-    const total = Number(countRows[0]?.total ?? 0);
-
-    const dataRows = await execRows(sql`
+    // Build the pair stream once. Clusters of N clubs expand to C(N, 2)
+    // pairs, normalized so a.id < b.id. We LEFT JOIN the review row,
+    // apply the status filter, and page the result.
+    //
+    // Kept as one SQL block for correctness: COUNT(*) and the paged SELECT
+    // must see identical predicates, including the review-status filter.
+    const pairCte = sql`
       WITH normalized AS (
         SELECT
           id,
@@ -66,24 +104,66 @@ router.get("/analytics/duplicates", async (req, res, next): Promise<void> => {
         SELECT
           normalized_name,
           state,
-          COUNT(*)::int AS club_count,
           array_agg(id ORDER BY id) AS club_ids,
-          array_agg(club_name_canonical ORDER BY id) AS club_names
+          array_agg(club_name_canonical ORDER BY id) AS club_names,
+          COUNT(*)::int AS club_count
         FROM normalized
         WHERE length(normalized_name) >= 2
         ${stateCondition}
         GROUP BY normalized_name, state
         HAVING COUNT(*) >= ${minClubs}
+      ),
+      cluster_pairs AS (
+        SELECT
+          c.normalized_name,
+          c.state,
+          c.club_count,
+          c.club_ids,
+          c.club_names,
+          a.id AS club_a_id,
+          b.id AS club_b_id,
+          a.club_name_canonical AS club_a_name,
+          b.club_name_canonical AS club_b_name
+        FROM clusters c
+        JOIN normalized a
+          ON a.id = ANY(c.club_ids)
+        JOIN normalized b
+          ON b.id = ANY(c.club_ids)
+         AND b.id > a.id
+      ),
+      pairs_with_review AS (
+        SELECT
+          cp.*,
+          drd.decision,
+          drd.decided_by,
+          drd.decided_at,
+          drd.notes
+        FROM cluster_pairs cp
+        LEFT JOIN duplicate_review_decisions drd
+          ON drd.club_a_id = cp.club_a_id
+         AND drd.club_b_id = cp.club_b_id
+        WHERE ${reviewFilter}
       )
+    `;
+
+    const countRows = await execRows(sql`
+      ${pairCte}
+      SELECT COUNT(*)::int AS total FROM pairs_with_review
+    `);
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const dataRows = await execRows(sql`
+      ${pairCte}
       SELECT
-        c.*,
+        pwr.*,
         (
           SELECT array_agg(DISTINCT ca.source_name ORDER BY ca.source_name)
           FROM club_affiliations ca
-          WHERE ca.club_id = ANY(c.club_ids) AND ca.source_name IS NOT NULL
+          WHERE ca.club_id = ANY(pwr.club_ids)
+            AND ca.source_name IS NOT NULL
         ) AS sources
-      FROM clusters c
-      ORDER BY club_count DESC, normalized_name ASC
+      FROM pairs_with_review pwr
+      ORDER BY pwr.club_count DESC, pwr.normalized_name ASC, pwr.club_a_id ASC, pwr.club_b_id ASC
       LIMIT ${pageSize} OFFSET ${offset}
     `);
 
@@ -95,6 +175,18 @@ router.get("/analytics/duplicates", async (req, res, next): Promise<void> => {
         club_ids: r.club_ids,
         club_names: r.club_names,
         sources: (r.sources as string[] | null) ?? [],
+        club_a_id: Number(r.club_a_id),
+        club_b_id: Number(r.club_b_id),
+        club_a_name: r.club_a_name as string,
+        club_b_name: r.club_b_name as string,
+        review: r.decision
+          ? {
+              decision: r.decision as string,
+              decided_by: (r.decided_by as string | null) ?? null,
+              decided_at: r.decided_at ?? null,
+              notes: (r.notes as string | null) ?? null,
+            }
+          : null,
       })),
       total,
       page,
@@ -104,6 +196,93 @@ router.get("/analytics/duplicates", async (req, res, next): Promise<void> => {
     next(err);
   }
 });
+
+// -----------------------------------------------------------------------
+// POST /api/analytics/duplicates/review
+// Record (upsert) a review decision for a pair of canonical clubs. This
+// endpoint is additive and usable whether API-key auth is enabled or not;
+// `decided_by` is populated from `req.apiKey?.name` when the middleware
+// has run, else left null. A follow-up PR will gate this endpoint with
+// `requireScope('admin')`.
+// -----------------------------------------------------------------------
+
+router.post(
+  "/analytics/duplicates/review",
+  async (req: Request, res, next): Promise<void> => {
+    try {
+      const parsed = AnalyticsDuplicatesReviewBody.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: "invalid_body",
+          details: parsed.error.issues,
+        });
+        return;
+      }
+      const body = parsed.data;
+      if (body.club_a_id === body.club_b_id) {
+        res.status(400).json({ error: "self_pair_not_allowed" });
+        return;
+      }
+
+      // Normalize so club_a_id < club_b_id. This lets the UI POST the pair
+      // in whichever order it received from GET; the DB unique index + CHECK
+      // only accept the normalized form.
+      const [clubA, clubB] =
+        body.club_a_id < body.club_b_id
+          ? [body.club_a_id, body.club_b_id]
+          : [body.club_b_id, body.club_a_id];
+
+      const decidedBy = req.apiKey?.name ?? null;
+      const notes = body.notes ?? null;
+
+      // Verify both clubs exist — otherwise the FK would fail with a
+      // 500-level Postgres error, which is a poor UX. A pre-check is
+      // cheap here.
+      const existsRows = await execRows(sql`
+        SELECT id FROM canonical_clubs WHERE id IN (${clubA}, ${clubB})
+      `);
+      if (existsRows.length < 2) {
+        res.status(400).json({ error: "unknown_club_id" });
+        return;
+      }
+
+      // Upsert keyed on the normalized pair. `decided_at` is refreshed on
+      // update so the UI can show "most recently touched".
+      const rows = await execRows(sql`
+        INSERT INTO duplicate_review_decisions
+          (club_a_id, club_b_id, decision, decided_by, notes)
+        VALUES (${clubA}, ${clubB}, ${body.decision}, ${decidedBy}, ${notes})
+        ON CONFLICT (club_a_id, club_b_id) DO UPDATE SET
+          decision   = EXCLUDED.decision,
+          decided_by = EXCLUDED.decided_by,
+          decided_at = NOW(),
+          notes      = EXCLUDED.notes
+        RETURNING id, club_a_id, club_b_id, decision, decided_by,
+                  decided_at, notes
+      `);
+
+      const row = rows[0];
+      if (!row) {
+        // Should be unreachable — the INSERT ... ON CONFLICT DO UPDATE
+        // always returns a row. Kept for defensive safety.
+        res.status(500).json({ error: "write_failed" });
+        return;
+      }
+
+      res.json({
+        id: Number(row.id),
+        club_a_id: Number(row.club_a_id),
+        club_b_id: Number(row.club_b_id),
+        decision: row.decision as string,
+        decided_by: (row.decided_by as string | null) ?? null,
+        decided_at: row.decided_at ?? null,
+        notes: (row.notes as string | null) ?? null,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 router.get("/analytics/coverage", async (req, res, next): Promise<void> => {
   try {

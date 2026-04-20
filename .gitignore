@@ -52,3 +52,6 @@ Thumbs.db
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Claude Code harness state (agent worktrees, session files)
+.claude/

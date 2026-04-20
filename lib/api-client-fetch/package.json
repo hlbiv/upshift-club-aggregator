@@ -34,7 +34,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/hlbiv/upshift-club-aggregator.git",
+    "url": "https://github.com/hlbiv/upshift-data.git",
     "directory": "lib/api-client-fetch"
   }
 }
