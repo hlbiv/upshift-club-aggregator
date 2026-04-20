@@ -520,6 +520,32 @@ assertTable(schema.adminSessions, "admin_sessions", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain — Club duplicates (admin dedup review queue)
+// ---------------------------------------------------------------------------
+
+assertTable(schema.clubDuplicates, "club_duplicates", {
+  cols: [
+    "left_club_id",
+    "right_club_id",
+    "score",
+    "method",
+    "status",
+    "left_snapshot",
+    "right_snapshot",
+    "created_at",
+    "reviewed_at",
+    "reviewed_by",
+    "notes",
+  ],
+  uniques: ["club_duplicates_ordered_pair_uq"],
+  checks: [
+    "club_duplicates_status_enum",
+    "club_duplicates_score_range",
+  ],
+  indexes: ["club_duplicates_status_idx"],
+});
+
+// ---------------------------------------------------------------------------
 // Domain — US Soccer YNT call-ups
 // ---------------------------------------------------------------------------
 
