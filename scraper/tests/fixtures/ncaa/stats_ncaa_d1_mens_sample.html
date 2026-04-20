@@ -1,0 +1,71 @@
+<!--
+  Fixture for NCAA D1 men's soccer inst_team_list page.
+  Modeled on: https://stats.ncaa.org/team/inst_team_list?sport_code=MSO&division=1
+
+  Real page renders an HTML table where each row is one D1 program;
+  the first cell links to /team/<org_id>/<sport_year_id> and the second
+  cell is the conference name. This fixture captures 8 real D1 men's
+  soccer programs plus a few edge cases:
+    - row with empty conference cell
+    - duplicate program row (should dedup by (name, gender))
+    - sort-link anchor pointing at /team/...?orderBy=... (should be skipped)
+
+  Structural markup follows stats.ncaa.org conventions; the live site is
+  behind bot protection so this fixture is the canonical test surface.
+  Real run on Replit is the field-validation gate for this parser.
+-->
+<html>
+<head><title>Teams - Men's Soccer - Division I</title></head>
+<body>
+<div id="contentarea">
+  <h1>Men's Soccer - Division I</h1>
+  <table id="inst_team_list" class="mytable">
+    <thead>
+      <tr>
+        <th><a href="/team/inst_team_list?sport_code=MSO&division=1&orderBy=name">Institution</a></th>
+        <th><a href="/team/inst_team_list?sport_code=MSO&division=1&orderBy=conf">Conference</a></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="/team/1/18300">Air Force</a></td>
+        <td>Mountain West</td>
+      </tr>
+      <tr>
+        <td><a href="/team/2/18300">Akron</a></td>
+        <td>Mid-American</td>
+      </tr>
+      <tr>
+        <td><a href="/team/14/18300">Georgetown</a></td>
+        <td>Big East</td>
+      </tr>
+      <tr>
+        <td><a href="/team/457/18300">North Carolina</a></td>
+        <td>ACC</td>
+      </tr>
+      <tr>
+        <td><a href="/team/674/18300">Stanford</a></td>
+        <td>ACC</td>
+      </tr>
+      <tr>
+        <td><a href="/team/736/18300">UCLA</a></td>
+        <td>Big Ten</td>
+      </tr>
+      <tr>
+        <td><a href="/team/752/18300">Virginia</a></td>
+        <td>ACC</td>
+      </tr>
+      <tr>
+        <td><a href="/team/999/18300">Hartwick</a></td>
+        <td></td>
+      </tr>
+      <!-- duplicate row — parser must dedup -->
+      <tr>
+        <td><a href="/team/14/18300">Georgetown</a></td>
+        <td>Big East</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+</body>
+</html>

@@ -955,6 +955,103 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
         )
 
 
+def _handle_ncaa_seed_d1(args: argparse.Namespace) -> None:
+    """Seed ``colleges`` from stats.ncaa.org's D1 men's + women's lists.
+
+    Walks ``/team/inst_team_list?sport_code=MSO|WSO&division=1`` and
+    upserts seed rows via ``ingest.ncaa_roster_writer.upsert_college``
+    (hits ``colleges_name_division_gender_uq`` — idempotent).
+
+    ``soccer_program_url`` is left NULL by design; PR-2 fills it.
+
+    Optional flags:
+      --gender mens|womens  (default: both)
+      --dry-run             (parse only; no DB writes)
+    """
+    from extractors.ncaa_directory import fetch_d1_programs
+    from ingest.ncaa_roster_writer import upsert_college
+
+    gender_arg = getattr(args, "gender", None) or "both"
+    gender_arg = {"boys": "mens", "girls": "womens"}.get(gender_arg, gender_arg)
+    if gender_arg == "both":
+        genders = ["mens", "womens"]
+    elif gender_arg in ("mens", "womens"):
+        genders = [gender_arg]
+    else:
+        logger.error(
+            "--source ncaa-seed-d1: --gender must be mens|womens|both (got %r)",
+            gender_arg,
+        )
+        sys.exit(2)
+
+    dry_run = bool(getattr(args, "dry_run", False))
+    grand = {"fetched": 0, "inserted": 0, "updated": 0, "errors": 0}
+
+    for gender in genders:
+        run_log: Optional[ScrapeRunLogger] = None
+        if not dry_run:
+            run_log = ScrapeRunLogger(
+                scraper_key=f"ncaa-seed-d1-{gender}",
+                league_name=f"NCAA D1 {gender}",
+            )
+            run_log.start(source_url=f"https://stats.ncaa.org/team/inst_team_list?sport_code={'MSO' if gender == 'mens' else 'WSO'}&division=1")
+
+        try:
+            seeds = fetch_d1_programs(gender)
+        except Exception as exc:
+            kind = _classify_exception(exc)
+            logger.error("[ncaa-seed-d1] fetch failed for %s: %s", gender, exc)
+            if run_log is not None:
+                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+            alert_scraper_failure(
+                scraper_key=f"ncaa-seed-d1-{gender}",
+                failure_kind=kind.value,
+                error_message=str(exc),
+                source_url=None,
+                league_name=f"NCAA D1 {gender}",
+            )
+            grand["errors"] += 1
+            continue
+
+        grand["fetched"] += len(seeds)
+        inserted = updated = errors = 0
+        for seed in seeds:
+            try:
+                _cid, was_inserted = upsert_college(seed.to_upsert_row(), dry_run=dry_run)
+            except Exception as exc:
+                logger.warning("[ncaa-seed-d1] upsert failed for %s: %s", seed.name, exc)
+                errors += 1
+                continue
+            if dry_run:
+                continue
+            if was_inserted:
+                inserted += 1
+            else:
+                updated += 1
+
+        logger.info(
+            "[ncaa-seed-d1] %s: fetched=%d inserted=%d updated=%d errors=%d%s",
+            gender, len(seeds), inserted, updated, errors,
+            " (dry-run)" if dry_run else "",
+        )
+        grand["inserted"] += inserted
+        grand["updated"] += updated
+        grand["errors"] += errors
+
+        if run_log is not None:
+            run_log.finish_ok(
+                records_created=inserted,
+                records_updated=updated,
+                records_failed=errors,
+            )
+
+    logger.info(
+        "[ncaa-seed-d1] done: fetched=%d inserted=%d updated=%d errors=%d%s",
+        grand["fetched"], grand["inserted"], grand["updated"], grand["errors"],
+        " (dry-run)" if dry_run else "",
+    )
+
+
 def _derive_school_name(url: str) -> str:
     """Last-resort school-name fallback if --school-name is missing.
 
@@ -1048,6 +1145,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "duda_360player_clubs": _handle_duda_360player_clubs,
     "ncaa-rosters": _handle_ncaa_rosters,
     "ncaa_rosters": _handle_ncaa_rosters,
+    "ncaa-seed-d1": _handle_ncaa_seed_d1,
+    "ncaa_seed_d1": _handle_ncaa_seed_d1,
 }
 
 # One entry per UNIQUE source (kebab form only). Used to build the
@@ -1083,6 +1182,7 @@ SOURCE_HELP: dict[str, str] = {
     "usclub-id": "discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API (scaffold)",
     "ussoccer-ynt": "scrape US Soccer Youth National Team (YNT) call-ups from ussoccer.com press releases into ynt_call_ups",
     "ncaa-rosters": "single-school NCAA D1/D2/D3 soccer roster scrape (SIDEARM-first). Requires --school-url + --school-name; writes colleges + college_coaches + college_roster_history.",
+    "ncaa-seed-d1": "seed colleges table from stats.ncaa.org D1 men's + women's soccer program lists. Optional --gender mens|womens (default: both); --dry-run.",
 }
 
 
