@@ -33,6 +33,12 @@ FK redirect coverage — every table that points at ``canonical_clubs.id``:
   - ``roster_diffs.club_id``               (cascade; same as above)
   - ``tryouts.club_id``                    (cascade)
   - ``player_id_selections.club_id``       (set null)
+  - ``commitments.club_id``                (set null; natural key excludes
+                                            club_id — straight UPDATE safe)
+  - ``ynt_call_ups.club_id``               (NO ACTION; natural key excludes
+                                            club_id — straight UPDATE safe)
+  - ``odp_roster_entries.club_id``         (NO ACTION; natural key excludes
+                                            club_id — straight UPDATE safe)
   - ``coach_career_history.entity_id``     (polymorphic; only redirected
                                             where entity_type='club')
 
@@ -313,6 +319,13 @@ _REDIRECT_TABLES: List[Tuple[str, str, Tuple[str, ...]]] = [
     ("matches", "home_club_id", ()),
     ("matches", "away_club_id", ()),
     ("player_id_selections", "club_id", ()),
+    ("commitments", "club_id", ()),
+    # NO ACTION FKs (no onDelete specified in schema) — redirect is
+    # MANDATORY, not just courtesy: if a loser has dependent rows in these
+    # tables, the final DELETE FROM canonical_clubs would FK-violate.
+    # Natural keys exclude club_id so straight UPDATE is safe.
+    ("ynt_call_ups", "club_id", ()),
+    ("odp_roster_entries", "club_id", ()),
     # CASCADE FKs whose UQ key is on the raw name, not club_id — straight
     # UPDATE is safe (no composite-key collision through club_id).
     ("club_roster_snapshots", "club_id", ()),
