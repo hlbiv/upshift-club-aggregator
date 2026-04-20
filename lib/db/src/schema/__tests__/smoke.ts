@@ -406,13 +406,15 @@ assertTable(schema.canonicalSchools, "canonical_schools", {
   cols: [
     "school_name_canonical",
     "school_state",
+    "ncessch",
     "website",
     "mascot",
     "city",
     "created_at",
     "updated_at",
   ],
-  uniques: ["canonical_schools_name_state_uq"],
+  uniques: ["canonical_schools_name_state_uq", "canonical_schools_ncessch_uq"],
+  indexes: ["canonical_schools_state_idx"],
 });
 
 assertTable(schema.schoolAliases, "school_aliases", {
