@@ -630,6 +630,20 @@ def _handle_ussoccer_ynt(args: argparse.Namespace) -> None:
     _ynt_print_summary(summary)
 
 
+def _handle_youtube_ecnl(args: argparse.Namespace) -> None:
+    from youtube_runner import (
+        run_youtube_channel,
+        print_summary as _yt_print_summary,
+    )
+    summary = run_youtube_channel(
+        handle="@TheECNL",
+        league_name="ECNL",
+        source_platform="youtube",
+        dry_run=args.dry_run,
+    )
+    _yt_print_summary(summary)
+
+
 def _handle_replay_html(args: argparse.Namespace) -> None:
     """
     Replay archived HTML through the extractor registry.
@@ -1141,6 +1155,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "usclub_id": _handle_usclub_id,
     "ussoccer-ynt": _handle_ussoccer_ynt,
     "ussoccer_ynt": _handle_ussoccer_ynt,
+    "youtube-ecnl": _handle_youtube_ecnl,
+    "youtube_ecnl": _handle_youtube_ecnl,
     "duda-360player-clubs": _handle_duda_360player_clubs,
     "duda_360player_clubs": _handle_duda_360player_clubs,
     "ncaa-rosters": _handle_ncaa_rosters,
@@ -1181,6 +1197,7 @@ SOURCE_HELP: dict[str, str] = {
     "usclub-seeds": "seed only — National Cup + NPL Finals GotSport events, skip discovery",
     "usclub-id": "discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API (scaffold)",
     "ussoccer-ynt": "scrape US Soccer Youth National Team (YNT) call-ups from ussoccer.com press releases into ynt_call_ups",
+    "youtube-ecnl": "scrape the ECNL YouTube channel (@TheECNL) RSS feed into video_sources",
     "ncaa-rosters": "single-school NCAA D1/D2/D3 soccer roster scrape (SIDEARM-first). Requires --school-url + --school-name; writes colleges + college_coaches + college_roster_history.",
     "ncaa-seed-d1": "seed colleges table from stats.ncaa.org D1 men's + women's soccer program lists. Optional --gender mens|womens (default: both); --dry-run.",
 }

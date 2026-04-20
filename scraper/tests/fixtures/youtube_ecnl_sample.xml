@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015"
+      xmlns:media="http://search.yahoo.com/mrss/"
+      xmlns="http://www.w3.org/2005/Atom">
+  <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCxxxxxxxxxxxxxxxxxxxxxx"/>
+  <id>yt:channel:xxxxxxxxxxxxxxxxxxxxxx</id>
+  <yt:channelId>xxxxxxxxxxxxxxxxxxxxxx</yt:channelId>
+  <title>ECNL</title>
+  <author>
+    <name>ECNL</name>
+    <uri>https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx</uri>
+  </author>
+  <published>2013-04-25T00:00:00+00:00</published>
+
+  <entry>
+    <id>yt:video:abc123DEF45</id>
+    <yt:videoId>abc123DEF45</yt:videoId>
+    <yt:channelId>xxxxxxxxxxxxxxxxxxxxxx</yt:channelId>
+    <title>ECNL Girls National Finals 2025 — Highlights</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=abc123DEF45"/>
+    <author>
+      <name>ECNL</name>
+      <uri>https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx</uri>
+    </author>
+    <published>2025-07-10T18:30:00+00:00</published>
+    <updated>2025-07-10T18:30:00+00:00</updated>
+    <media:group>
+      <media:title>ECNL Girls National Finals 2025 — Highlights</media:title>
+      <media:content url="https://www.youtube.com/v/abc123DEF45?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+      <media:thumbnail url="https://i1.ytimg.com/vi/abc123DEF45/hqdefault.jpg" width="480" height="360"/>
+      <media:description>Recap of the ECNL Girls National Finals 2025. Goals, saves, and championship moments.</media:description>
+    </media:group>
+  </entry>
+
+  <entry>
+    <id>yt:video:xyz789GHI01</id>
+    <yt:videoId>xyz789GHI01</yt:videoId>
+    <yt:channelId>xxxxxxxxxxxxxxxxxxxxxx</yt:channelId>
+    <title>ECNL Boys Showcase — Week 3</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=xyz789GHI01"/>
+    <author>
+      <name>ECNL</name>
+      <uri>https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx</uri>
+    </author>
+    <published>2025-06-22T15:00:00+00:00</published>
+    <updated>2025-06-22T15:00:00+00:00</updated>
+    <media:group>
+      <media:title>ECNL Boys Showcase — Week 3</media:title>
+      <media:thumbnail url="https://i1.ytimg.com/vi/xyz789GHI01/hqdefault.jpg" width="480" height="360"/>
+      <media:description>Top matches from Week 3 of the ECNL Boys Showcase.</media:description>
+    </media:group>
+  </entry>
+
+  <entry>
+    <id>yt:video:mno456PQR78</id>
+    <yt:videoId>mno456PQR78</yt:videoId>
+    <yt:channelId>xxxxxxxxxxxxxxxxxxxxxx</yt:channelId>
+    <title>Player Spotlight — Jane Doe</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=mno456PQR78"/>
+    <author>
+      <name>ECNL</name>
+      <uri>https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx</uri>
+    </author>
+    <published>2025-05-01T12:00:00+00:00</published>
+    <updated>2025-05-01T12:00:00+00:00</updated>
+    <media:group>
+      <media:title>Player Spotlight — Jane Doe</media:title>
+      <media:thumbnail url="https://i1.ytimg.com/vi/mno456PQR78/hqdefault.jpg" width="480" height="360"/>
+      <media:description>A profile on standout ECNL midfielder Jane Doe.</media:description>
+    </media:group>
+  </entry>
+</feed>
