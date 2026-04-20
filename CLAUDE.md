@@ -78,7 +78,7 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 │   └── api-client-react/        # `@workspace/api-client-react` — React Query hooks used by artifacts/dashboard
 ├── artifacts/
 │   ├── api-server/src/routes/   # Express routers (clubs, events, coaches, leagues, analytics, search)
-│   ├── dashboard/               # Vite 7 + React 19 + shadcn/ui + wouter. Currently renders `/api/analytics/summary` as a domain-status page. Consumes `@workspace/api-client-react`.
+│   ├── dashboard/               # Internal admin panel. Vite 7 + React 19 + Tailwind 4 + Radix/shadcn + React Router 7. 7 routes: `/login`, `/scraper-health`, `/dedup`, `/dedup/:id`, `/data-quality`, `/growth`, `/scheduler`. Vitest coverage under `src/__tests__`. Talks to the admin API via a hand-rolled `adminFetch()` in `src/lib/api.ts` (Workstream A is migrating this to generated Orval/React Query hooks as the admin surface lands in OpenAPI).
 │   └── mockup-sandbox/          # UI mockup staging area (shadcn/ui); previews via `mockupPreviewPlugin.ts`
 └── scripts/
     └── src/backfill-coaches-master.ts  # Idempotent coaches master backfill
@@ -118,6 +118,24 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 | `ynt.ts` | `ynt_call_ups` | US Soccer Youth National Team camp call-ups. Canonical-club-linker pattern. Natural key: `(player_name, age_group, gender, camp_event)`. |
 | `hs.ts` | `hs_rosters` | High-school rosters (MaxPreps). No HS canonical-school linker yet — scrapers write `school_name_raw` + `school_state` only. |
 | `odp.ts` | `odp_roster_entries` | Olympic Development Program state rosters. Canonical-club-linker pattern for any club the ODP site prints. Natural key: `(player_name, state, program_year, age_group, gender)`. |
+
+### Admin surface (PRs #130–#143)
+
+Tables backing the internal admin UI at `artifacts/dashboard/`. Not consumed by the player platform — reads and writes go through `/api/v1/admin/*` behind `requireAdmin`.
+
+| File | Tables | Purpose |
+|---|---|---|
+| `admin.ts` | `admin_users`, `admin_sessions` | Human admin accounts (bcrypt-12 `password_hash`, role CHECK `admin` / `super_admin`) + cookie-session store (sha256-hashed token in `token_hash`, 12h rolling TTL bumped on every authed request, indexed on `admin_user_id` + `expires_at` for sweeps). Sessions cascade-delete on admin deletion. |
+| `club-duplicates.ts` | `club_duplicates` | RapidFuzz-88 candidate-pair queue for dedup review. Ordered-pair uniqueness via `LEAST/GREATEST` index so `(a,b)` and `(b,a)` collapse. `reviewed_by` FK → `admin_users.id`, `reviewed_at` timestamp, status CHECK `pending` / `merged` / `rejected`. Populated by `scraper/dedup/club_dedup.py --persist`. |
+| `scheduler-jobs.ts` | `scheduler_jobs` | Queue backing the admin "Run now" scheduler button. `job_key` is a hard-coded allow-list (see `admin/scheduler.ts`: `nightly_tier1`, `weekly_state`, `hourly_linker`). Status CHECK `pending` / `running` / `success` / `failed` / `canceled`. `requested_by` FK is `ON DELETE SET NULL` so audit rows survive admin deletion. Worker runs in-process inside the api-server. |
+
+**Auth model.** `requireAdmin` (at `artifacts/api-server/src/middlewares/requireAdmin.ts`) accepts two credential paths, checked in order:
+1. **Session cookie** (primary). Cookie name: `upshift_admin_sid` (httpOnly, secure, sameSite=lax). Raw token shown once at login; only the sha256 hash is stored in `admin_sessions.token_hash`.
+2. **`X-API-Key`** (M2M fallback). The `api_keys` row must carry the `admin` scope in `api_keys.scopes`. If an API-key header is present but invalid, the middleware 401s without falling through to the cookie.
+
+If both paths fail the response is a generic `{error: "unauthorized"}`; the specific reason (`no-credentials`, `apikey-notfound`, `apikey-missing-scope`, `session-notfound`, `session-user-missing`, `session-role-invalid`) is logged server-side via `console.warn`. `requireSuperAdmin` layers on top for mutation routes that need the `super_admin` role.
+
+**Bootstrap.** Mint the first admin with `pnpm --filter @workspace/scripts run create-admin-user -- --email you@example.com --role admin` on Replit. The CLI hashes the password with bcryptjs (12 rounds, wire-compatible with the Player repo) and writes to `admin_users`. Password source precedence: `--password` flag → `ADMIN_PASSWORD` env var → TTY prompt (echo NOT hidden — prefer the env-var path for non-interactive flows). Super-admin bootstrap: pass `--role super_admin` on the first invocation.
 
 ### Key rules
 
@@ -267,6 +285,35 @@ The handoff doc for the sibling repo (fetch wrapper + error handling) lives at `
 | GET | `/api/analytics/coverage` | Per-state / per-league counts |
 | GET | `/api/analytics/overlap` | Clubs in 2+ leagues |
 
+### `/api/v1/admin/*` — admin surface
+
+Mounted under a separate router family (`artifacts/api-server/src/routes/admin/index.ts`) with its own auth stack. Two top-level routers:
+
+- **`unauthAdminRouter`** — only `POST /auth/login`. Must live outside `requireAdmin` since it IS the auth entry point. Carries its own 10/min rate limiter.
+- **`authedAdminRouter`** — everything else, mounted behind `requireAdmin` + the 120/min read-tier limiter; mutation routes layer an additional 30/min mutation limiter.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/v1/admin/auth/login` | Email + password → sets `upshift_admin_sid` cookie |
+| POST | `/api/v1/admin/auth/logout` | Invalidates the session row; clears the cookie |
+| GET | `/api/v1/admin/me` | Current admin (role + email); used by `ProtectedRoute` |
+| GET | `/api/v1/admin/scrape-runs` | Paginated scraper telemetry |
+| GET | `/api/v1/admin/scrape-runs/:id` | Single run detail |
+| GET | `/api/v1/admin/scrape-health` | Rolling health rollups across all entities |
+| GET | `/api/v1/admin/scrape-health/:entity_type/:entity_id` | Per-entity health |
+| GET | `/api/v1/admin/dedup/clubs` | Paginated `club_duplicates` pending-review queue |
+| GET | `/api/v1/admin/dedup/clubs/:id` | One pair + both snapshots |
+| POST | `/api/v1/admin/dedup/clubs/:id/merge` | Mark pair `merged` + trigger merger |
+| POST | `/api/v1/admin/dedup/clubs/:id/reject` | Mark pair `rejected` |
+| POST | `/api/v1/admin/data-quality/ga-premier-orphans` | Scan / delete nav-token orphan rows in `club_roster_snapshots` (dry-run by default) |
+| GET | `/api/v1/admin/growth/scraped-counts` | Counts of clubs / coaches / events / roster snapshots / matches added since a given ISO timestamp |
+| GET | `/api/v1/admin/growth/coverage-trend` | Day-bucketed scrape-run counts + records touched over a windowed range |
+| GET | `/api/v1/admin/scraper-schedules/:jobKey/runs` | Last N `scheduler_jobs` rows for a jobKey |
+| POST | `/api/v1/admin/scraper-schedules/:jobKey/run` | Enqueue a "Run now" (**super_admin gated**, jobKey allow-listed to `nightly_tier1` / `weekly_state` / `hourly_linker`) |
+| GET | `/api/v1/admin/scheduler-jobs/:id` | Single scheduler-job row |
+
+Planning-doc pointer: the authoritative specs for the admin UI and the admin API contract live in the sibling repo at `upshift-player-platform/docs/planning/upshift-data-admin-ui.md` and `upshift-player-platform/docs/planning/upshift-data-admin-api-contract.md`. Consult those before adding new admin routes or reshaping the dashboard layout.
+
 ---
 
 ## Operational Runbook (Replit)
@@ -282,6 +329,23 @@ psql "$DATABASE_URL" -c "SELECT count(*) FROM coach_discoveries WHERE coach_id I
 ```
 
 Do NOT paste shell comments (lines starting with `#`) or em-dashes as CLI args — the shell will treat them as arguments and `drizzle-kit push` will reject them.
+
+### Admin schema / first admin user (on Replit)
+
+Admin-surface schema changes (touching `admin_users`, `admin_sessions`, `club_duplicates`, `scheduler_jobs`) require the same push-then-seed rhythm as the rest of the Path A tables, plus a one-time bootstrap of a real admin before the dashboard can be used:
+
+```bash
+pnpm install
+pnpm --filter @workspace/db run push
+# Mint the first admin. --role defaults to "admin"; pass super_admin for the
+# initial operator so "Run now" on the scheduler page is accessible.
+pnpm --filter @workspace/scripts run create-admin-user -- \
+    --email you@example.com --role super_admin
+# Password source (first match wins): --password flag, ADMIN_PASSWORD env
+# var, or TTY prompt (echo NOT hidden — prefer env-var for CI/non-interactive).
+```
+
+Rotate / add more admins with repeated `create-admin-user` invocations. Email is unique (`admin_users_email_uq`); a collision fails with a clear message rather than overwriting.
 
 ### Events-route rewire (PR #8) — post-merge steps
 
