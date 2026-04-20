@@ -296,7 +296,7 @@ def _cell_text(td: Tag) -> str:
 def parse_roster_html(html: str) -> List[RosterPlayer]:
     """Extract player rows from an NCAA roster page.
 
-    Three strategies are tried in order:
+    Four strategies are tried in order; first non-empty result wins.
 
     1. **Sidearm roster elements** — ``li.sidearm-roster-player`` or
        ``div.sidearm-roster-player`` with semantic CSS classes for each field.
@@ -304,6 +304,10 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
        a "Name" column. Column positions are detected from headers.
     3. **Card/div layout** — ``.s-person-card``, ``.roster-card``,
        ``.s-person`` containers with nested class selectors.
+    4. **Nuxt-based template** — ``.roster-card-item`` cards with
+       ``roster-player-card-profile-field`` label/value rows. Used by
+       ~20 D1 programs (Stanford, Penn State, USC, etc.) whose sites
+       aren't SIDEARM.
     """
     soup = BeautifulSoup(html, "html.parser")
     players: List[RosterPlayer] = []
@@ -457,6 +461,79 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
 
         if players:
             return players
+
+    # --- Strategy 4: Nuxt-based roster template ---
+    # Non-SIDEARM template used by a meaningful chunk of D1 programs
+    # (observed: Stanford, Penn State, USC, Virginia, Virginia Tech,
+    # Oregon, Minnesota, Pepperdine, Notre Dame women's, Georgia Tech,
+    # Oklahoma, New Mexico, Iowa women's, Wyoming, Utah State, Tulane,
+    # San Diego State, San Jose State, Auburn, George Mason). Markup
+    # signature: nested ``.roster-card-item`` nodes with ``data-v-*``
+    # attributes (Vue SFC-compiled template). Fields:
+    #   .roster-card-item__title         → player name (via <a>)
+    #   .roster-card-item__jersey-number → jersey
+    #   .roster-card-item__position      → position (abbreviated: GK/D/M/F)
+    #   .roster-player-card-profile-field with labeled <strong> + value <span>s:
+    #       "Hometown" / "Previous School" / "High School" / "Major"
+    #   profile-fields--basic block has unlabeled height/weight/class-year
+    nuxt_cards = [
+        c for c in soup.select(".roster-card-item")
+        if "roster-staff-members-card-item" not in (c.get("class") or [])
+    ]
+    for card in nuxt_cards:
+        name_el = card.select_one(".roster-card-item__title")
+        name = name_el.get_text().strip() if name_el else ""
+        if not name or len(name) < 2:
+            continue
+
+        jersey_el = card.select_one(".roster-card-item__jersey-number")
+        jersey = jersey_el.get_text().strip() if jersey_el else None
+
+        position_el = card.select_one(".roster-card-item__position")
+        position = position_el.get_text().strip() if position_el else None
+
+        # --basic block has no labels; values are ordered height, weight,
+        # class-year. We only care about the class-year (scan every value
+        # against normalize_year; first hit wins).
+        year: Optional[str] = None
+        for value_el in card.select(
+            ".roster-players-cards-item__profile-fields--basic "
+            ".roster-player-card-profile-field__value"
+        ):
+            normalized = normalize_year(value_el.get_text().strip())
+            if normalized:
+                year = normalized
+                break
+
+        # --additional block has labeled fields (Hometown, Major, etc.)
+        hometown: Optional[str] = None
+        prev_club: Optional[str] = None
+        for field in card.select(
+            ".roster-players-cards-item__profile-fields--additional "
+            ".roster-player-card-profile-field"
+        ):
+            label_el = field.select_one(".roster-player-card-profile-field__label")
+            value_el = field.select_one(".roster-player-card-profile-field__value")
+            if not (label_el and value_el):
+                continue
+            label = label_el.get_text().strip().lower().rstrip(":")
+            value = value_el.get_text().strip()
+            if "hometown" in label:
+                hometown = value
+            elif "previous" in label or "high school" in label or "last school" in label:
+                prev_club = value
+
+        players.append(RosterPlayer(
+            player_name=name,
+            position=position or None,
+            year=year,
+            hometown=hometown or None,
+            prev_club=prev_club or None,
+            jersey_number=jersey or None,
+        ))
+
+    if players:
+        return players
 
     return players
 
