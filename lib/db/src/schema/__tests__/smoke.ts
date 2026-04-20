@@ -461,6 +461,38 @@ assertTable(schema.apiKeys, "api_keys", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain 10 — Admin auth (human sessions)
+// ---------------------------------------------------------------------------
+
+assertTable(schema.adminUsers, "admin_users", {
+  cols: [
+    "email",
+    "password_hash",
+    "role",
+    "created_at",
+    "last_login_at",
+  ],
+  uniques: ["admin_users_email_uq"],
+  checks: ["admin_users_role_enum"],
+});
+
+assertTable(schema.adminSessions, "admin_sessions", {
+  cols: [
+    "admin_user_id",
+    "token_hash",
+    "expires_at",
+    "created_at",
+    "user_agent",
+    "ip",
+  ],
+  uniques: ["admin_sessions_token_hash_uq"],
+  indexes: [
+    "admin_sessions_admin_user_id_idx",
+    "admin_sessions_expires_at_idx",
+  ],
+});
+
+// ---------------------------------------------------------------------------
 // Domain — US Soccer YNT call-ups
 // ---------------------------------------------------------------------------
 
