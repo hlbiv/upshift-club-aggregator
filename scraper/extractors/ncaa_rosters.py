@@ -15,6 +15,31 @@ Ported from the TypeScript scrapers in the sibling player-platform repo
 - **Graceful degradation**: 404s, timeouts, and unparseable pages are
   logged and skipped, not fatal.
 
+Two entry modes
+---------------
+
+1. ``scrape_college_rosters`` — bulk mode. Iterates DB-seeded colleges
+   (filtered by division/gender) and writes directly to
+   ``college_roster_history``. Requires a populated ``colleges`` table.
+2. ``scrape_school_url`` — single-school MVP (used by
+   ``run.py --source ncaa-rosters --school-url``). Takes a roster URL
+   plus inline metadata (name, division, gender, state...) and returns
+   a structured dict the writer can upsert. Does not require any DB
+   seed row — the writer upserts the ``colleges`` row on the fly via
+   ``colleges_name_division_gender_uq``.
+
+CSS selectors used for SIDEARM roster pages (strategy 1 in
+``parse_roster_html``)::
+
+    li.sidearm-roster-player, div.sidearm-roster-player   # card root
+      h3 a, h4 a, .sidearm-roster-player-name a            # player name
+      .sidearm-roster-player-jersey-number                 # jersey number
+      .sidearm-roster-player-position                      # position
+      .sidearm-roster-player-academic-year                 # class year
+      .sidearm-roster-player-hometown                      # hometown
+      .sidearm-roster-player-highschool,
+      .sidearm-roster-player-previous-school               # prev club / HS
+
 CLI::
 
     python -m scraper.extractors.ncaa_rosters \\
@@ -434,6 +459,158 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
             return players
 
     return players
+
+
+# ---------------------------------------------------------------------------
+# Head coach extraction (single-school MVP)
+# ---------------------------------------------------------------------------
+
+# Head-coach detection keywords on SIDEARM staff blocks that sometimes
+# appear inline on a roster page (e.g. a small "Coaching Staff" aside)
+# or on the associated /coaches page.
+_HEAD_COACH_RE = re.compile(
+    r"\b(head\s+(?:men'?s|women'?s)?\s*(?:soccer\s+)?coach|head\s+coach)\b",
+    re.IGNORECASE,
+)
+
+
+def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]]:
+    """Extract a single head-coach entry from SIDEARM-style markup.
+
+    Strategy order:
+      1. ``.sidearm-staff-member`` whose ``.sidearm-staff-member-title``
+         matches the head-coach regex.
+      2. Any ``<a>`` text neighbour whose title sibling matches the regex.
+
+    Returns a dict ``{name, title, email, phone, is_head_coach}`` or
+    ``None`` if the page does not expose a head coach block (typical
+    for roster-only pages — callers should fall back to fetching the
+    coaches page).
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    for el in soup.select(".sidearm-staff-member, [class*='staff-member']"):
+        title_el = el.select_one(
+            ".sidearm-staff-member-title, [class*='title'], [class*='position']"
+        )
+        title = title_el.get_text().strip() if title_el else ""
+        if not title or not _HEAD_COACH_RE.search(title):
+            continue
+        name_el = el.select_one(
+            ".sidearm-staff-member-name a, .sidearm-staff-member-name, "
+            "h3 a, h4 a, h3, h4"
+        )
+        name = name_el.get_text().strip() if name_el else ""
+        if not name or len(name) < 3:
+            continue
+        email = None
+        mailto = el.find("a", href=re.compile(r"^mailto:", re.IGNORECASE))
+        if mailto:
+            email = mailto.get("href", "").replace("mailto:", "").split("?")[0].strip().lower()
+        phone = None
+        phone_match = re.search(r"\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}", el.get_text())
+        if phone_match:
+            phone = phone_match.group(0)
+        return {
+            "name": name,
+            "title": title,
+            "email": email,
+            "phone": phone,
+            "is_head_coach": True,
+        }
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Single-school entry point — used by ``run.py --source ncaa-rosters``
+# ---------------------------------------------------------------------------
+
+
+def scrape_school_url(
+    school_url: str,
+    *,
+    name: str,
+    division: str = "D1",
+    gender_program: str = "mens",
+    conference: Optional[str] = None,
+    state: Optional[str] = None,
+    city: Optional[str] = None,
+    website: Optional[str] = None,
+    ncaa_id: Optional[str] = None,
+    academic_year: Optional[str] = None,
+    session: Optional[requests.Session] = None,
+) -> Dict:
+    """Scrape one NCAA roster page end-to-end.
+
+    Fetches ``school_url``, parses the roster via ``parse_roster_html``,
+    and (best-effort) extracts a head coach from the same page. Returns
+    a structured dict the writer consumes::
+
+        {
+          "college": { name, division, gender_program, conference,
+                       state, city, website, soccer_program_url,
+                       ncaa_id, scrape_confidence },
+          "players": [RosterPlayer, ...],
+          "coaches": [ { name, title, ... } ],  # 0 or 1 entries (head coach)
+          "academic_year": "2025-26",
+          "source_url": school_url,
+          "sidearm": bool,  # True if the HTML appears to be SIDEARM-hosted
+        }
+
+    The extractor does NOT write anything. The caller hands the dict to
+    ``scraper.ingest.ncaa_roster_writer`` to upsert rows.
+
+    Raises ``RuntimeError`` if the page cannot be fetched or the HTML
+    contains no parseable roster (caller decides whether to log-and-skip
+    or propagate).
+    """
+    if division not in ("D1", "D2", "D3", "NAIA", "NJCAA"):
+        raise ValueError(f"invalid division: {division!r}")
+    if gender_program not in ("mens", "womens", "both"):
+        raise ValueError(f"invalid gender_program: {gender_program!r}")
+
+    sess = session or _get_session()
+    html = fetch_with_retry(sess, school_url)
+    if not html:
+        raise RuntimeError(f"failed to fetch roster page: {school_url}")
+
+    players = parse_roster_html(html)
+    if not players:
+        raise RuntimeError(f"parsed 0 players from {school_url}")
+
+    head_coach = extract_head_coach_from_html(html)
+    coaches: List[Dict] = []
+    if head_coach:
+        head_coach["source_url"] = school_url
+        head_coach["source"] = "ncaa_roster_page"
+        coaches.append(head_coach)
+
+    is_sidearm = "sidearm" in html.lower()[:5000]
+
+    # soccer_program_url is the page base (strip trailing /roster so the
+    # DB row points at the program landing rather than the roster itself).
+    soccer_program_url = re.sub(r"/roster/?$", "", school_url, flags=re.IGNORECASE) or school_url
+
+    return {
+        "college": {
+            "name": name,
+            "division": division,
+            "gender_program": gender_program,
+            "conference": conference,
+            "state": state,
+            "city": city,
+            "website": website,
+            "soccer_program_url": soccer_program_url,
+            "ncaa_id": ncaa_id,
+            "scrape_confidence": 0.95 if is_sidearm else 0.80,
+        },
+        "players": players,
+        "coaches": coaches,
+        "academic_year": academic_year or current_academic_year(),
+        "source_url": school_url,
+        "sidearm": is_sidearm,
+    }
 
 
 # ---------------------------------------------------------------------------
