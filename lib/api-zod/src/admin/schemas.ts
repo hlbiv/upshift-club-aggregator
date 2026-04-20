@@ -168,6 +168,96 @@ export const GaPremierOrphanCleanupResponse = z.object({
 export type GaPremierOrphanCleanupResponse = z.infer<typeof GaPremierOrphanCleanupResponse>;
 
 /**
+ * Request for GET /v1/admin/data-quality/empty-staff-pages.
+ *
+ * `windowDays` bounds the "has this club been usefully scraped recently"
+ * lookback on `coach_discoveries.last_seen_at`. Without it, a club scraped
+ * once 90 days ago with zero results looks identical to one that just
+ * legitimately has no coaches — the window separates genuinely-broken
+ * extractors from clubs waiting on the next scheduled run. It also keeps
+ * the panel disjoint from `stale-scrapes`: a row both empty AND older than
+ * `windowDays` shows up on the staleness panel instead.
+ *
+ * Default of 30 days matches the backlog doc; `page_size` capped at the
+ * repo's 100-row pagination ceiling.
+ */
+export const EmptyStaffPagesRequest = z.object({
+  windowDays: z.number().int().positive().max(365).default(30),
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(100).default(20),
+});
+export type EmptyStaffPagesRequest = z.infer<typeof EmptyStaffPagesRequest>;
+
+/**
+ * One row of the empty-staff-pages panel — a canonical_clubs row with a
+ * `staff_page_url` set AND zero distinct coach discoveries recorded inside
+ * `windowDays`. `coachCountWindow` is almost always 0 by construction, but
+ * exposing the count lets an operator spot-check the query after running
+ * a fix by filtering `coach_count_window > 0`.
+ */
+export const EmptyStaffPagesRow = z.object({
+  clubId: z.number().int(),
+  clubNameCanonical: z.string(),
+  staffPageUrl: z.string(),
+  lastScrapedAt: z.string().datetime().nullable(),
+  coachCountWindow: z.number().int(),
+});
+export type EmptyStaffPagesRow = z.infer<typeof EmptyStaffPagesRow>;
+
+/** Paginated envelope for the empty-staff-pages panel. */
+export const EmptyStaffPagesResponse = z.object({
+  rows: z.array(EmptyStaffPagesRow),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  windowDays: z.number().int(),
+});
+export type EmptyStaffPagesResponse = z.infer<typeof EmptyStaffPagesResponse>;
+
+/**
+ * Request for GET /v1/admin/data-quality/stale-scrapes.
+ *
+ * `thresholdDays` default of 14 matches the operational reality that most
+ * scrapes run on a weekly cadence — 14 days = two missed scheduled runs,
+ * the earliest point where staleness is meaningful rather than noise (a
+ * single missed run could be a transient failure that recovers next cycle).
+ */
+export const StaleScrapesRequest = z.object({
+  thresholdDays: z.number().int().positive().max(365).default(14),
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(100).default(20),
+});
+export type StaleScrapesRequest = z.infer<typeof StaleScrapesRequest>;
+
+/**
+ * One row of the stale-scrapes panel — an entity in `scrape_health` whose
+ * `last_scraped_at` is older than `thresholdDays` or NULL. `entityName` is
+ * a best-effort human label joined in from `canonical_clubs` /
+ * `leagues_master` / `colleges` / `coaches` per `entity_type`. If the join
+ * fails (the entity row was deleted, or the type isn't joinable in the
+ * current schema), the field is null — we don't fabricate.
+ */
+export const StaleScrapesRow = z.object({
+  entityType: z.string(),
+  entityId: z.number().int(),
+  entityName: z.string().nullable(),
+  lastScrapedAt: z.string().datetime().nullable(),
+  lastStatus: z.string().nullable(),
+  consecutiveFailures: z.number().int(),
+});
+export type StaleScrapesRow = z.infer<typeof StaleScrapesRow>;
+
+/** Paginated envelope for the stale-scrapes panel. */
+export const StaleScrapesResponse = z.object({
+  rows: z.array(StaleScrapesRow),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  thresholdDays: z.number().int(),
+});
+export type StaleScrapesResponse = z.infer<typeof StaleScrapesResponse>;
+
+/**
  * Growth dashboard — "records added since X" counts across the five
  * headline ingest tables. Timestamps used per table:
  *   canonical_clubs → last_scraped_at      (no first_seen column today)

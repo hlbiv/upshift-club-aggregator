@@ -1,7 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   GaPremierOrphanCleanupResponse,
   type GaPremierOrphanCleanupResponse as GaPremierOrphanCleanupResponseType,
+  EmptyStaffPagesResponse,
+  type EmptyStaffPagesResponse as EmptyStaffPagesResponseType,
+  StaleScrapesResponse,
+  type StaleScrapesResponse as StaleScrapesResponseType,
 } from "@hlbiv/api-zod/admin";
 import {
   AlertDialog,
@@ -13,28 +17,39 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "../components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
 import { adminFetch } from "../lib/api";
 import AdminNav from "../components/AdminNav";
 
 /**
  * Data-quality admin page.
  *
- *   POST /api/v1/admin/data-quality/ga-premier-orphans
- *   body: { dryRun: boolean, limit: number }  (see GaPremierOrphanCleanupRequest)
+ * Three panels surfaced as tabs:
  *
- * Flow:
- *   1. Operator submits form (dryRun=true, limit=500 by default).
- *   2. Response panel renders scanned / flagged / deleted counts and up to 20
- *      `sampleNames` of rows flagged by the cleanup heuristic.
- *   3. If the response came back as a dry-run with flagged > 0, a "Commit
- *      deletion" button appears behind a Radix AlertDialog. Confirming
- *      re-submits the same limit with dryRun=false. The success state shows
- *      a transient toast with the `deleted` count and resets the form back
- *      to dry-run mode so the next click can't accidentally delete again.
+ *   1. GA Premier orphans — POST /api/v1/admin/data-quality/ga-premier-orphans
+ *      (existing; unchanged).
+ *   2. Empty staff pages — GET /api/v1/admin/data-quality/empty-staff-pages
+ *      Clubs with staff_page_url set but zero distinct coach discoveries in
+ *      the last `window_days` days. Default 30.
+ *   3. Stale scrapes — GET /api/v1/admin/data-quality/stale-scrapes
+ *      scrape_health rows whose last_scraped_at is older than
+ *      `threshold_days` days or never scraped. Default 14.
  *
- * The toast is a plain absolutely-positioned div rather than the shadcn
- * <Toaster /> — the app doesn't currently mount a toaster root and this PR
- * is scoped to a single page.
+ * Each panel owns its own fetch state; tabs stay lazy-rendered so the
+ * read-only panels don't fire until operator clicks them.
  */
 
 const MAX_LIMIT = 10_000;
@@ -49,7 +64,52 @@ type SubmitState =
       dryRun: boolean;
     };
 
+type PanelState<T> =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "error"; message: string }
+  | { kind: "ok"; data: T };
+
 export default function DataQualityPage() {
+  return (
+    <main className="mx-auto max-w-6xl px-6 py-8">
+      <AdminNav />
+      <header className="mb-8">
+        <h1 className="text-2xl font-semibold text-neutral-900">
+          Data quality
+        </h1>
+        <p className="text-sm text-neutral-500">
+          Read-only panels for spotting empty-staff clubs and stale scrapes,
+          plus the GA Premier orphan cleanup sweep.
+        </p>
+      </header>
+
+      <Tabs defaultValue="ga-premier" className="w-full">
+        <TabsList className="mb-6">
+          <TabsTrigger value="ga-premier">GA Premier orphans</TabsTrigger>
+          <TabsTrigger value="empty-staff">Empty staff pages</TabsTrigger>
+          <TabsTrigger value="stale-scrapes">Stale scrapes</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="ga-premier">
+          <GaPremierPanel />
+        </TabsContent>
+        <TabsContent value="empty-staff">
+          <EmptyStaffPanel />
+        </TabsContent>
+        <TabsContent value="stale-scrapes">
+          <StaleScrapesPanel />
+        </TabsContent>
+      </Tabs>
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GA Premier orphan cleanup (existing)
+// ---------------------------------------------------------------------------
+
+function GaPremierPanel() {
   const [dryRun, setDryRun] = useState(true);
   const [limit, setLimit] = useState(500);
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
@@ -112,18 +172,12 @@ export default function DataQualityPage() {
     state.kind === "ok" ? state.response.flagged : 0;
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
-      <AdminNav />
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold text-neutral-900">
-          Data quality
-        </h1>
-        <p className="text-sm text-neutral-500">
-          GA Premier orphan cleanup — scans <code>club_roster_snapshots</code>{" "}
-          for malformed <code>club_name_raw</code> rows leaked into the
-          pipeline. Dry-run first, then commit.
-        </p>
-      </header>
+    <>
+      <p className="mb-4 text-sm text-neutral-500">
+        GA Premier orphan cleanup — scans <code>club_roster_snapshots</code>{" "}
+        for malformed <code>club_name_raw</code> rows leaked into the
+        pipeline. Dry-run first, then commit.
+      </p>
 
       <section
         className="mb-8 rounded-lg border border-neutral-200 bg-white p-6"
@@ -264,9 +318,345 @@ export default function DataQualityPage() {
           {toast}
         </div>
       )}
-    </main>
+    </>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Empty staff pages (new)
+// ---------------------------------------------------------------------------
+
+const EMPTY_STAFF_DEFAULT_WINDOW_DAYS = 30;
+const PANEL_DEFAULT_PAGE_SIZE = 20;
+
+function EmptyStaffPanel() {
+  const [windowDays, setWindowDays] = useState(EMPTY_STAFF_DEFAULT_WINDOW_DAYS);
+  const [page, setPage] = useState(1);
+  const [state, setState] = useState<PanelState<EmptyStaffPagesResponseType>>({
+    kind: "idle",
+  });
+
+  async function load(nextWindow: number, nextPage: number) {
+    setState({ kind: "loading" });
+    try {
+      const qs = new URLSearchParams({
+        window_days: String(nextWindow),
+        page: String(nextPage),
+        page_size: String(PANEL_DEFAULT_PAGE_SIZE),
+      });
+      const res = await adminFetch(
+        `/api/v1/admin/data-quality/empty-staff-pages?${qs.toString()}`,
+      );
+      if (!res.ok) {
+        setState({ kind: "error", message: `HTTP ${res.status}` });
+        return;
+      }
+      const body = (await res.json()) as unknown;
+      const parsed = EmptyStaffPagesResponse.safeParse(body);
+      if (!parsed.success) {
+        setState({ kind: "error", message: "Invalid response from server" });
+        return;
+      }
+      setState({ kind: "ok", data: parsed.data });
+    } catch (e: unknown) {
+      setState({
+        kind: "error",
+        message: e instanceof Error ? e.message : "Network error",
+      });
+    }
+  }
+
+  useEffect(() => {
+    void load(windowDays, page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPage(1);
+    void load(windowDays, 1);
+  }
+
+  return (
+    <section aria-labelledby="empty-staff-heading">
+      <p className="mb-4 text-sm text-neutral-500">
+        Clubs with a <code>staff_page_url</code> set but zero distinct coach
+        discoveries in the last <strong>{windowDays}</strong> days. Good
+        candidates for a re-scrape or extractor fix.
+      </p>
+
+      <form
+        onSubmit={onSubmit}
+        className="mb-6 flex flex-wrap items-end gap-4 rounded-lg border border-neutral-200 bg-white p-4"
+      >
+        <label className="flex flex-col gap-1 text-sm text-neutral-800">
+          <span className="font-medium">Window (days)</span>
+          <input
+            type="number"
+            min={1}
+            max={365}
+            value={windowDays}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (!Number.isNaN(n)) setWindowDays(n);
+            }}
+            className="w-32 rounded border border-neutral-300 px-2 py-1"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={state.kind === "loading"}
+          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
+        >
+          {state.kind === "loading" ? "Loading…" : "Refresh"}
+        </button>
+      </form>
+
+      {state.kind === "error" && (
+        <div
+          role="alert"
+          className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          Failed: {state.message}
+        </div>
+      )}
+
+      {state.kind === "loading" && (
+        <TablePlaceholder label="Loading…" />
+      )}
+
+      {state.kind === "ok" && state.data.rows.length === 0 && (
+        <TablePlaceholder label="No clubs matched." />
+      )}
+
+      {state.kind === "ok" && state.data.rows.length > 0 && (
+        <>
+          <p className="mb-2 text-sm text-neutral-500">
+            {state.data.total.toLocaleString()} matching clubs
+          </p>
+          <div className="overflow-hidden rounded-lg border border-neutral-200">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Club</TableHead>
+                  <TableHead>Staff page</TableHead>
+                  <TableHead>Last scraped</TableHead>
+                  <TableHead>Coaches in window</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {state.data.rows.map((row) => (
+                  <TableRow key={row.clubId}>
+                    <TableCell className="font-medium">
+                      {row.clubNameCanonical}
+                      <span className="ml-2 text-xs text-neutral-400">
+                        #{row.clubId}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <a
+                        href={row.staffPageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 underline break-all"
+                      >
+                        {row.staffPageUrl}
+                      </a>
+                    </TableCell>
+                    <TableCell>{formatDate(row.lastScrapedAt)}</TableCell>
+                    <TableCell>{row.coachCountWindow}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <Pager
+            page={state.data.page}
+            pageSize={state.data.pageSize}
+            total={state.data.total}
+            onPage={(p) => {
+              setPage(p);
+              void load(windowDays, p);
+            }}
+          />
+        </>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Stale scrapes (new)
+// ---------------------------------------------------------------------------
+
+const STALE_SCRAPES_DEFAULT_THRESHOLD_DAYS = 14;
+
+function StaleScrapesPanel() {
+  const [thresholdDays, setThresholdDays] = useState(
+    STALE_SCRAPES_DEFAULT_THRESHOLD_DAYS,
+  );
+  const [page, setPage] = useState(1);
+  const [state, setState] = useState<PanelState<StaleScrapesResponseType>>({
+    kind: "idle",
+  });
+
+  async function load(nextThreshold: number, nextPage: number) {
+    setState({ kind: "loading" });
+    try {
+      const qs = new URLSearchParams({
+        threshold_days: String(nextThreshold),
+        page: String(nextPage),
+        page_size: String(PANEL_DEFAULT_PAGE_SIZE),
+      });
+      const res = await adminFetch(
+        `/api/v1/admin/data-quality/stale-scrapes?${qs.toString()}`,
+      );
+      if (!res.ok) {
+        setState({ kind: "error", message: `HTTP ${res.status}` });
+        return;
+      }
+      const body = (await res.json()) as unknown;
+      const parsed = StaleScrapesResponse.safeParse(body);
+      if (!parsed.success) {
+        setState({ kind: "error", message: "Invalid response from server" });
+        return;
+      }
+      setState({ kind: "ok", data: parsed.data });
+    } catch (e: unknown) {
+      setState({
+        kind: "error",
+        message: e instanceof Error ? e.message : "Network error",
+      });
+    }
+  }
+
+  useEffect(() => {
+    void load(thresholdDays, page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPage(1);
+    void load(thresholdDays, 1);
+  }
+
+  return (
+    <section aria-labelledby="stale-scrapes-heading">
+      <p className="mb-4 text-sm text-neutral-500">
+        Entities in <code>scrape_health</code> whose{" "}
+        <code>last_scraped_at</code> is older than{" "}
+        <strong>{thresholdDays}</strong> days or have never been scraped.
+      </p>
+
+      <form
+        onSubmit={onSubmit}
+        className="mb-6 flex flex-wrap items-end gap-4 rounded-lg border border-neutral-200 bg-white p-4"
+      >
+        <label className="flex flex-col gap-1 text-sm text-neutral-800">
+          <span className="font-medium">Threshold (days)</span>
+          <input
+            type="number"
+            min={1}
+            max={365}
+            value={thresholdDays}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (!Number.isNaN(n)) setThresholdDays(n);
+            }}
+            className="w-32 rounded border border-neutral-300 px-2 py-1"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={state.kind === "loading"}
+          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
+        >
+          {state.kind === "loading" ? "Loading…" : "Refresh"}
+        </button>
+      </form>
+
+      {state.kind === "error" && (
+        <div
+          role="alert"
+          className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          Failed: {state.message}
+        </div>
+      )}
+
+      {state.kind === "loading" && (
+        <TablePlaceholder label="Loading…" />
+      )}
+
+      {state.kind === "ok" && state.data.rows.length === 0 && (
+        <TablePlaceholder label="No stale entities." />
+      )}
+
+      {state.kind === "ok" && state.data.rows.length > 0 && (
+        <>
+          <p className="mb-2 text-sm text-neutral-500">
+            {state.data.total.toLocaleString()} stale entities
+          </p>
+          <div className="overflow-hidden rounded-lg border border-neutral-200">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Entity</TableHead>
+                  <TableHead>Last scraped</TableHead>
+                  <TableHead>Last status</TableHead>
+                  <TableHead>Consecutive failures</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {state.data.rows.map((row) => (
+                  <TableRow key={`${row.entityType}-${row.entityId}`}>
+                    <TableCell className="font-mono text-xs">
+                      {row.entityType}
+                    </TableCell>
+                    <TableCell>
+                      {row.entityName ?? (
+                        <span className="text-neutral-400">
+                          (id {row.entityId})
+                        </span>
+                      )}
+                      <span className="ml-2 text-xs text-neutral-400">
+                        #{row.entityId}
+                      </span>
+                    </TableCell>
+                    <TableCell>{formatDate(row.lastScrapedAt)}</TableCell>
+                    <TableCell>
+                      <span className="text-xs text-neutral-700">
+                        {row.lastStatus ?? "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <FailureBadge count={row.consecutiveFailures} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <Pager
+            page={state.data.page}
+            pageSize={state.data.pageSize}
+            total={state.data.total}
+            onPage={(p) => {
+              setPage(p);
+              void load(thresholdDays, p);
+            }}
+          />
+        </>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared presentational helpers
+// ---------------------------------------------------------------------------
 
 function StatCard({
   label,
@@ -291,4 +681,72 @@ function StatCard({
       </p>
     </div>
   );
+}
+
+function TablePlaceholder({ label }: { label: string }) {
+  return (
+    <div className="rounded-lg border border-dashed border-neutral-300 bg-white px-4 py-8 text-center text-sm text-neutral-500">
+      {label}
+    </div>
+  );
+}
+
+function FailureBadge({ count }: { count: number }) {
+  if (count === 0) return <span className="text-neutral-500">0</span>;
+  const heavy = count >= 3;
+  return (
+    <span className={heavy ? "font-semibold text-red-700" : "text-neutral-800"}>
+      {count}
+    </span>
+  );
+}
+
+function Pager({
+  page,
+  pageSize,
+  total,
+  onPage,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPage: (p: number) => void;
+}) {
+  const lastPage = Math.max(1, Math.ceil(total / pageSize));
+  if (lastPage <= 1) return null;
+  return (
+    <nav
+      className="mt-4 flex items-center justify-between text-sm text-neutral-600"
+      aria-label="Pagination"
+    >
+      <span>
+        Page {page} of {lastPage}
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => onPage(Math.max(1, page - 1))}
+          disabled={page <= 1}
+          className="rounded border border-neutral-300 bg-white px-3 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          onClick={() => onPage(Math.min(lastPage, page + 1))}
+          disabled={page >= lastPage}
+          className="rounded border border-neutral-300 bg-white px-3 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
 }
