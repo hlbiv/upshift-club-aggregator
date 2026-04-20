@@ -28,13 +28,12 @@ export type AdminLogoutResponse = z.infer<typeof AdminLogoutResponse>;
 /** Single row from `scrape_run_logs`: one scraper invocation with status + counts. */
 export const ScrapeRunLog = z.object({
   id: z.number().int(),
-  source: z.string(),
+  scraperKey: z.string(),
   jobKey: z.string().nullable(),
-  status: z.enum(["success", "failure", "running"]),
+  status: z.enum(["running", "ok", "partial", "failed"]),
   startedAt: z.string().datetime(),
-  finishedAt: z.string().datetime().nullable(),
-  rowsIn: z.number().int().nullable(),
-  rowsOut: z.number().int().nullable(),
+  completedAt: z.string().datetime().nullable(),
+  recordsTouched: z.number().int().nullable(),
   errorMessage: z.string().nullable(),
   metadata: z.record(z.unknown()).nullable(),
 });
@@ -54,7 +53,7 @@ export const ScrapeHealthRow = z.object({
   entityType: z.enum(["club", "event", "league", "college", "coach"]),
   entityId: z.number().int(),
   lastScrapedAt: z.string().datetime().nullable(),
-  lastStatus: z.enum(["success", "failure", "running"]).nullable(),
+  lastStatus: z.enum(["running", "ok", "partial", "failed"]).nullable(),
   consecutiveFailures: z.number().int(),
   nextScheduledAt: z.string().datetime().nullable(),
   metadata: z.record(z.unknown()).nullable(),
