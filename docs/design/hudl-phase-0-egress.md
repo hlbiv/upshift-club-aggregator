@@ -83,6 +83,44 @@ If neither is documented, the probe result should be treated as inadmissible.
 - What's the observable `429` threshold per IP? One-request-per-second?
   Burstable?
 
+## How to run the probe
+
+The probe script lives at `scripts/src/probe-hudl-fan.ts` and is wired as
+`pnpm --filter @workspace/scripts run probe-hudl-fan`. It must run from the
+deployed Replit app so the requests egress from a production IP range — not
+a laptop and not the Replit dev shell.
+
+1. Merge this PR.
+2. Deploy the api-server (or any container in the production Replit
+   deployment) so the script executes from production egress.
+3. SSH into the deployed container, or use Replit's **Run** button on the
+   deployment if interactive shells aren't available.
+4. From the repo root run:
+   ```bash
+   pnpm --filter @workspace/scripts run probe-hudl-fan
+   # or, equivalently:
+   # npx tsx scripts/src/probe-hudl-fan.ts
+   ```
+   Optional flags:
+   - `--org-id <id>` — override the default Concorde Fire org id (`65443`).
+   - `--player-id <id>` — override the default profile id placeholder.
+   - `--url <url>` — probe only the given URL(s); skips the 3 defaults.
+   - `--extra-url <url>` — probe an additional URL on top of the defaults.
+5. Copy the `/tmp/hudl-fan-probe-*.json` file produced by the run and paste
+   its contents into a new doc at
+   `docs/design/hudl-phase-0-probe-report.md` (create the file if it does
+   not exist yet — the probe report is the deliverable for Phase 0).
+6. Interpret the results:
+   - **Expected healthy signal:** HTTP `200` on all 3 default URL patterns
+     with real HTML in the body snippet.
+   - **Flag for Phase 1:** any `403` / `451`, a `js-challenge` or
+     `bot-wall` body class, a `CF-Ray` / `X-Akamai-*` header, or a
+     sub-2KB empty-shell body. Any of these mean Pipeline 3 Phase 1 must
+     plan for Playwright + anti-bot evasion (or a proxy vendor).
+
+The JSON report is a full audit record; the stdout summary is the
+eyeballable view for the person running the probe.
+
 ## Related
 
 - Task graph entry: **Hudl Pipeline 3 Phase 0** (see project task tracker for
