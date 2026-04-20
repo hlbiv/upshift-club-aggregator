@@ -633,12 +633,19 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
     """
     Replay archived HTML through the extractor registry.
 
-    Reads rows from ``raw_html_archive`` matching ``--run-id``,
-    downloads the gzipped blob for each from Replit Object Storage,
-    decompresses, and feeds the HTML back through the per-site
-    extractor that matches the stored ``source_url``. The goal is to
-    re-parse without re-fetching — handy for testing extractor changes
-    against a fixed corpus, or recovering rows after a parse regression.
+    Reads rows from ``raw_html_archive`` matching ``--run-id``
+    (interpreted as the integer ``scrape_run_logs.id`` FK stored in
+    ``raw_html_archive.scrape_run_log_id``), downloads the gzipped blob
+    for each from Replit Object Storage, decompresses, and feeds the
+    HTML back through the per-site extractor that matches the stored
+    ``source_url``. The goal is to re-parse without re-fetching — handy
+    for testing extractor changes against a fixed corpus, or recovering
+    rows after a parse regression.
+
+    Note: the CLI flag is still named ``--run-id`` for continuity, but
+    its semantics changed in the run_id→scrape_run_log_id migration — it
+    must now be an integer matching ``scrape_run_logs.id``, not the old
+    UUID value.
 
     Scope limit (this PR): only extractors that expose a pure-function
     parser (module-level ``parse_html(html, source_url=..., league_name=...)``)
@@ -651,11 +658,23 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
     path is a skip-with-warning, so the flag is effectively a no-op
     until a follow-up wires at least one pure parser through.)
     """
-    run_id = getattr(args, "run_id", None)
-    if not run_id:
+    run_id_raw = getattr(args, "run_id", None)
+    if run_id_raw is None or run_id_raw == "":
         logger.error(
-            "--source replay-html requires --run-id <uuid>. "
-            "Query raw_html_archive for the run you want to replay."
+            "--source replay-html requires --run-id <scrape_run_logs.id>. "
+            "Query raw_html_archive.scrape_run_log_id for the run you want "
+            "to replay."
+        )
+        sys.exit(2)
+
+    try:
+        scrape_run_log_id = int(run_id_raw)
+    except (TypeError, ValueError):
+        logger.error(
+            "--source replay-html: --run-id must be an integer matching "
+            "scrape_run_logs.id (got %r). The column type changed from UUID "
+            "to integer FK in the scrape_run_log_id migration.",
+            run_id_raw,
         )
         sys.exit(2)
 
@@ -689,9 +708,9 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
             cur.execute(
                 "SELECT sha256, source_url "
                 "FROM raw_html_archive "
-                "WHERE run_id = %s "
+                "WHERE scrape_run_log_id = %s "
                 "ORDER BY archived_at ASC",
-                (run_id,),
+                (scrape_run_log_id,),
             )
             rows = cur.fetchall()
     finally:
@@ -703,7 +722,7 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
     if not rows:
         logger.warning(
             "[replay-html] no archived HTML for run_id %s — nothing to replay.",
-            run_id,
+            scrape_run_log_id,
         )
         return
 
@@ -818,7 +837,7 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
         summary["rows_written"] += n_records
 
     print("=" * 60)
-    print(f"  replay-html summary (run_id={run_id})")
+    print(f"  replay-html summary (run_id={scrape_run_log_id})")
     print("=" * 60)
     for k, v in summary.items():
         print(f"  {k:>28} : {v}")
@@ -1235,9 +1254,12 @@ def main() -> None:
                         choices=["sportsengine", "leagueapps", "wordpress", "unknown"],
                         dest="platform_family",
                         help="Platform family filter for --source youth-coaches.")
-    parser.add_argument("--run-id", metavar="UUID", dest="run_id",
-                        help="For --source replay-html: UUID of the scrape run "
-                             "whose archived raw HTML should be replayed.")
+    parser.add_argument("--run-id", metavar="ID", dest="run_id",
+                        help="For --source replay-html: integer "
+                             "scrape_run_logs.id of the scrape run whose "
+                             "archived raw HTML should be replayed. (Note: "
+                             "raw_html_archive.scrape_run_log_id replaced the "
+                             "old UUID run_id column; semantics are integer FK.)")
     parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune"],
                         help="Run a derived-data rollup over existing DB rows.")
     args = parser.parse_args()

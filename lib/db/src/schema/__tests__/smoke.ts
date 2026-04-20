@@ -357,7 +357,7 @@ assertTable(schema.scrapeHealth, "scrape_health", {
 
 assertTable(schema.rawHtmlArchive, "raw_html_archive", {
   cols: [
-    "run_id",
+    "scrape_run_log_id",
     "source_url",
     "sha256",
     "bucket_path",
@@ -365,7 +365,7 @@ assertTable(schema.rawHtmlArchive, "raw_html_archive", {
     "archived_at",
   ],
   uniques: ["raw_html_archive_sha256_uq"],
-  indexes: ["raw_html_archive_run_id_idx"],
+  indexes: ["raw_html_archive_scrape_run_log_id_idx"],
 });
 
 // ---------------------------------------------------------------------------

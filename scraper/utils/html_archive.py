@@ -186,7 +186,7 @@ def _sha256_exists_in_db(sha256: str) -> bool:
 
 def _insert_archive_row(
     *,
-    run_id: Optional[str],
+    scrape_run_log_id: Optional[int],
     source_url: str,
     sha256: str,
     bucket_path: str,
@@ -221,11 +221,17 @@ def _insert_archive_row(
                 cur.execute(
                     """
                     INSERT INTO raw_html_archive
-                        (run_id, source_url, sha256, bucket_path, content_bytes)
+                        (scrape_run_log_id, source_url, sha256, bucket_path, content_bytes)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (sha256) DO NOTHING
                     """,
-                    (run_id, source_url, sha256, bucket_path, content_bytes),
+                    (
+                        scrape_run_log_id,
+                        source_url,
+                        sha256,
+                        bucket_path,
+                        content_bytes,
+                    ),
                 )
         except Exception as exc:
             log.warning("[html_archive] DB insert failed: %s", exc)
@@ -240,7 +246,7 @@ def _insert_archive_row(
         with conn, conn.cursor() as cur:
             insert_raw_html_archive_row(
                 cur,
-                run_id=run_id,
+                scrape_run_log_id=scrape_run_log_id,
                 source_url=source_url,
                 sha256=sha256,
                 bucket_path=bucket_path,
@@ -362,7 +368,7 @@ def fetch_archived_html(sha256: str) -> Optional[str]:
             "initialise (see prior warning); cannot fetch archived HTML."
         )
 
-    # Look up the bucket path + run_id from the DB. The bucket path is
+    # Look up the bucket path from the DB. The bucket path is
     # authoritative — we never reconstruct it from sha256 + archived_at
     # because the key-prefix format may change over time.
     try:
@@ -467,7 +473,7 @@ def fetch_archived_html(sha256: str) -> Optional[str]:
 def archive_raw_html(
     source_url: str,
     html: str,
-    run_id: Optional[str] = None,
+    scrape_run_log_id: Optional[int] = None,
 ) -> Optional[dict]:
     """
     Archive ``html`` for ``source_url`` to Replit Object Storage and
@@ -480,10 +486,10 @@ def archive_raw_html(
     html:
         Uncompressed response body as text. Encoded to UTF-8 before
         hashing + compressing.
-    run_id:
-        Optional UUID string tying this archive row to a logical scrape
-        run. Pass ``None`` when the fetch isn't inside a tracked run
-        (e.g. ad-hoc extractor calls).
+    scrape_run_log_id:
+        Optional integer FK to ``scrape_run_logs.id`` tying this archive
+        row to the owning scrape run. Pass ``None`` when the fetch isn't
+        inside a tracked run (e.g. ad-hoc extractor calls).
 
     Returns
     -------
@@ -527,7 +533,7 @@ def archive_raw_html(
         return None
 
     _insert_archive_row(
-        run_id=run_id,
+        scrape_run_log_id=scrape_run_log_id,
         source_url=source_url,
         sha256=sha256,
         bucket_path=bucket_path,

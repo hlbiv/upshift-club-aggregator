@@ -164,7 +164,7 @@ def scrape_js(url: str, league_name: str) -> List[Dict]:
         # for a re-parse. The archive path is strictly defensive —
         # any failure is logged and swallowed so scraping proceeds.
         try:
-            archive_raw_html(final_url, html, run_id=None)
+            archive_raw_html(final_url, html, scrape_run_log_id=None)
         except Exception as exc:  # pragma: no cover — strictly defensive
             logger.warning("raw-html archival skipped (%s): %s", final_url, exc)
 

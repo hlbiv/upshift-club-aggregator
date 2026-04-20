@@ -50,7 +50,8 @@ Four axes: **freshness**, **correctness**, **coverage**, **infra health**.
 
 - **Definition.** Since `ARCHIVE_RAW_HTML_ENABLED=true` shipped, the percentage
   of `scrape_run_logs` rows with `status = 'ok'` that have at least one
-  matching row in `raw_html_archive` (joined via `run_id`).
+  matching row in `raw_html_archive` (joined via
+  `raw_html_archive.scrape_run_log_id = scrape_run_logs.id`).
 - **Thresholds.** Green ≥ 99%, yellow 95–99%, red < 95%.
 - **Why.** Archiving is the rollback plane for every parser change. A
   silent bucket-write regression costs us replay coverage; this KPI
@@ -132,19 +133,15 @@ LEFT JOIN latest_ok l ON l.league_name = t.name;
 ```
 
 **KPI 4 — Raw HTML archive gap.** Count successful runs since the flag
-went live and check how many have ≥1 archive row. `raw_html_archive.run_id`
-is a nullable UUID (not a serial FK), so the join assumes the scraper
-stamps the same UUID on both sides. Runs that predate the flag are
-excluded via the `started_at` cutoff.
+went live and check how many have ≥1 archive row. Joined directly on
+`raw_html_archive.scrape_run_log_id = scrape_run_logs.id` now that the
+column is an integer FK (see `fix/raw-html-archive-run-id-type`). Runs
+that predate the flag are excluded via the `started_at` cutoff. Runs
+whose archive rows happened to be written without a run context
+(`scrape_run_log_id IS NULL`) are treated as gaps — the scraper needs
+to plumb the id down for them to count.
 
 ```sql
--- Approximation: since scrape_run_logs.id is a serial and
--- raw_html_archive.run_id is a nullable UUID, there is no direct FK
--- join available today. We proxy "archive gap" as the ratio of
--- distinct scraper-runs that produced >=1 archive row over distinct
--- successful scrape_run_logs in the same window, joining on the
--- (started_at, source_url) window. Open question 2 proposes adding a
--- UUID column to scrape_run_logs to make this exact.
 WITH cutoff AS (
   SELECT coalesce(
     (SELECT min(archived_at) FROM raw_html_archive),
@@ -159,8 +156,7 @@ successful_runs AS (
 runs_with_archive AS (
   SELECT DISTINCT l.id
   FROM successful_runs l
-  JOIN raw_html_archive a
-    ON a.archived_at BETWEEN l.started_at AND l.started_at + interval '1 hour'
+  JOIN raw_html_archive a ON a.scrape_run_log_id = l.id
 )
 SELECT
   round(
@@ -191,9 +187,12 @@ whenever a real incident reveals a false positive or missed fire.
    scrapers write slight variants ("ECNL Girls National" vs "ECNL
    National Girls"). Canonicalize in-query, add a `league_id` FK to
    `scrape_run_logs`, or accept the fuzziness?
-2. **KPI 4's UUID join is indirect.** `scrape_run_logs.id` is a serial,
-   `raw_html_archive.run_id` is a UUID. Add an explicit UUID column to
-   `scrape_run_logs`, or keep the current convention?
+2. **KPI 4's UUID join is indirect.** ~~`scrape_run_logs.id` is a serial,
+   `raw_html_archive.run_id` is a UUID.~~ Resolved in
+   `fix/raw-html-archive-run-id-type`: column renamed to
+   `scrape_run_log_id`, type changed to `integer`, FK to
+   `scrape_run_logs.id` with `ON DELETE SET NULL`. The KPI 4 query now
+   joins directly on that FK.
 3. **Seventh KPI for matches → club_results rollup lag?** KPI 5 catches
    the linker backlog but not the case where the linker ran and the
    rollup didn't. Review at first monthly cadence.

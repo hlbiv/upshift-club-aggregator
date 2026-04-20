@@ -21,7 +21,7 @@ log = logging.getLogger("raw_html_archive_writer")
 
 _INSERT_SQL = """
 INSERT INTO raw_html_archive (
-    run_id, source_url, sha256, bucket_path, content_bytes
+    scrape_run_log_id, source_url, sha256, bucket_path, content_bytes
 )
 VALUES (%s, %s, %s, %s, %s)
 ON CONFLICT (sha256) DO NOTHING
@@ -31,7 +31,7 @@ ON CONFLICT (sha256) DO NOTHING
 def insert_raw_html_archive_row(
     cur,
     *,
-    run_id: Optional[str],
+    scrape_run_log_id: Optional[int],
     source_url: str,
     sha256: str,
     bucket_path: str,
@@ -46,9 +46,11 @@ def insert_raw_html_archive_row(
     cur:
         Open psycopg2 cursor. Commit/rollback is the caller's
         responsibility.
-    run_id:
-        Optional UUID string identifying the scrape run. ``None`` is
-        stored as SQL ``NULL``.
+    scrape_run_log_id:
+        Optional integer FK to ``scrape_run_logs.id`` identifying the
+        owning scrape run. ``None`` is stored as SQL ``NULL`` and is
+        expected whenever the fetch isn't inside a tracked run (e.g.
+        ad-hoc extractor calls).
     source_url:
         Final URL the HTML came from (after redirects).
     sha256:
@@ -61,5 +63,5 @@ def insert_raw_html_archive_row(
     """
     cur.execute(
         _INSERT_SQL,
-        (run_id, source_url, sha256, bucket_path, content_bytes),
+        (scrape_run_log_id, source_url, sha256, bucket_path, content_bytes),
     )

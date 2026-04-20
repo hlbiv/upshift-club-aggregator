@@ -5,12 +5,12 @@ Covers:
 
 1. ``ARCHIVE_RAW_HTML_ENABLED`` unset → ``fetch_archived_html`` raises
    (replay must not silently return ``None``).
-2. Given N archived rows for a run_id, ``_handle_replay_html`` calls
-   ``fetch_archived_html`` once per row and dispatches to the matching
-   extractor when the extractor module exposes a pure-function
+2. Given N archived rows for a scrape_run_log_id, ``_handle_replay_html``
+   calls ``fetch_archived_html`` once per row and dispatches to the
+   matching extractor when the extractor module exposes a pure-function
    ``parse_html``.
-3. ``_handle_replay_html`` with a run_id that has zero archive rows
-   returns cleanly (no exit) with a warning-level log message.
+3. ``_handle_replay_html`` with a scrape_run_log_id that has zero archive
+   rows returns cleanly (no exit) with a warning-level log message.
 4. ``_handle_replay_html`` with no ``--run-id`` argument exits 2 with
    a clear error message.
 
@@ -157,7 +157,7 @@ def test_replay_html_zero_rows_exits_cleanly(monkeypatch, caplog):
     monkeypatch.setitem(sys.modules, "psycopg2", fake_psycopg2)
 
     # Must not raise or exit.
-    run._handle_replay_html(_make_args(run_id="00000000-0000-0000-0000-000000000000"))
+    run._handle_replay_html(_make_args(run_id=42))
 
     msgs = [rec.getMessage() for rec in caplog.records]
     assert any(
@@ -253,7 +253,7 @@ def test_replay_html_dispatches_to_pure_parser(monkeypatch, capsys):
     # --- Act -------------------------------------------------------------
     try:
         run._handle_replay_html(
-            _make_args(run_id="11111111-1111-1111-1111-111111111111"),
+            _make_args(run_id=99),
         )
     finally:
         # Restore registry to avoid polluting other tests.
