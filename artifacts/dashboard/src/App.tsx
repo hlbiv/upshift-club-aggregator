@@ -4,6 +4,7 @@ import LoginPage from "./pages/Login";
 import ScraperHealthPage from "./pages/ScraperHealth";
 import DedupPage from "./pages/Dedup";
 import DedupDetailPage from "./pages/DedupDetail";
+import GrowthPage from "./pages/Growth";
 
 /**
  * Admin dashboard router.
@@ -13,6 +14,7 @@ import DedupDetailPage from "./pages/DedupDetail";
  *   /scraper-health  → ScraperHealthPage (wrapped in ProtectedRoute)
  *   /dedup           → DedupPage (list of duplicate pairs)
  *   /dedup/:id       → DedupDetailPage (single pair, merge/reject)
+ *   /growth          → GrowthPage (stat cards + coverage-trend chart)
  *
  * ProtectedRoute calls GET /api/v1/admin/me on mount. 200 → render children,
  * 401 → <Navigate to="/login" />. Phase C.4 adds the dedup routes; previous
@@ -43,6 +45,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <DedupDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/growth"
+        element={
+          <ProtectedRoute>
+            <GrowthPage />
           </ProtectedRoute>
         }
       />

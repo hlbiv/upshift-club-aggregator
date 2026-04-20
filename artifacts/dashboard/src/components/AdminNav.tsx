@@ -35,6 +35,16 @@ export default function AdminNav() {
       >
         Dedup review
       </NavLink>
+      <NavLink
+        to="/growth"
+        className={({ isActive }) =>
+          isActive
+            ? "font-semibold text-neutral-900 underline underline-offset-4"
+            : "text-neutral-500 hover:text-neutral-800"
+        }
+      >
+        Growth
+      </NavLink>
     </nav>
   );
 }

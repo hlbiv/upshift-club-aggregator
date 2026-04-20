@@ -182,7 +182,7 @@ function RunsTable({ state }: { state: FetchState<ScrapeRunLogList> }) {
               key={run.id}
               className={i % 2 === 0 ? "bg-white" : "bg-neutral-50/50"}
             >
-              <Td>{run.source}</Td>
+              <Td>{run.scraperKey}</Td>
               <Td className="text-neutral-500">{run.jobKey ?? "—"}</Td>
               <Td>
                 <StatusBadge status={run.status} />
@@ -236,13 +236,16 @@ function StatusBadge({
     );
   }
   const base = "inline-block rounded px-2 py-0.5 text-xs font-medium";
-  if (status === "success") {
-    return (
-      <span className={`${base} bg-green-100 text-green-800`}>success</span>
-    );
+  if (status === "ok") {
+    return <span className={`${base} bg-green-100 text-green-800`}>ok</span>;
   }
-  if (status === "failure") {
-    return <span className={`${base} bg-red-100 text-red-800`}>failure</span>;
+  if (status === "failed") {
+    return <span className={`${base} bg-red-100 text-red-800`}>failed</span>;
+  }
+  if (status === "partial") {
+    return (
+      <span className={`${base} bg-amber-100 text-amber-800`}>partial</span>
+    );
   }
   // status === "running"
   return (
@@ -263,7 +266,7 @@ function FailureCount({
     return <span className="text-neutral-500">0</span>;
   }
   const color =
-    status === "failure" && count >= 3 ? "text-red-700 font-semibold" : "";
+    status === "failed" && count >= 3 ? "text-red-700 font-semibold" : "";
   return <span className={color}>{count}</span>;
 }
 
@@ -283,9 +286,9 @@ function formatDate(iso: string | null): string {
 }
 
 function formatDuration(run: ScrapeRunLog): string {
-  if (!run.finishedAt) return "—";
+  if (!run.completedAt) return "—";
   const start = new Date(run.startedAt).getTime();
-  const end = new Date(run.finishedAt).getTime();
+  const end = new Date(run.completedAt).getTime();
   if (Number.isNaN(start) || Number.isNaN(end) || end < start) return "—";
   const ms = end - start;
   if (ms < 1000) return `${ms}ms`;
