@@ -82,3 +82,61 @@ export const CoverageRollup = z.object({
   windowDays: z.number().int(),
 });
 export type CoverageRollup = z.infer<typeof CoverageRollup>;
+
+/** Single club-duplicate pair record surfaced in the dedup review queue. */
+export const ClubDuplicate = z.object({
+  id: z.number().int(),
+  leftClubId: z.number().int(),
+  rightClubId: z.number().int(),
+  score: z.number(),
+  method: z.string(),
+  status: z.enum(["pending", "merged", "rejected"]),
+  createdAt: z.string().datetime(),
+  reviewedAt: z.string().datetime().nullable(),
+  reviewedBy: z.number().int().nullable(),
+  leftSnapshot: z.record(z.unknown()),
+  rightSnapshot: z.record(z.unknown()),
+});
+export type ClubDuplicate = z.infer<typeof ClubDuplicate>;
+
+/** Paginated envelope of ClubDuplicate pairs. */
+export const ClubDuplicateList = z.object({
+  pairs: z.array(ClubDuplicate),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export type ClubDuplicateList = z.infer<typeof ClubDuplicateList>;
+
+/** ClubDuplicate extended with live side-by-side context for the detail view. */
+export const ClubDuplicateDetail = ClubDuplicate.extend({
+  leftCurrent: z.record(z.unknown()),
+  rightCurrent: z.record(z.unknown()),
+  affiliations: z.object({
+    leftAffiliationCount: z.number().int(),
+    rightAffiliationCount: z.number().int(),
+  }),
+  rosters: z.object({
+    leftRosterSnapshotCount: z.number().int(),
+    rightRosterSnapshotCount: z.number().int(),
+  }),
+});
+export type ClubDuplicateDetail = z.infer<typeof ClubDuplicateDetail>;
+
+/** Request body for POST /v1/admin/dedup/clubs/:id/merge. */
+export const ClubDuplicateMergeRequest = z.object({
+  winnerId: z.number().int(),
+  loserId: z.number().int(),
+  notes: z.string().optional(),
+});
+export type ClubDuplicateMergeRequest = z.infer<typeof ClubDuplicateMergeRequest>;
+
+/** Response body for POST /v1/admin/dedup/clubs/:id/merge. */
+export const ClubDuplicateMergeResponse = z.object({
+  ok: z.literal(true),
+  winnerId: z.number().int(),
+  loserAliasesCreated: z.number().int(),
+  affiliationsReparented: z.number().int(),
+  rosterSnapshotsReparented: z.number().int(),
+});
+export type ClubDuplicateMergeResponse = z.infer<typeof ClubDuplicateMergeResponse>;
