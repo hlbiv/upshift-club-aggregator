@@ -32,7 +32,7 @@ describe("ScraperHealthPage", () => {
                   entityType: "club",
                   entityId: 42,
                   lastScrapedAt: "2026-04-01T10:00:00.000Z",
-                  lastStatus: "success",
+                  lastStatus: "ok",
                   consecutiveFailures: 0,
                   nextScheduledAt: null,
                   metadata: null,
@@ -41,7 +41,7 @@ describe("ScraperHealthPage", () => {
                   entityType: "league",
                   entityId: 7,
                   lastScrapedAt: "2026-04-01T09:00:00.000Z",
-                  lastStatus: "failure",
+                  lastStatus: "failed",
                   consecutiveFailures: 4,
                   nextScheduledAt: null,
                   metadata: null,
@@ -57,25 +57,23 @@ describe("ScraperHealthPage", () => {
               runs: [
                 {
                   id: 1001,
-                  source: "gotsport-matches",
+                  scraperKey: "gotsport-matches",
                   jobKey: "event-12345",
-                  status: "success",
+                  status: "ok",
                   startedAt: "2026-04-18T15:00:00.000Z",
-                  finishedAt: "2026-04-18T15:00:42.000Z",
-                  rowsIn: 120,
-                  rowsOut: 118,
+                  completedAt: "2026-04-18T15:00:42.000Z",
+                  recordsTouched: 118,
                   errorMessage: null,
                   metadata: null,
                 },
                 {
                   id: 1002,
-                  source: "sincsports-events",
+                  scraperKey: "sincsports-events",
                   jobKey: null,
                   status: "running",
                   startedAt: "2026-04-18T15:02:00.000Z",
-                  finishedAt: null,
-                  rowsIn: null,
-                  rowsOut: null,
+                  completedAt: null,
+                  recordsTouched: null,
                   errorMessage: null,
                   metadata: null,
                 },
@@ -111,11 +109,11 @@ describe("ScraperHealthPage", () => {
     expect(screen.getByText("event-12345")).toBeInTheDocument();
     expect(screen.getByText("sincsports-events")).toBeInTheDocument();
 
-    // Status badges render for success / failure / running.
-    const successBadges = screen.getAllByText("success");
-    expect(successBadges.length).toBeGreaterThanOrEqual(1);
-    const failureBadges = screen.getAllByText("failure");
-    expect(failureBadges.length).toBeGreaterThanOrEqual(1);
+    // Status badges render for ok / failed / running under the new enum.
+    const okBadges = screen.getAllByText("ok");
+    expect(okBadges.length).toBeGreaterThanOrEqual(1);
+    const failedBadges = screen.getAllByText("failed");
+    expect(failedBadges.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("running")).toBeInTheDocument();
   });
 
