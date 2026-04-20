@@ -421,6 +421,12 @@ def _handle_link_canonical_clubs(args: argparse.Namespace) -> None:
     sys.exit(rc)
 
 
+def _handle_link_canonical_schools(args: argparse.Namespace) -> None:
+    from canonical_school_linker import run_cli as _run_linker
+    rc = _run_linker(dry_run=args.dry_run, limit=args.limit)
+    sys.exit(rc)
+
+
 def _handle_sincsports_rosters(args: argparse.Namespace) -> None:
     from rosters_runner import run_sincsports_rosters, print_summary
     outcomes = run_sincsports_rosters(dry_run=args.dry_run, only_tid=args.tid)
@@ -855,6 +861,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "sincsports_events": _handle_sincsports_events,
     "link-canonical-clubs": _handle_link_canonical_clubs,
     "link_canonical_clubs": _handle_link_canonical_clubs,
+    "link-canonical-schools": _handle_link_canonical_schools,
+    "link_canonical_schools": _handle_link_canonical_schools,
     "maxpreps-rosters": _handle_maxpreps_rosters,
     "maxpreps_rosters": _handle_maxpreps_rosters,
     "odp-rosters": _handle_odp_rosters,
@@ -925,6 +933,7 @@ SOURCE_HELP: dict[str, str] = {
     "sportsengine-clubs": "SportsEngine + JSON-LD harvest: rosters, coaches, tryouts, enrichment",
     "duda-360player-clubs": "probe Duda CMS + 360Player club sites; writes Event JSON-LD into tryouts",
     "link-canonical-clubs": "resolves event_teams.canonical_club_id / matches.home_club_id / etc.",
+    "link-canonical-schools": "resolves hs_rosters.school_id via state-scoped 4-pass resolver against canonical_schools + school_aliases",
     "maxpreps-rosters": "populates hs_rosters from MaxPreps HS soccer roster pages (framework; default --limit 20; expect 403s without proxy creds)",
     "odp-rosters": "scrapes state-association Olympic Development Program rosters (top-5 states; 49 follow-ups)",
     "replay-html": "replay archived HTML from raw_html_archive through extractors (requires --run-id; defaults to dry-run, --no-dry-run to commit)",
