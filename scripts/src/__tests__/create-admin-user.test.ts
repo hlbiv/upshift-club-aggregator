@@ -19,7 +19,7 @@
  * package.json test script so that importing @workspace/db doesn't throw on
  * load — the Pool is never actually queried.
  */
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import {
   parseArgs,
   isValidEmail,

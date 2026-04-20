@@ -17,12 +17,15 @@
  * on non-POSIX terminals. Rather than pretend, we document ADMIN_PASSWORD as
  * the preferred path and accept plaintext stdin as a deliberate fallback.
  *
- * We hash with bcrypt 12 rounds to match the Player convention documented in
- * lib/db/src/schema/admin.ts. Only the hash is written to admin_users — the
- * plaintext password is never logged, printed, or persisted.
+ * We hash with bcryptjs 12 rounds to match the Player convention documented
+ * in lib/db/src/schema/admin.ts. bcryptjs is a pure-JS port of bcrypt; its
+ * `$2b$` output is wire-compatible with the native `bcrypt` package that the
+ * api-server login route (also bcryptjs) accepts. Only the hash is written
+ * to admin_users — the plaintext password is never logged, printed, or
+ * persisted.
  */
 import { createInterface } from "node:readline/promises";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { db, adminUsers } from "@workspace/db";
 
 export const ADMIN_ROLES = ["admin", "super_admin"] as const;
