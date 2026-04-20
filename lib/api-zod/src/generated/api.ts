@@ -413,13 +413,14 @@ export const SearchCoachesResponse = zod.object({
 });
 
 /**
- * Groups clubs by a normalized name (common suffixes like FC, SC, United, Academy stripped) within the same state. Returns clusters with two or more clubs, indicating likely duplicates or near-duplicates.
+ * Returns unordered pairs (`club_a_id < club_b_id`) derived from normalized-name/state clusters. Each pair includes any persisted review decision so an admin UI can walk the queue without a second query. The default `status=pending` view hides pairs that were already decided as merged or rejected.
 
- * @summary Detect near-duplicate clubs by normalized name and state
+ * @summary List near-duplicate club pairs with review state
  */
 export const analyticsDuplicatesQueryMinClubsDefault = 2;
 export const analyticsDuplicatesQueryMinClubsMin = 2;
 
+export const analyticsDuplicatesQueryStatusDefault = `pending`;
 export const analyticsDuplicatesQueryPageDefault = 1;
 export const analyticsDuplicatesQueryPageSizeDefault = 20;
 export const analyticsDuplicatesQueryPageSizeMax = 100;
@@ -436,6 +437,12 @@ export const AnalyticsDuplicatesQueryParams = zod.object({
     .min(analyticsDuplicatesQueryMinClubsMin)
     .default(analyticsDuplicatesQueryMinClubsDefault)
     .describe("Minimum number of clubs in a cluster to be flagged"),
+  status: zod
+    .enum(["pending", "all", "rejected", "merged"])
+    .default(analyticsDuplicatesQueryStatusDefault)
+    .describe(
+      "Review-state filter. `pending` (default) hides pairs already decided as merged or rejected. `all` returns every pair with review state attached. `rejected` \/ `merged` return only pairs with that decision.\n",
+    ),
   page: zod.coerce.number().default(analyticsDuplicatesQueryPageDefault),
   page_size: zod.coerce
     .number()
@@ -445,26 +452,79 @@ export const AnalyticsDuplicatesQueryParams = zod.object({
 
 export const AnalyticsDuplicatesResponse = zod.object({
   duplicates: zod.array(
-    zod.object({
-      normalized_name: zod
-        .string()
-        .describe(
-          "Club name after stripping common suffixes (FC, SC, United, Academy, etc.)",
-        ),
-      state: zod.string().nullish(),
-      club_count: zod.number(),
-      club_ids: zod.array(zod.number()),
-      club_names: zod.array(zod.string()),
-      sources: zod
-        .array(zod.string())
-        .describe(
-          "Distinct league\/source names the clustered clubs appear in",
-        ),
-    }),
+    zod
+      .object({
+        normalized_name: zod
+          .string()
+          .describe(
+            "Club name after stripping common suffixes (FC, SC, United, Academy, etc.)",
+          ),
+        state: zod.string().nullish(),
+        club_count: zod
+          .number()
+          .describe("Number of clubs in the enclosing cluster (>= 2)"),
+        club_ids: zod.array(zod.number()),
+        club_names: zod.array(zod.string()),
+        sources: zod
+          .array(zod.string())
+          .describe(
+            "Distinct league\/source names the clustered clubs appear in",
+          ),
+        club_a_id: zod
+          .number()
+          .describe(
+            "Lower-id member of the pair (normalized so club_a_id < club_b_id)",
+          ),
+        club_b_id: zod.number().describe("Higher-id member of the pair"),
+        club_a_name: zod.string(),
+        club_b_name: zod.string(),
+        review: zod
+          .object({
+            decision: zod.enum(["pending", "merged", "rejected"]),
+            decided_by: zod.string().nullish(),
+            decided_at: zod.coerce.date().nullish(),
+            notes: zod.string().nullish(),
+          })
+          .describe(
+            "Review decision attached to a duplicate pair (null when no row exists)",
+          )
+          .nullish(),
+      })
+      .describe(
+        "One near-duplicate pair (the enclosing cluster's context is included for UI display).",
+      ),
   ),
   total: zod.number(),
   page: zod.number(),
   page_size: zod.number(),
+});
+
+/**
+ * Upserts a `duplicate_review_decisions` row keyed on the normalized pair (`club_a_id < club_b_id`; the server swaps the ids if needed). `decided_by` is populated from the caller's API key name when available, else null. Only records the decision — does not merge.
+
+ * @summary Record a review decision for a near-duplicate club pair
+ */
+
+export const AnalyticsDuplicatesReviewBody = zod.object({
+  club_a_id: zod.number().min(1),
+  club_b_id: zod
+    .number()
+    .min(1)
+    .describe(
+      "Must differ from club_a_id; server normalizes so the stored row has the lower id first.",
+    ),
+  decision: zod.enum(["pending", "merged", "rejected"]),
+  notes: zod.string().optional(),
+});
+
+export const AnalyticsDuplicatesReviewResponse = zod.object({
+  id: zod.number(),
+  club_a_id: zod.number(),
+  club_b_id: zod.number(),
+  decision: zod.enum(["pending", "merged", "rejected"]),
+  decided_by: zod.string().nullish(),
+  decided_at: zod.coerce.date().nullish(),
+  notes: zod.string().nullish(),
 });
 
 /**

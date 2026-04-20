@@ -260,6 +260,7 @@ export * from "./clubs-extended";
 export * from "./colleges";
 export * from "./coaches";
 export * from "./commitments";
+export * from "./duplicate-review";
 export * from "./events";
 export * from "./hs";
 export * from "./matches";

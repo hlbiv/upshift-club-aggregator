@@ -5,10 +5,13 @@
  * Upshift Data API — youth soccer club graph database
  * OpenAPI spec version: 0.2.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
@@ -24,6 +27,8 @@ import type {
   ClubStaffResponse,
   CoachSearchResponse,
   CoverageResponse,
+  DuplicateReviewDecision,
+  DuplicateReviewRequest,
   DuplicatesResponse,
   ErrorResponse,
   EventSearchResponse,
@@ -40,7 +45,7 @@ import type {
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -1024,9 +1029,9 @@ export function useSearchCoaches<
 }
 
 /**
- * Groups clubs by a normalized name (common suffixes like FC, SC, United, Academy stripped) within the same state. Returns clusters with two or more clubs, indicating likely duplicates or near-duplicates.
+ * Returns unordered pairs (`club_a_id < club_b_id`) derived from normalized-name/state clusters. Each pair includes any persisted review decision so an admin UI can walk the queue without a second query. The default `status=pending` view hides pairs that were already decided as merged or rejected.
 
- * @summary Detect near-duplicate clubs by normalized name and state
+ * @summary List near-duplicate club pairs with review state
  */
 export const getAnalyticsDuplicatesUrl = (
   params?: AnalyticsDuplicatesParams,
@@ -1099,7 +1104,7 @@ export type AnalyticsDuplicatesQueryResult = NonNullable<
 export type AnalyticsDuplicatesQueryError = ErrorType<unknown>;
 
 /**
- * @summary Detect near-duplicate clubs by normalized name and state
+ * @summary List near-duplicate club pairs with review state
  */
 
 export function useAnalyticsDuplicates<
@@ -1124,6 +1129,98 @@ export function useAnalyticsDuplicates<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Upserts a `duplicate_review_decisions` row keyed on the normalized pair (`club_a_id < club_b_id`; the server swaps the ids if needed). `decided_by` is populated from the caller's API key name when available, else null. Only records the decision — does not merge.
+
+ * @summary Record a review decision for a near-duplicate club pair
+ */
+export const getAnalyticsDuplicatesReviewUrl = () => {
+  return `/api/analytics/duplicates/review`;
+};
+
+export const analyticsDuplicatesReview = async (
+  duplicateReviewRequest: DuplicateReviewRequest,
+  options?: RequestInit,
+): Promise<DuplicateReviewDecision> => {
+  return customFetch<DuplicateReviewDecision>(
+    getAnalyticsDuplicatesReviewUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(duplicateReviewRequest),
+    },
+  );
+};
+
+export const getAnalyticsDuplicatesReviewMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof analyticsDuplicatesReview>>,
+    TError,
+    { data: BodyType<DuplicateReviewRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof analyticsDuplicatesReview>>,
+  TError,
+  { data: BodyType<DuplicateReviewRequest> },
+  TContext
+> => {
+  const mutationKey = ["analyticsDuplicatesReview"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof analyticsDuplicatesReview>>,
+    { data: BodyType<DuplicateReviewRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return analyticsDuplicatesReview(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AnalyticsDuplicatesReviewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof analyticsDuplicatesReview>>
+>;
+export type AnalyticsDuplicatesReviewMutationBody =
+  BodyType<DuplicateReviewRequest>;
+export type AnalyticsDuplicatesReviewMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Record a review decision for a near-duplicate club pair
+ */
+export const useAnalyticsDuplicatesReview = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof analyticsDuplicatesReview>>,
+    TError,
+    { data: BodyType<DuplicateReviewRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof analyticsDuplicatesReview>>,
+  TError,
+  { data: BodyType<DuplicateReviewRequest> },
+  TContext
+> => {
+  return useMutation(getAnalyticsDuplicatesReviewMutationOptions(options));
+};
 
 /**
  * Returns club counts aggregated by US state and by league affiliation, highlighting states below a configurable minimum threshold.

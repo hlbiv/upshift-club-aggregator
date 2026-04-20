@@ -517,6 +517,26 @@ assertTable(schema.yntCallUps, "ynt_call_ups", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain — Duplicate review decisions (admin UI support)
+// ---------------------------------------------------------------------------
+
+assertTable(schema.duplicateReviewDecisions, "duplicate_review_decisions", {
+  cols: [
+    "club_a_id",
+    "club_b_id",
+    "decision",
+    "decided_by",
+    "decided_at",
+    "notes",
+  ],
+  uniques: ["duplicate_review_decisions_pair_uq"],
+  checks: [
+    "duplicate_review_decisions_decision_enum",
+    "duplicate_review_decisions_pair_ordering",
+  ],
+});
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 

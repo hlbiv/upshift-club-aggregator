@@ -390,11 +390,13 @@ paths:
     get:
       operationId: analyticsDuplicates
       tags: [analytics]
-      summary: Detect near-duplicate clubs by normalized name and state
+      summary: List near-duplicate club pairs with review state
       description: >
-        Groups clubs by a normalized name (common suffixes like FC, SC, United,
-        Academy stripped) within the same state. Returns clusters with two or
-        more clubs, indicating likely duplicates or near-duplicates.
+        Returns unordered pairs (`club_a_id < club_b_id`) derived from
+        normalized-name/state clusters. Each pair includes any persisted
+        review decision so an admin UI can walk the queue without a second
+        query. The default `status=pending` view hides pairs that were
+        already decided as merged or rejected.
       parameters:
         - name: state
           in: query
@@ -408,6 +410,17 @@ paths:
             default: 2
             minimum: 2
           description: Minimum number of clubs in a cluster to be flagged
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, all, rejected, merged]
+            default: pending
+          description: >
+            Review-state filter. `pending` (default) hides pairs already
+            decided as merged or rejected. `all` returns every pair with
+            review state attached. `rejected` / `merged` return only pairs
+            with that decision.
         - name: page
           in: query
           schema:
@@ -421,11 +434,41 @@ paths:
             maximum: 100
       responses:
         "200":
-          description: Duplicate clusters
+          description: Duplicate pairs with review state
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DuplicatesResponse"
+
+  /analytics/duplicates/review:
+    post:
+      operationId: analyticsDuplicatesReview
+      tags: [analytics]
+      summary: Record a review decision for a near-duplicate club pair
+      description: >
+        Upserts a `duplicate_review_decisions` row keyed on the normalized
+        pair (`club_a_id < club_b_id`; the server swaps the ids if needed).
+        `decided_by` is populated from the caller's API key name when
+        available, else null. Only records the decision — does not merge.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DuplicateReviewRequest"
+      responses:
+        "200":
+          description: Decision row (after upsert)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DuplicateReviewDecision"
+        "400":
+          description: Invalid body, self-pair, or unknown club id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /analytics/coverage:
     get:
@@ -913,8 +956,29 @@ components:
         - page
         - page_size
 
+    DuplicateReview:
+      type: object
+      description: Review decision attached to a duplicate pair (null when no row exists)
+      properties:
+        decision:
+          type: string
+          enum: [pending, merged, rejected]
+        decided_by:
+          type: string
+          nullable: true
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required:
+        - decision
+
     DuplicateCluster:
       type: object
+      description: One near-duplicate pair (the enclosing cluster's context is included for UI display).
       properties:
         normalized_name:
           type: string
@@ -924,6 +988,7 @@ components:
           nullable: true
         club_count:
           type: integer
+          description: Number of clubs in the enclosing cluster (>= 2)
         club_ids:
           type: array
           items:
@@ -937,12 +1002,30 @@ components:
           items:
             type: string
           description: Distinct league/source names the clustered clubs appear in
+        club_a_id:
+          type: integer
+          description: Lower-id member of the pair (normalized so club_a_id < club_b_id)
+        club_b_id:
+          type: integer
+          description: Higher-id member of the pair
+        club_a_name:
+          type: string
+        club_b_name:
+          type: string
+        review:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DuplicateReview"
       required:
         - normalized_name
         - club_count
         - club_ids
         - club_names
         - sources
+        - club_a_id
+        - club_b_id
+        - club_a_name
+        - club_b_name
 
     DuplicatesResponse:
       type: object
@@ -962,6 +1045,54 @@ components:
         - total
         - page
         - page_size
+
+    DuplicateReviewRequest:
+      type: object
+      properties:
+        club_a_id:
+          type: integer
+          minimum: 1
+        club_b_id:
+          type: integer
+          minimum: 1
+          description: Must differ from club_a_id; server normalizes so the stored row has the lower id first.
+        decision:
+          type: string
+          enum: [pending, merged, rejected]
+        notes:
+          type: string
+      required:
+        - club_a_id
+        - club_b_id
+        - decision
+
+    DuplicateReviewDecision:
+      type: object
+      properties:
+        id:
+          type: integer
+        club_a_id:
+          type: integer
+        club_b_id:
+          type: integer
+        decision:
+          type: string
+          enum: [pending, merged, rejected]
+        decided_by:
+          type: string
+          nullable: true
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required:
+        - id
+        - club_a_id
+        - club_b_id
+        - decision
 
     StateCoverage:
       type: object
