@@ -21,6 +21,7 @@ import scrapeRunsRouter from "./scrape-runs";
 import scrapeHealthRouter from "./scrape-health";
 import { dedupRouter } from "./dedup";
 import { dataQualityRouter } from "./data-quality";
+import growthRouter from "./growth";
 
 export const unauthAdminRouter: IRouter = Router();
 unauthAdminRouter.use(loginRouter);
@@ -32,3 +33,4 @@ authedAdminRouter.use("/scrape-runs", scrapeRunsRouter);
 authedAdminRouter.use("/scrape-health", scrapeHealthRouter);
 authedAdminRouter.use("/dedup", dedupRouter);
 authedAdminRouter.use("/data-quality", dataQualityRouter);
+authedAdminRouter.use("/growth", growthRouter);

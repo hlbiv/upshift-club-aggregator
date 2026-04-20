@@ -166,3 +166,39 @@ export const GaPremierOrphanCleanupResponse = z.object({
   sampleNames: z.array(z.string()).max(20),
 });
 export type GaPremierOrphanCleanupResponse = z.infer<typeof GaPremierOrphanCleanupResponse>;
+
+/**
+ * Growth dashboard — "records added since X" counts across the five
+ * headline ingest tables. Timestamps used per table:
+ *   canonical_clubs → last_scraped_at      (no first_seen column today)
+ *   coaches → first_seen_at
+ *   events → last_scraped_at               (no first_seen column today)
+ *   club_roster_snapshots → snapshot_date
+ *   matches → scraped_at
+ */
+export const ScrapedCountsDelta = z.object({
+  since: z.string().datetime(),
+  clubsAdded: z.number().int(),
+  coachesAdded: z.number().int(),
+  eventsAdded: z.number().int(),
+  rosterSnapshotsAdded: z.number().int(),
+  matchesAdded: z.number().int(),
+});
+export type ScrapedCountsDelta = z.infer<typeof ScrapedCountsDelta>;
+
+/** One day of scrape-run health telemetry — aggregated from scrape_run_logs. */
+export const CoverageTrendPoint = z.object({
+  date: z.string(),
+  runs: z.number().int(),
+  successes: z.number().int(),
+  failures: z.number().int(),
+  rowsTouched: z.number().int(),
+});
+export type CoverageTrendPoint = z.infer<typeof CoverageTrendPoint>;
+
+/** Coverage-trend response envelope: daily points over a rolling window. */
+export const CoverageTrendResponse = z.object({
+  points: z.array(CoverageTrendPoint),
+  windowDays: z.number().int(),
+});
+export type CoverageTrendResponse = z.infer<typeof CoverageTrendResponse>;
