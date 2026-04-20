@@ -11,12 +11,15 @@
  *       GET  /me
  *       GET  /scrape-runs, GET /scrape-runs/:id
  *       GET  /scrape-health, GET /scrape-health/:entity_type/:entity_id
+ *       GET  /dedup/clubs, GET /dedup/clubs/:id
+ *       POST /dedup/clubs/:id/merge, POST /dedup/clubs/:id/reject
  */
 import { Router, type IRouter } from "express";
 import { loginRouter, logoutRouter } from "./auth";
 import meRouter from "./me";
 import scrapeRunsRouter from "./scrape-runs";
 import scrapeHealthRouter from "./scrape-health";
+import { dedupRouter } from "./dedup";
 
 export const unauthAdminRouter: IRouter = Router();
 unauthAdminRouter.use(loginRouter);
@@ -26,3 +29,4 @@ authedAdminRouter.use(logoutRouter);
 authedAdminRouter.use(meRouter);
 authedAdminRouter.use("/scrape-runs", scrapeRunsRouter);
 authedAdminRouter.use("/scrape-health", scrapeHealthRouter);
+authedAdminRouter.use("/dedup", dedupRouter);
