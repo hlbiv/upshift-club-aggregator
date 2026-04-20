@@ -1,0 +1,144 @@
+<!--
+  Fixture for the Nuxt-based roster template (Strategy 4).
+  Modeled on the live rendered DOM from gostanford.com/sports/mens-soccer/roster
+  (2025-26 season). Player personal details are fictional; structural
+  markup (class names, nesting, data-v-* SFC hashes, comment sentinels)
+  matches what Playwright saw.
+
+  Three real-shape player cards + one staff-member card (which the
+  parser must skip).
+-->
+<html>
+<head><title>Roster | Example D1</title></head>
+<body>
+<main class="roster print:inline-block">
+  <div class="roster-players roster__players">
+    <div class="roster__content-box">
+      <h2 class="roster__content-box-title roster__content-box-title--players">Roster</h2>
+      <div class="roster-players-cards">
+        <div class="roster-players__group">
+
+          <!-- Player 1: all fields present -->
+          <div class="roster-card-item" data-v-0c4b3fed="">
+            <div class="roster-card-item__inner" data-v-0c4b3fed="">
+              <a class="roster-card-item__image-wrapper" data-v-0c4b3fed="" href="/sports/mens-soccer/roster/player/rowan-schnebly">
+                <img alt="Rowan Schnebly" class="image image--default roster-card-item__image v-lazy-image" data-v-0c4b3fed="" loading="lazy" src="data:image/gif;base64,R0lGODlh" title="SCHNEBLY_ROWAN Headshot.png"/>
+              </a>
+              <div class="roster-card-item__body" data-v-0c4b3fed="">
+                <strong class="roster-card-item__jersey-number" data-v-0c4b3fed="">1</strong>
+                <div class="roster-card-item__content" data-v-0c4b3fed="">
+                  <strong class="roster-card-item__position" data-v-0c4b3fed="">GK</strong>
+                  <a class="roster-card-item__title roster-card-item__title--link" data-v-0c4b3fed="" href="/sports/mens-soccer/roster/player/rowan-schnebly">Rowan Schnebly</a>
+                  <!--[--><!--]-->
+                  <div class="roster-players-cards-item__profile-fields-wrapper">
+                    <div class="roster-players-cards-item__profile-fields roster-players-cards-item__profile-fields--basic">
+                      <div class="roster-player-card-profile-field">
+                        <!--[-->
+                        <span class="roster-player-card-profile-field__value roster-player-card-profile-field__value--basic">6'2"</span>
+                        <span class="roster-player-card-profile-field__value roster-player-card-profile-field__value--basic">175 lbs</span>
+                        <span class="roster-player-card-profile-field__value roster-player-card-profile-field__value--basic">Redshirt Junior</span>
+                        <!--]-->
+                      </div>
+                    </div>
+                    <div class="roster-players-cards-item__profile-fields roster-players-cards-item__profile-fields--additional">
+                      <div class="roster-player-card-profile-field">
+                        <strong class="roster-player-card-profile-field__label">Hometown</strong>
+                        <span class="roster-player-card-profile-field__value roster-player-card-profile-field__value--hometown">Portland, Ore.</span>
+                      </div>
+                      <div class="roster-player-card-profile-field">
+                        <strong class="roster-player-card-profile-field__label">Major</strong>
+                        <span class="roster-player-card-profile-field__value roster-player-card-profile-field__value--major">Computer Science</span>
+                      </div>
+                      <div class="roster-player-card-profile-field">
+                        <strong class="roster-player-card-profile-field__label">Previous School</strong>
+                        <span class="roster-player-card-profile-field__value">Lincoln High</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Player 2: minimal fields (no major, no previous school) -->
+          <div class="roster-card-item" data-v-0c4b3fed="">
+            <div class="roster-card-item__inner" data-v-0c4b3fed="">
+              <div class="roster-card-item__body" data-v-0c4b3fed="">
+                <strong class="roster-card-item__jersey-number" data-v-0c4b3fed="">7</strong>
+                <div class="roster-card-item__content" data-v-0c4b3fed="">
+                  <strong class="roster-card-item__position" data-v-0c4b3fed="">M</strong>
+                  <a class="roster-card-item__title roster-card-item__title--link" data-v-0c4b3fed="" href="/sports/mens-soccer/roster/player/juan-alvarez">Juan Alvarez</a>
+                  <div class="roster-players-cards-item__profile-fields-wrapper">
+                    <div class="roster-players-cards-item__profile-fields roster-players-cards-item__profile-fields--basic">
+                      <div class="roster-player-card-profile-field">
+                        <span class="roster-player-card-profile-field__value roster-player-card-profile-field__value--basic">5'10"</span>
+                        <span class="roster-player-card-profile-field__value roster-player-card-profile-field__value--basic">Freshman</span>
+                      </div>
+                    </div>
+                    <div class="roster-players-cards-item__profile-fields roster-players-cards-item__profile-fields--additional">
+                      <div class="roster-player-card-profile-field">
+                        <strong class="roster-player-card-profile-field__label">Hometown</strong>
+                        <span class="roster-player-card-profile-field__value roster-player-card-profile-field__value--hometown">Madrid, Spain</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Player 3: uses "High School" label variant and is a senior -->
+          <div class="roster-card-item" data-v-0c4b3fed="">
+            <div class="roster-card-item__inner" data-v-0c4b3fed="">
+              <div class="roster-card-item__body" data-v-0c4b3fed="">
+                <strong class="roster-card-item__jersey-number" data-v-0c4b3fed="">22</strong>
+                <div class="roster-card-item__content" data-v-0c4b3fed="">
+                  <strong class="roster-card-item__position" data-v-0c4b3fed="">F</strong>
+                  <a class="roster-card-item__title roster-card-item__title--link" data-v-0c4b3fed="" href="/sports/mens-soccer/roster/player/taylor-kim">Taylor Kim</a>
+                  <div class="roster-players-cards-item__profile-fields-wrapper">
+                    <div class="roster-players-cards-item__profile-fields roster-players-cards-item__profile-fields--basic">
+                      <div class="roster-player-card-profile-field">
+                        <span class="roster-player-card-profile-field__value roster-player-card-profile-field__value--basic">Senior</span>
+                      </div>
+                    </div>
+                    <div class="roster-players-cards-item__profile-fields roster-players-cards-item__profile-fields--additional">
+                      <div class="roster-player-card-profile-field">
+                        <strong class="roster-player-card-profile-field__label">Hometown</strong>
+                        <span class="roster-player-card-profile-field__value roster-player-card-profile-field__value--hometown">Seattle, Wash.</span>
+                      </div>
+                      <div class="roster-player-card-profile-field">
+                        <strong class="roster-player-card-profile-field__label">High School</strong>
+                        <span class="roster-player-card-profile-field__value">West Seattle HS</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Staff section: parser must NOT pick these up -->
+    <div class="roster-staff-members">
+      <h2 class="roster__content-box-title roster-staff-members__heading">Staff</h2>
+      <div class="roster-staff-members-cards roster-staff-members__wrapper">
+        <div class="roster-staff-members__block">
+          <div class="roster-card-item roster-staff-members-card-item" data-v-0c4b3fed="">
+            <div class="roster-card-item__body">
+              <div class="roster-card-item__content">
+                <strong class="roster-card-item__position">Head Coach</strong>
+                <a class="roster-card-item__title roster-card-item__title--link" href="/staff/head-coach">Jamie Coach</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+</body>
+</html>
