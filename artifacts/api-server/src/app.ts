@@ -14,6 +14,13 @@ import {
   unauthAdminRouter,
   authedAdminRouter,
 } from "./routes/admin";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import {
+  startSchedulerWorker,
+  stopSchedulerWorker,
+  makeWorkerDb,
+} from "./scheduler/worker";
+import { db as drizzleDb } from "@workspace/db";
 
 const app: Express = express();
 
@@ -145,6 +152,37 @@ app.use(
 // --------------------------------------------------------------------------
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendDist = path.resolve(__dirname, "../../mockup-sandbox/dist");
+
+// --------------------------------------------------------------------------
+// In-process scheduler worker (S.3).
+//
+// Polls `scheduler_jobs` and shells out to `python3 scraper/run.py`. Gated
+// behind the `SCHEDULER_WORKER_ENABLED` env flag so tests + dev runs don't
+// accidentally spawn scrapers. Graceful shutdown is wired to SIGTERM +
+// SIGINT so Replit's deploy rotation doesn't leak the polling interval.
+// --------------------------------------------------------------------------
+const _schedulerWorkerEnabled =
+  process.env.SCHEDULER_WORKER_ENABLED === "true";
+if (_schedulerWorkerEnabled) {
+  // The worker interacts with the underlying pg pool via `.$client` and
+  // doesn't depend on the Drizzle schema typing — cast to the generic
+  // schema-less NodePgDatabase that makeWorkerDb expects.
+  const workerDrizzleDb =
+    drizzleDb as unknown as NodePgDatabase<Record<string, never>>;
+  startSchedulerWorker({ db: makeWorkerDb(workerDrizzleDb) });
+  const shutdown = () => {
+    stopSchedulerWorker();
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+  // eslint-disable-next-line no-console
+  console.log("[scheduler-worker] enabled");
+} else {
+  // eslint-disable-next-line no-console
+  console.log(
+    "[scheduler-worker] DISABLED (set SCHEDULER_WORKER_ENABLED=true to enable)",
+  );
+}
 
 app.use(express.static(frontendDist));
 app.get("/{*path}", (_req, res, next) => {
