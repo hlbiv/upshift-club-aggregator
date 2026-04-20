@@ -138,6 +138,8 @@ def _parse_tables(soup: BeautifulSoup) -> List[Dict]:
     rows: List[Dict] = []
     for table in soup.find_all("table"):
         header_cells: List[str] = []
+        header_row = None  # the <tr> that supplied headers, so we can skip it later
+
         thead = table.find("thead")
         if thead:
             header_cells = [
@@ -152,6 +154,22 @@ def _parse_tables(soup: BeautifulSoup) -> List[Dict]:
                     header_cells = [
                         _clean(th.get_text(" ", strip=True)) or "" for th in ths
                     ]
+                    header_row = first_tr
+        # Live TDS tables have no <thead> and no <th> — the header row is
+        # literally "<tr><td><strong>Name</strong></td>..." inside <tbody>.
+        # Fall back to the first <tr>'s <td> cells IFF their text maps to
+        # the transfer-tracker field aliases. This keeps the guard against
+        # unrelated tables (standings etc.) — a non-matching first row
+        # simply won't pass the `required` check below.
+        if not header_cells:
+            first_tr = table.find("tr")
+            if first_tr:
+                tds = first_tr.find_all("td")
+                if tds:
+                    header_cells = [
+                        _clean(td.get_text(" ", strip=True)) or "" for td in tds
+                    ]
+                    header_row = first_tr
         if not header_cells:
             continue
         field_map = _map_headers(header_cells)
@@ -163,6 +181,9 @@ def _parse_tables(soup: BeautifulSoup) -> List[Dict]:
 
         body = table.find("tbody") or table
         for tr in body.find_all("tr"):
+            # Skip the td-based header row we already consumed above.
+            if header_row is not None and tr is header_row:
+                continue
             if tr.find("th") and not tr.find("td"):
                 continue
             cells = tr.find_all(["td", "th"])
