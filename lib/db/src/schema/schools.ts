@@ -25,8 +25,10 @@ import {
   integer,
   timestamp,
   unique,
+  uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 
 export const canonicalSchools = pgTable(
@@ -35,6 +37,14 @@ export const canonicalSchools = pgTable(
     id: serial("id").primaryKey(),
     schoolNameCanonical: text("school_name_canonical").notNull(),
     schoolState: text("school_state").notNull(), // 2-letter
+    /**
+     * NCES CCD school ID (`NCESSCH`), 12-char state+district+school natural
+     * key. Nullable — operator-curated rows and linker-minted aliases won't
+     * have an NCES identity until a subsequent CCD seed pass fills it in.
+     * Unique where non-null (partial index) so the seeder can rely on it
+     * for idempotent upserts without forcing every legacy row to have one.
+     */
+    ncessch: text("ncessch"),
     website: text("website"),
     mascot: text("mascot"),
     city: text("city"),
@@ -50,6 +60,10 @@ export const canonicalSchools = pgTable(
       t.schoolNameCanonical,
       t.schoolState,
     ),
+    uniqueIndex("canonical_schools_ncessch_uq")
+      .on(t.ncessch)
+      .where(sql`${t.ncessch} IS NOT NULL`),
+    index("canonical_schools_state_idx").on(t.schoolState),
   ],
 );
 

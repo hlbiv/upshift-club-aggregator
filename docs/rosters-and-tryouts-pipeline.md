@@ -133,3 +133,57 @@ one of `jersey_number`, `position`, `source_url`, `division` changed.
 The tryouts upsert's `DO UPDATE ... WHERE` fires only when
 `location_name`, `url`, or `notes` changed. Re-running either scraper
 with no upstream change is a no-op and reports zero updates.
+
+---
+
+## HS canonical-schools seed (NCES CCD)
+
+The HS-roster scraper (MaxPreps) feeds `hs_rosters`, which uses the
+canonical-schools linker pattern — scrapers write `school_name_raw` +
+`school_state` and leave `school_id` NULL. The linker
+(`scraper/canonical_school_linker.py`,
+`python3 run.py --source link-canonical-schools`) can only match against
+rows already present in `canonical_schools`. That table starts empty; the
+NCES Common Core of Data (CCD) public-school universe is what populates
+it.
+
+Run on Replit once per year when NCES publishes a new CCD extract:
+
+```bash
+# 1. Download ccd_sch_029_YYYY_w_1a_DATE.zip from
+#    https://nces.ed.gov/ccd/files.asp (most recent file). Unzip.
+
+# 2. Seed the canonical table (idempotent — re-runnable).
+pnpm --filter @workspace/scripts run seed-canonical-schools-nces \
+    -- --csv /tmp/ccd_sch_029_YYYY_w_1a_DATE.csv
+
+# 3. After the next MaxPreps HS scrape, resolve school_id FKs:
+python3 run.py --source link-canonical-schools
+```
+
+Filter predicate applied by the seeder:
+
+- `SCH_TYPE = 1` (regular school — excludes special-ed / vocational /
+  alternative).
+- Grade span (`GSLO`..`GSHI`) overlaps 9-12.
+- 2-letter state code present on the row. Private schools are not in CCD
+  (PSS is a separate NCES product and is out of scope here).
+
+Idempotency: keyed on `canonical_schools.ncessch` (the 12-char NCES
+identifier), which has a partial unique index `ncessch IS NOT NULL`. A
+re-run UPDATEs the matching row. If a row already exists with the same
+`(school_name_canonical, school_state)` but no `ncessch`
+(operator-curated, or created by the linker from a MaxPreps alias), the
+seeder backfills the NCES id onto that existing row rather than creating
+a duplicate.
+
+Dry-run / smoke:
+
+```bash
+pnpm --filter @workspace/scripts run seed-canonical-schools-nces \
+    -- --csv /tmp/ccd.csv --dry-run --limit 1000
+pnpm --filter @workspace/scripts run test:seed-canonical-schools-nces
+```
+
+The test runs fully offline against a fixture CSV; no real network or
+Postgres required.
