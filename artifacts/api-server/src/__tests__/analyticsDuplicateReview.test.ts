@@ -593,6 +593,42 @@ async function run() {
         `body error should be invalid_body, got ${JSON.stringify(res.body)}`,
       );
     }
+
+    // --- Scope gate: with auth enabled + no apiKey on req → 403 forbidden.
+    // The test app mounts analyticsRouter without apiKeyAuth, so when we
+    // flip the env to production mode the gate sees `req.apiKey` as
+    // undefined and must fail closed. Verifies requireScope('admin:write')
+    // is actually wired on this route, not just imported.
+    {
+      const prior = {
+        API_KEY_AUTH_ENABLED: process.env.API_KEY_AUTH_ENABLED,
+        NODE_ENV: process.env.NODE_ENV,
+      };
+      process.env.API_KEY_AUTH_ENABLED = "true";
+      process.env.NODE_ENV = "production";
+      try {
+        const res = await hit(port, "/api/analytics/duplicates/review", {
+          method: "POST",
+          body: { club_a_id: 1, club_b_id: 2, decision: "merged" },
+        });
+        assert(
+          res.status === 403,
+          "scope-gate-wired",
+          `expected 403 with auth enabled + no apiKey, got ${res.status}`,
+        );
+        assert(
+          (res.body as { error?: string }).error === "forbidden",
+          "scope-gate-wired",
+          `body should be forbidden, got ${JSON.stringify(res.body)}`,
+        );
+      } finally {
+        if (prior.API_KEY_AUTH_ENABLED === undefined)
+          delete process.env.API_KEY_AUTH_ENABLED;
+        else process.env.API_KEY_AUTH_ENABLED = prior.API_KEY_AUTH_ENABLED;
+        if (prior.NODE_ENV === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = prior.NODE_ENV;
+      }
+    }
   } finally {
     await close();
     __setExecRowsForTests(null);
