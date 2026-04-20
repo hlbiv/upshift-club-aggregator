@@ -5,6 +5,7 @@ import ScraperHealthPage from "./pages/ScraperHealth";
 import DedupPage from "./pages/Dedup";
 import DedupDetailPage from "./pages/DedupDetail";
 import DataQualityPage from "./pages/DataQuality";
+import GrowthPage from "./pages/Growth";
 
 /**
  * Admin dashboard router.
@@ -15,10 +16,10 @@ import DataQualityPage from "./pages/DataQuality";
  *   /dedup           → DedupPage (list of duplicate pairs)
  *   /dedup/:id       → DedupDetailPage (single pair, merge/reject)
  *   /data-quality    → DataQualityPage (GA Premier orphan cleanup)
+ *   /growth          → GrowthPage (stat cards + coverage-trend chart)
  *
  * ProtectedRoute calls GET /api/v1/admin/me on mount. 200 → render children,
- * 401 → <Navigate to="/login" />. Phase C.4 adds the dedup routes; previous
- * phases shipped scraper-health.
+ * 401 → <Navigate to="/login" />.
  */
 export default function App() {
   return (
@@ -53,6 +54,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <DataQualityPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/growth"
+        element={
+          <ProtectedRoute>
+            <GrowthPage />
           </ProtectedRoute>
         }
       />
