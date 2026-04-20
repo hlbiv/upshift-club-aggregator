@@ -5,9 +5,14 @@
  * ships the schema + a parser + a small smoke runner. Live volume will
  * depend on proxy infrastructure (MaxPreps blocks aggressively).
  *
- * There is no HS-canonical-school linker yet: scrapers write
- * `school_name_raw` + `school_state` only. A linker pass against a
- * future `canonical_schools` table is a follow-up.
+ * Canonical-schools linker pattern: scrapers write `school_name_raw` +
+ * `school_state` and leave `school_id` NULL. The linker
+ * (`scraper/canonical_school_linker.py`,
+ * `python3 run.py --source link-canonical-schools`) resolves the FK in a
+ * follow-up pass. The canonical table lives in ./schools.ts.
+ *
+ * Every pass of the linker is state-scoped — "Lincoln High" in NE and CA
+ * are intentionally distinct canonical rows.
  */
 
 import {
@@ -19,11 +24,18 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { canonicalSchools } from "./schools";
 
 export const hsRosters = pgTable(
   "hs_rosters",
   {
     id: serial("id").primaryKey(),
+    // Nullable — populated by the canonical-school linker after the
+    // scraper writes `schoolNameRaw` + `schoolState`.
+    schoolId: integer("school_id").references(() => canonicalSchools.id, {
+      onDelete: "set null",
+    }),
     schoolNameRaw: text("school_name_raw").notNull(),
     schoolState: text("school_state").notNull(), // 2-letter
     schoolCity: text("school_city"),
@@ -54,8 +66,16 @@ export const hsRosters = pgTable(
     ),
     stateIdx: index("hs_rosters_state_idx").on(t.schoolState),
     gradYearIdx: index("hs_rosters_grad_year_idx").on(t.graduationYear),
+    schoolIdx: index("hs_rosters_school_id_idx").on(t.schoolId),
   }),
 );
+
+export const hsRostersRelations = relations(hsRosters, ({ one }) => ({
+  school: one(canonicalSchools, {
+    fields: [hsRosters.schoolId],
+    references: [canonicalSchools.id],
+  }),
+}));
 
 export type HsRoster = typeof hsRosters.$inferSelect;
 export type InsertHsRoster = typeof hsRosters.$inferInsert;

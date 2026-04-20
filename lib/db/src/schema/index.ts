@@ -265,6 +265,7 @@ export * from "./hs";
 export * from "./matches";
 export * from "./odp";
 export * from "./rosters-and-tryouts";
+export * from "./schools";
 export * from "./scrape-health";
 export * from "./api-keys";
 export * from "./admin";

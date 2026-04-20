@@ -374,6 +374,7 @@ assertTable(schema.rawHtmlArchive, "raw_html_archive", {
 
 assertTable(schema.hsRosters, "hs_rosters", {
   cols: [
+    "school_id",
     "school_name_raw",
     "school_state",
     "school_city",
@@ -390,7 +391,33 @@ assertTable(schema.hsRosters, "hs_rosters", {
     "last_seen_at",
   ],
   uniques: ["hs_rosters_natural_key_uq"],
-  indexes: ["hs_rosters_state_idx", "hs_rosters_grad_year_idx"],
+  indexes: [
+    "hs_rosters_state_idx",
+    "hs_rosters_grad_year_idx",
+    "hs_rosters_school_id_idx",
+  ],
+});
+
+// ---------------------------------------------------------------------------
+// Domain: Canonical schools (HS directory) — see lib/db/src/schema/schools.ts
+// ---------------------------------------------------------------------------
+
+assertTable(schema.canonicalSchools, "canonical_schools", {
+  cols: [
+    "school_name_canonical",
+    "school_state",
+    "website",
+    "mascot",
+    "city",
+    "created_at",
+    "updated_at",
+  ],
+  uniques: ["canonical_schools_name_state_uq"],
+});
+
+assertTable(schema.schoolAliases, "school_aliases", {
+  cols: ["school_id", "alias_name", "school_state", "created_at"],
+  uniques: ["school_aliases_alias_state_uq"],
 });
 
 // ---------------------------------------------------------------------------
