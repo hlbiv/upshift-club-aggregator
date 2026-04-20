@@ -15,11 +15,11 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { hashApiKey, findApiKeyByHash, type ApiKey } from "@workspace/db";
 
-type ApiKeyLookup = (hash: string) => Promise<ApiKey | null>;
+// `req.apiKey` augmentation lives in `src/types/express.d.ts` so any
+// middleware (rateLimit, requireScope, requireAdmin, …) can rely on the
+// shape without importing this module just for types.
 
-// Module augmentation for `req.apiKey` is centralized in
-// src/types/express.d.ts — keep this file free of `declare module` so both
-// the type declaration and this runtime file agree on one source.
+type ApiKeyLookup = (hash: string) => Promise<ApiKey | null>;
 
 // Paths are compared against req.path, which inside a mounted sub-app
 // excludes the mount prefix. Since this middleware is mounted at `/api`
