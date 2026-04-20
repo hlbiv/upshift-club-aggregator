@@ -16,3 +16,4 @@ export const db = drizzle(pool, { schema });
 export * from "./schema";
 export * from "./api-keys";
 export * from "./admin-sessions";
+export * from "./dedup/merge-clubs";
