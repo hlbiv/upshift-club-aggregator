@@ -1157,49 +1157,86 @@ def scrape_college_rosters(
             run_logger.start()
 
         try:
-            roster_url = discover_roster_url(session, college, college_gender)
-            if not roster_url:
+            # Discover the live (current-season) URL once per college. The
+            # historical URL composer derives from this by replacing the
+            # trailing /roster with /roster/<YYYY> (SIDEARM) or
+            # /roster/season/<YYYY> (Nuxt). Doing it once avoids N extra
+            # discover_roster_url calls per college when backfilling.
+            current_roster_url = discover_roster_url(session, college, college_gender)
+            if not current_roster_url:
                 logger.info("  SKIP %s - no roster URL found", tag)
                 total_errors += 1
                 continue
 
-            html, players = _fetch_and_parse_with_fallback(session, roster_url)
-            if html is None:
-                logger.warning("  FAIL %s - fetch failed: %s", tag, roster_url)
-                total_errors += 1
-                continue
-            if not players:
-                logger.info("  SKIP %s - no players parsed from %s", tag, roster_url)
-                total_errors += 1
-                continue
+            for season in seasons:
+                is_current = season == current_season
+                season_tag = tag if is_current else f"{tag} [{season}]"
 
-            total_scraped += 1
-            inserted = 0
-            updated = 0
+                if is_current:
+                    target_url = current_roster_url
+                    html, players = _fetch_and_parse_with_fallback(session, target_url)
+                else:
+                    target_url, html, players = _find_historical_roster(
+                        session, current_roster_url, season
+                    )
 
-            if not dry_run:
-                for p in players:
-                    try:
-                        result = _upsert_roster_row(conn.cursor(), college["id"], p, academic_year)
-                        if result == "inserted":
-                            inserted += 1
-                        else:
-                            updated += 1
-                    except Exception as exc:
-                        logger.warning("  DB error for %s / %s: %s", college["name"], p.player_name, exc)
-                        conn.rollback()
-                        continue
-                conn.commit()
-                _update_last_scraped(conn.cursor(), college["id"])
-                conn.commit()
+                if not target_url or html is None:
+                    logger.info(
+                        "  SKIP %s - no historical URL hit for %s", season_tag, season
+                    )
+                    total_errors += 1
+                    time.sleep(RATE_LIMIT_DELAY)
+                    continue
+                if not players:
+                    logger.info(
+                        "  SKIP %s - no players parsed from %s", season_tag, target_url
+                    )
+                    total_errors += 1
+                    time.sleep(RATE_LIMIT_DELAY)
+                    continue
 
-            total_inserted += inserted
-            total_updated += updated
+                total_scraped += 1
+                inserted = 0
+                updated = 0
 
-            logger.info(
-                "  OK   %s - %d players (%d new, %d updated) from %s",
-                tag, len(players), inserted, updated, roster_url,
-            )
+                if not dry_run:
+                    for p in players:
+                        try:
+                            result = _upsert_roster_row(
+                                conn.cursor(), college["id"], p, season
+                            )
+                            if result == "inserted":
+                                inserted += 1
+                            else:
+                                updated += 1
+                        except Exception as exc:
+                            logger.warning(
+                                "  DB error for %s / %s (%s): %s",
+                                college["name"], p.player_name, season, exc,
+                            )
+                            conn.rollback()
+                            continue
+                    conn.commit()
+                    # Only bump last_scraped_at on the current-season pass —
+                    # historical pulls shouldn't make an 8-year-old roster
+                    # look like it was just refreshed.
+                    if is_current:
+                        _update_last_scraped(conn.cursor(), college["id"])
+                        conn.commit()
+
+                total_inserted += inserted
+                total_updated += updated
+
+                logger.info(
+                    "  OK   %s - %d players (%d new, %d updated) from %s",
+                    season_tag, len(players), inserted, updated, target_url,
+                )
+
+                # Rate-limit between seasons for the same host. Same 1.5s
+                # cadence as between colleges — politer to spread the
+                # historical backfill load across time rather than burst 5
+                # requests back-to-back at one athletics site.
+                time.sleep(RATE_LIMIT_DELAY)
 
         except Exception as exc:
             logger.error("  ERROR %s - %s", tag, exc)
@@ -1216,9 +1253,6 @@ def scrape_college_rosters(
                     conn.rollback()
                 except Exception:
                     pass
-
-        # Rate limiting
-        time.sleep(RATE_LIMIT_DELAY)
 
     # Finish run loggers
     for div in divisions_seen:

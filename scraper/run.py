@@ -897,10 +897,18 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
         sys.exit(2)
 
     if run_all:
+        backfill_seasons = int(getattr(args, "backfill_seasons", 0) or 0)
+        if backfill_seasons < 0:
+            logger.error(
+                "--source ncaa-rosters: --backfill-seasons must be >= 0 (got %d)",
+                backfill_seasons,
+            )
+            sys.exit(2)
         _run_ncaa_rosters_all(
             division=division,
             gender_program=gender_program,
             dry_run=bool(getattr(args, "dry_run", False)),
+            backfill_seasons=backfill_seasons,
         )
         return
 
@@ -1001,24 +1009,30 @@ def _run_ncaa_rosters_all(
     division: str,
     gender_program: str,
     dry_run: bool,
+    backfill_seasons: int = 0,
 ) -> None:
     """Dispatch to the pre-existing bulk enumerator.
 
     ``scrape_college_rosters`` in ``extractors.ncaa_rosters`` handles
     per-run logging (one ``scrape_run_logs`` row per division), rate
-    limiting (1.5s between schools), and write-through to all three
-    NCAA tables. We just route into it — no fresh logic here.
+    limiting (1.5s between schools/seasons), and write-through.
+
+    ``backfill_seasons=0`` is today's behavior (current season only).
+    Positive N pulls prior seasons via the /roster/<YYYY> (SIDEARM) or
+    /roster/season/<YYYY> (Nuxt) URL pattern; writer uses the same
+    natural key so re-runs are idempotent.
     """
     from extractors.ncaa_rosters import scrape_college_rosters
 
     logger.info(
-        "[ncaa-rosters] --all division=%s gender=%s dry_run=%s",
-        division, gender_program, dry_run,
+        "[ncaa-rosters] --all division=%s gender=%s dry_run=%s backfill_seasons=%d",
+        division, gender_program, dry_run, backfill_seasons,
     )
     result = scrape_college_rosters(
         division=division,
         gender=gender_program,
         dry_run=dry_run,
+        backfill_seasons=backfill_seasons,
     )
     logger.info(
         "[ncaa-rosters] --all done: scraped=%d inserted=%d updated=%d errors=%d",
@@ -1741,6 +1755,11 @@ def main() -> None:
                         help="For --source ncaa-rosters: enumerate every colleges row "
                              "matching --division + --gender (bulk mode; mutually "
                              "exclusive with --school-url).")
+    parser.add_argument("--backfill-seasons", metavar="N", type=int,
+                        dest="backfill_seasons", default=0,
+                        help="For --source ncaa-rosters --all: also pull rosters "
+                             "for the prior N seasons (e.g. --backfill-seasons 3 "
+                             "→ current + 2023-24 + 2022-23 + 2021-22). Default 0.")
     parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune"],
                         help="Run a derived-data rollup over existing DB rows.")
     args = parser.parse_args()
