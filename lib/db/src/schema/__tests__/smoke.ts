@@ -522,6 +522,32 @@ assertTable(schema.adminSessions, "admin_sessions", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain — Scheduler jobs (admin "Run now" queue)
+// ---------------------------------------------------------------------------
+
+assertTable(schema.schedulerJobs, "scheduler_jobs", {
+  cols: [
+    "id",
+    "job_key",
+    "args",
+    "status",
+    "requested_by",
+    "requested_at",
+    "started_at",
+    "completed_at",
+    "exit_code",
+    "stdout_tail",
+    "stderr_tail",
+  ],
+  checks: ["scheduler_jobs_status_enum"],
+  indexes: [
+    "scheduler_jobs_status_idx",
+    "scheduler_jobs_requested_at_idx",
+    "scheduler_jobs_job_key_idx",
+  ],
+});
+
+// ---------------------------------------------------------------------------
 // Domain — Club duplicates (admin dedup review queue)
 // ---------------------------------------------------------------------------
 
