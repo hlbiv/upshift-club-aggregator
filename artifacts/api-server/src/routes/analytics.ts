@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { AnalyticsDuplicatesReviewBody } from "@hlbiv/api-zod";
 import { parsePagination } from "../lib/pagination";
 import { normalizeClubName, PG_NORMALIZE_EXPR } from "../lib/analytics";
+import { requireScope } from "../middlewares/requireScope";
 
 const router: IRouter = Router();
 
@@ -199,15 +200,17 @@ router.get("/analytics/duplicates", async (req, res, next): Promise<void> => {
 
 // -----------------------------------------------------------------------
 // POST /api/analytics/duplicates/review
-// Record (upsert) a review decision for a pair of canonical clubs. This
-// endpoint is additive and usable whether API-key auth is enabled or not;
+// Record (upsert) a review decision for a pair of canonical clubs.
+// Gated by `requireScope('admin:write')` — in production an API key must
+// carry that scope. When API_KEY_AUTH_ENABLED is unset, `requireScope` is
+// a no-op, preserving the dev-loop behavior of every other route.
 // `decided_by` is populated from `req.apiKey?.name` when the middleware
-// has run, else left null. A follow-up PR will gate this endpoint with
-// `requireScope('admin')`.
+// has run, else left null.
 // -----------------------------------------------------------------------
 
 router.post(
   "/analytics/duplicates/review",
+  requireScope("admin:write"),
   async (req: Request, res, next): Promise<void> => {
     try {
       const parsed = AnalyticsDuplicatesReviewBody.safeParse(req.body);
