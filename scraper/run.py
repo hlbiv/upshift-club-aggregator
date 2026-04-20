@@ -644,6 +644,15 @@ def _handle_youtube_ecnl(args: argparse.Namespace) -> None:
     _yt_print_summary(summary)
 
 
+def _handle_mlsnext_video(args: argparse.Namespace) -> None:
+    from mlsnext_video_runner import (
+        run_mlsnext_video,
+        print_summary as _mlsv_print_summary,
+    )
+    summary = run_mlsnext_video(dry_run=args.dry_run)
+    _mlsv_print_summary(summary)
+
+
 def _handle_replay_html(args: argparse.Namespace) -> None:
     """
     Replay archived HTML through the extractor registry.
@@ -1352,6 +1361,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ussoccer_ynt": _handle_ussoccer_ynt,
     "youtube-ecnl": _handle_youtube_ecnl,
     "youtube_ecnl": _handle_youtube_ecnl,
+    "mlsnext-video": _handle_mlsnext_video,
+    "mlsnext_video": _handle_mlsnext_video,
     "duda-360player-clubs": _handle_duda_360player_clubs,
     "duda_360player_clubs": _handle_duda_360player_clubs,
     "ncaa-rosters": _handle_ncaa_rosters,
@@ -1395,6 +1406,7 @@ SOURCE_HELP: dict[str, str] = {
     "usclub-id": "discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API (scaffold)",
     "ussoccer-ynt": "scrape US Soccer Youth National Team (YNT) call-ups from ussoccer.com press releases into ynt_call_ups",
     "youtube-ecnl": "scrape the ECNL YouTube channel (@TheECNL) RSS feed into video_sources",
+    "mlsnext-video": "scrape the MLS NEXT video library (mlssoccer.com/mlsnext/video) Brightcove cards into video_sources (source_platform='mls_com')",
     "ncaa-rosters": "NCAA D1/D2/D3 soccer roster scrape (SIDEARM-first). Exactly one of --school-url (single) OR --all (bulk; --division + --gender required). Writes colleges + college_coaches + college_roster_history.",
     "ncaa-seed-d1": "seed colleges table from stats.ncaa.org D1 men's + women's soccer program lists. Optional --gender mens|womens (default: both); --dry-run.",
     "ncaa-resolve-urls": "resolve colleges.soccer_program_url by probing the canonical SIDEARM roster path for each college.website. Scoped by --division (default D1); --limit N for smoke-tests; --dry-run.",
