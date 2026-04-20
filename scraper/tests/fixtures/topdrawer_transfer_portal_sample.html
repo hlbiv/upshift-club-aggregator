@@ -1,0 +1,87 @@
+<!--
+  Synthesized fixture — approximates the TopDrawerSoccer transfer-tracker
+  article HTML structure. Names below are fictional composites to avoid
+  reproducing real player PII; the HTML shape (single <table> with three
+  columns, position prefix on the Name cell, alphabetical by Incoming
+  College) is representative of what the extractor must handle.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>2026 Women's Division I Transfer Tracker — TopDrawerSoccer</title>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/college-soccer">College Soccer</a>
+    </nav>
+  </header>
+  <main>
+    <h1>2026 Women's Division I Transfer Tracker</h1>
+    <p>Listed players have either announced their destination on social
+       media or been announced by the school itself.</p>
+
+    <table class="transfer-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Outgoing College</th>
+          <th>Incoming College</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>D/F Chloe Bryant</td>
+          <td>Grambling State</td>
+          <td>Akron</td>
+        </tr>
+        <tr>
+          <td>D Hadley Hendrickson</td>
+          <td>Eastern Illinois</td>
+          <td>Akron</td>
+        </tr>
+        <tr>
+          <td>M/F Reece Paget</td>
+          <td>Seton Hall</td>
+          <td>Akron</td>
+        </tr>
+        <tr>
+          <td>GK Mira Okafor</td>
+          <td>Towson</td>
+          <td>Boston College</td>
+        </tr>
+        <tr>
+          <td>F Josephine Vance</td>
+          <td>UNC Greensboro</td>
+          <td>Clemson</td>
+        </tr>
+        <tr>
+          <td>M Ana Castellanos</td>
+          <td>Wake Forest</td>
+          <td>Duke</td>
+        </tr>
+        <!-- malformed row: no player name — must be dropped -->
+        <tr>
+          <td></td>
+          <td>Some Origin</td>
+          <td>Some Destination</td>
+        </tr>
+        <!-- malformed row: missing outgoing — must be dropped -->
+        <tr>
+          <td>F Someone Else</td>
+          <td></td>
+          <td>Destination University</td>
+        </tr>
+        <!-- row with no position prefix — position=None, name intact -->
+        <tr>
+          <td>Priya Ambedkar</td>
+          <td>Oregon State</td>
+          <td>Stanford</td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>

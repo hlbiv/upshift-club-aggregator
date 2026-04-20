@@ -1301,6 +1301,19 @@ def _handle_topdrawer_commitments(args: argparse.Namespace) -> None:
     _tdc_print_summary(outcome)
 
 
+def _handle_ncaa_transfer_portal(args: argparse.Namespace) -> None:
+    from transfer_portal_runner import (
+        run_ncaa_transfer_portal,
+        print_summary as _tp_print_summary,
+        DEFAULT_LIMIT as _TP_DEFAULT_LIMIT,
+    )
+    outcome = run_ncaa_transfer_portal(
+        dry_run=args.dry_run,
+        limit=args.limit if args.limit is not None else _TP_DEFAULT_LIMIT,
+    )
+    _tp_print_summary(outcome)
+
+
 # Kebab-case is the canonical, documented form in the CLI help output;
 # snake-case aliases exist only because early scripts sometimes passed
 # them. Keep both in SOURCE_HANDLERS but ONLY kebab in SOURCE_HELP (snake
@@ -1345,6 +1358,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "sportsengine_clubs": _handle_sportsengine_clubs,
     "topdrawer-commitments": _handle_topdrawer_commitments,
     "topdrawer_commitments": _handle_topdrawer_commitments,
+    "ncaa-transfer-portal": _handle_ncaa_transfer_portal,
+    "ncaa_transfer_portal": _handle_ncaa_transfer_portal,
     "club-enrichment": _handle_club_enrichment,
     "club_enrichment": _handle_club_enrichment,
     "club-dedup": _handle_club_dedup,
@@ -1389,6 +1404,7 @@ SOURCE_HELP: dict[str, str] = {
     "tryouts": "wordpress source + status expiry (see tryouts_runner.py for why GotSport tryout discovery is not supported)",
     "tryouts-gotsport": "removed — GotSport disallows automated event discovery",
     "topdrawer-commitments": "scrape college commitments from TopDrawerSoccer into commitments table (default --limit 20; expect 403 without proxies)",
+    "ncaa-transfer-portal": "scrape NCAA transfer-portal entries from TopDrawerSoccer tracker articles into transfer_portal_entries (default --limit 20; expect 403 without proxies)",
     "youth-coaches": "scrapes youth club staff pages into coach_discoveries",
     "squarespace-clubs": "Squarespace + JSON-LD harvest: rosters, coaches, tryouts, enrichment",
     "sportsengine-clubs": "SportsEngine + JSON-LD harvest: rosters, coaches, tryouts, enrichment",

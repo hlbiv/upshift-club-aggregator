@@ -268,6 +268,7 @@ export * from "./odp";
 export * from "./rosters-and-tryouts";
 export * from "./schools";
 export * from "./scrape-health";
+export * from "./transfer_portal";
 export * from "./api-keys";
 export * from "./admin";
 export * from "./scheduler-jobs";

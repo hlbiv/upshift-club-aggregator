@@ -474,6 +474,33 @@ assertTable(schema.commitments, "commitments", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain 12 — NCAA Transfer Portal (TopDrawerSoccer)
+// ---------------------------------------------------------------------------
+
+assertTable(schema.transferPortalEntries, "transfer_portal_entries", {
+  cols: [
+    "player_name",
+    "position",
+    "from_college_id",
+    "from_college_name_raw",
+    "to_college_id",
+    "to_college_name_raw",
+    "season_window",
+    "gender",
+    "division",
+    "source_url",
+    "first_seen_at",
+    "last_seen_at",
+  ],
+  uniques: ["transfer_portal_entries_natural_key_uq"],
+  indexes: [
+    "transfer_portal_entries_season_window_idx",
+    "transfer_portal_entries_to_college_id_idx",
+    "transfer_portal_entries_from_college_id_idx",
+  ],
+});
+
+// ---------------------------------------------------------------------------
 // Domain 9 — API keys (M2M auth)
 // ---------------------------------------------------------------------------
 
