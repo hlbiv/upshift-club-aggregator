@@ -2,17 +2,21 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LoginPage from "./pages/Login";
 import ScraperHealthPage from "./pages/ScraperHealth";
+import DedupPage from "./pages/Dedup";
+import DedupDetailPage from "./pages/DedupDetail";
 
 /**
  * Admin dashboard router.
  *
- *   /              → redirect to /scraper-health (auth-guarded)
- *   /login         → LoginPage (public)
- *   /scraper-health → ScraperHealthPage (wrapped in ProtectedRoute)
+ *   /                → redirect to /scraper-health (auth-guarded)
+ *   /login           → LoginPage (public)
+ *   /scraper-health  → ScraperHealthPage (wrapped in ProtectedRoute)
+ *   /dedup           → DedupPage (list of duplicate pairs)
+ *   /dedup/:id       → DedupDetailPage (single pair, merge/reject)
  *
  * ProtectedRoute calls GET /api/v1/admin/me on mount. 200 → render children,
- * 401 → <Navigate to="/login" />. Phase B.3 only ships these two pages;
- * scheduler / dedup / data-quality pages are future work.
+ * 401 → <Navigate to="/login" />. Phase C.4 adds the dedup routes; previous
+ * phases shipped scraper-health.
  */
 export default function App() {
   return (
@@ -23,6 +27,22 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ScraperHealthPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/dedup"
+        element={
+          <ProtectedRoute>
+            <DedupPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/dedup/:id"
+        element={
+          <ProtectedRoute>
+            <DedupDetailPage />
           </ProtectedRoute>
         }
       />
