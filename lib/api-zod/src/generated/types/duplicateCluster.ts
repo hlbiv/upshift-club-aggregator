@@ -5,14 +5,26 @@
  * Upshift Data API — youth soccer club graph database
  * OpenAPI spec version: 0.2.0
  */
+import type { DuplicateReview } from "./duplicateReview";
 
+/**
+ * One near-duplicate pair (the enclosing cluster's context is included for UI display).
+ */
 export interface DuplicateCluster {
   /** Club name after stripping common suffixes (FC, SC, United, Academy, etc.) */
   normalized_name: string;
   state?: string | null;
+  /** Number of clubs in the enclosing cluster (>= 2) */
   club_count: number;
   club_ids: number[];
   club_names: string[];
   /** Distinct league/source names the clustered clubs appear in */
   sources: string[];
+  /** Lower-id member of the pair (normalized so club_a_id < club_b_id) */
+  club_a_id: number;
+  /** Higher-id member of the pair */
+  club_b_id: number;
+  club_a_name: string;
+  club_b_name: string;
+  review?: DuplicateReview | null;
 }
