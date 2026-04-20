@@ -568,6 +568,7 @@ def _handle_club_dedup(args: argparse.Namespace) -> None:
         threshold=0.85,
         dry_run=args.dry_run,
         state=args.state if hasattr(args, "state") else None,
+        persist=getattr(args, "persist", False),
     )
     print_report(pairs)
 
@@ -1371,6 +1372,11 @@ def main() -> None:
                         help="For --source club-dedup-resolve: explicitly opt in to "
                              "committing auto-merge tier merges. Without this flag the "
                              "resolver runs in dry-run mode regardless. Ignored by other "
+                             "sources.")
+    parser.add_argument("--persist", action="store_true",
+                        help="For --source club-dedup: persist pending pairs into "
+                             "club_duplicates table so the admin dedup review panel has a queue. "
+                             "Without this flag club-dedup prints pairs only. Ignored by other "
                              "sources.")
     parser.add_argument("--platform-family",
                         choices=["sportsengine", "leagueapps", "wordpress", "unknown"],
