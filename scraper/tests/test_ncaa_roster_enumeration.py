@@ -132,50 +132,62 @@ class TestResolveSoccerProgramUrlHit:
 # ---------------------------------------------------------------------------
 
 
+def _head_resp(status: int, url: str) -> mock.Mock:
+    resp = mock.Mock()
+    resp.status_code = status
+    resp.url = url
+    return resp
+
+
 class TestResolveSoccerProgramUrlMiss:
-    """These exist so PR-2 can't regress into 'always returns a URL'."""
+    """These exist so the resolver can't regress into 'always returns a URL'.
 
-    def test_404_returns_none(self):
-        fake_resp = mock.Mock()
-        fake_resp.status_code = 404
-        fake_resp.url = "https://example.edu/sports/mens-soccer/roster"
+    Multi-path probe (PR-3): the resolver tries up to 4 paths per gender.
+    A full 'miss' means every path returned non-200 or redirected away.
+    """
+
+    def test_all_paths_404_returns_none(self):
         fake_session = mock.Mock()
-        fake_session.head.return_value = fake_resp
+        fake_session.head.side_effect = [
+            _head_resp(404, "https://example.edu/sports/mens-soccer/roster"),
+            _head_resp(404, "https://example.edu/sports/msoc/roster"),
+            _head_resp(404, "https://example.edu/sports/soccer/roster"),
+            _head_resp(404, "https://example.edu/sports/m-soccer/roster"),
+        ]
+        result = resolve_soccer_program_url(
+            "https://example.edu", "mens", session=fake_session
+        )
+        assert result is None
+        assert fake_session.head.call_count == 4
 
+    def test_all_paths_500_returns_none(self):
+        fake_session = mock.Mock()
+        fake_session.head.side_effect = [
+            _head_resp(500, "https://example.edu/sports/mens-soccer/roster"),
+            _head_resp(500, "https://example.edu/sports/msoc/roster"),
+            _head_resp(500, "https://example.edu/sports/soccer/roster"),
+            _head_resp(500, "https://example.edu/sports/m-soccer/roster"),
+        ]
         result = resolve_soccer_program_url(
             "https://example.edu", "mens", session=fake_session
         )
         assert result is None
 
-    def test_500_returns_none(self):
-        fake_resp = mock.Mock()
-        fake_resp.status_code = 500
-        fake_resp.url = "https://example.edu/sports/mens-soccer/roster"
+    def test_all_paths_redirect_away_returns_none(self):
+        """Every probe 200s but lands on the homepage — catch-all redirect pattern."""
         fake_session = mock.Mock()
-        fake_session.head.return_value = fake_resp
-
+        fake_session.head.side_effect = [
+            _head_resp(200, "https://example.edu/"),
+            _head_resp(200, "https://example.edu/"),
+            _head_resp(200, "https://example.edu/"),
+            _head_resp(200, "https://example.edu/"),
+        ]
         result = resolve_soccer_program_url(
             "https://example.edu", "mens", session=fake_session
         )
         assert result is None
 
-    def test_redirect_away_from_path_returns_none(self):
-        """200 that landed on the site's homepage (e.g. catch-all 301 → /)
-        is treated as a miss — valid roster paths keep /sports/<g>-soccer/roster
-        in the final URL.
-        """
-        fake_resp = mock.Mock()
-        fake_resp.status_code = 200
-        fake_resp.url = "https://example.edu/"
-        fake_session = mock.Mock()
-        fake_session.head.return_value = fake_resp
-
-        result = resolve_soccer_program_url(
-            "https://example.edu", "mens", session=fake_session
-        )
-        assert result is None
-
-    def test_connection_error_returns_none(self):
+    def test_all_paths_connection_error_returns_none(self):
         import requests as _requests
 
         fake_session = mock.Mock()
@@ -185,10 +197,113 @@ class TestResolveSoccerProgramUrlMiss:
             "https://example.edu", "mens", session=fake_session
         )
         assert result is None
+        # Each path should be tried even on network error
+        assert fake_session.head.call_count == 4
 
     def test_empty_website_returns_none(self):
         assert resolve_soccer_program_url(None, "mens") is None
         assert resolve_soccer_program_url("", "mens") is None
+
+    def test_invalid_gender_returns_none(self):
+        assert resolve_soccer_program_url("https://example.edu", "boys") is None
+
+
+# ---------------------------------------------------------------------------
+# resolve_soccer_program_url — multi-path probe ordering (PR-3)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveSoccerProgramUrlMultiPath:
+    """PR-3: if the canonical path misses, fall back to abbreviated/combined
+    variants. First match wins; resolver short-circuits on hit.
+    """
+
+    def test_canonical_hit_does_not_probe_fallbacks(self):
+        """Short-circuit: first 200 ends the probe."""
+        fake_session = mock.Mock()
+        fake_session.head.return_value = _head_resp(
+            200, "https://guhoyas.com/sports/mens-soccer/roster"
+        )
+
+        result = resolve_soccer_program_url(
+            "https://guhoyas.com", "mens", session=fake_session
+        )
+        assert result == "https://guhoyas.com/sports/mens-soccer/roster"
+        assert fake_session.head.call_count == 1
+
+    def test_falls_through_to_wsoc_abbreviated(self):
+        """Iowa/Kentucky pattern: canonical 404s, /sports/wsoc/roster 200s."""
+        fake_session = mock.Mock()
+        fake_session.head.side_effect = [
+            _head_resp(404, "https://hawkeyesports.com/sports/womens-soccer/roster"),
+            _head_resp(200, "https://hawkeyesports.com/sports/wsoc/roster"),
+        ]
+
+        result = resolve_soccer_program_url(
+            "https://hawkeyesports.com", "womens", session=fake_session
+        )
+        assert result == "https://hawkeyesports.com/sports/wsoc/roster"
+        assert fake_session.head.call_count == 2
+
+    def test_falls_through_to_combined_soccer_page(self):
+        """Purdue/Nebraska pattern: /sports/soccer/roster for both genders."""
+        fake_session = mock.Mock()
+        fake_session.head.side_effect = [
+            _head_resp(404, "https://huskers.com/sports/mens-soccer/roster"),
+            _head_resp(404, "https://huskers.com/sports/msoc/roster"),
+            _head_resp(200, "https://huskers.com/sports/soccer/roster"),
+        ]
+
+        result = resolve_soccer_program_url(
+            "https://huskers.com", "mens", session=fake_session
+        )
+        assert result == "https://huskers.com/sports/soccer/roster"
+        assert fake_session.head.call_count == 3
+
+    def test_falls_through_to_dash_variant(self):
+        """Rare /sports/m-soccer/ variant as the 4th fallback."""
+        fake_session = mock.Mock()
+        fake_session.head.side_effect = [
+            _head_resp(404, "https://example.edu/sports/mens-soccer/roster"),
+            _head_resp(404, "https://example.edu/sports/msoc/roster"),
+            _head_resp(404, "https://example.edu/sports/soccer/roster"),
+            _head_resp(200, "https://example.edu/sports/m-soccer/roster"),
+        ]
+
+        result = resolve_soccer_program_url(
+            "https://example.edu", "mens", session=fake_session
+        )
+        assert result == "https://example.edu/sports/m-soccer/roster"
+        assert fake_session.head.call_count == 4
+
+    def test_connection_error_on_one_path_tries_next(self):
+        """A transient error on path N shouldn't abort the probe — try path N+1."""
+        import requests as _requests
+
+        fake_session = mock.Mock()
+        fake_session.head.side_effect = [
+            _requests.ConnectionError("timeout on first"),
+            _head_resp(200, "https://example.edu/sports/msoc/roster"),
+        ]
+
+        result = resolve_soccer_program_url(
+            "https://example.edu", "mens", session=fake_session
+        )
+        assert result == "https://example.edu/sports/msoc/roster"
+        assert fake_session.head.call_count == 2
+
+    def test_mens_and_womens_try_different_path_orders(self):
+        """Sanity: men's paths include mens-soccer, women's include womens-soccer.
+        The 'combined soccer' path is shared; abbreviations are gendered.
+        """
+        from extractors.ncaa_directory import _SIDEARM_PATHS
+
+        assert _SIDEARM_PATHS["mens"][0] == "/sports/mens-soccer/roster"
+        assert _SIDEARM_PATHS["womens"][0] == "/sports/womens-soccer/roster"
+        assert "/sports/msoc/roster" in _SIDEARM_PATHS["mens"]
+        assert "/sports/wsoc/roster" in _SIDEARM_PATHS["womens"]
+        assert "/sports/soccer/roster" in _SIDEARM_PATHS["mens"]
+        assert "/sports/soccer/roster" in _SIDEARM_PATHS["womens"]
 
 
 # ---------------------------------------------------------------------------
