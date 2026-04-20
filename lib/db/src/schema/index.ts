@@ -270,6 +270,7 @@ export * from "./schools";
 export * from "./scrape-health";
 export * from "./api-keys";
 export * from "./admin";
+export * from "./scheduler-jobs";
 export * from "./club-duplicates";
 export * from "./player-id-selections";
 export * from "./ynt";
