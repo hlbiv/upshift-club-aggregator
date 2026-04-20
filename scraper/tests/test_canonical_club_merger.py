@@ -384,6 +384,9 @@ def _empty_state(loser_id=10, winner_id=20):
         "event_teams": [],
         "matches": [],
         "player_id_selections": [],
+        "commitments": [],
+        "ynt_call_ups": [],
+        "odp_roster_entries": [],
         "club_roster_snapshots": [],
         "roster_diffs": [],
         "tryouts": [],
@@ -435,6 +438,32 @@ def test_merge_redirects_simple_fk_tables():
     assert len(aliases_for_winner) == 1
     assert aliases_for_winner[0]["alias_name"] == "Club Loser"
     assert aliases_for_winner[0]["merged_from_canonical_id"] == 10
+
+
+def test_merge_redirects_commitments_ynt_odp():
+    """commitments, ynt_call_ups, odp_roster_entries — newer domains added
+    after the original merger; ensure their club_id FKs get redirected so
+    the final DELETE FROM canonical_clubs doesn't FK-violate (ynt/odp have
+    NO ACTION onDelete) and commitments don't get their club link nulled."""
+    state = _empty_state()
+    state["commitments"].append({"club_id": 10, "player_name": "Jane Doe"})
+    state["ynt_call_ups"].append({"club_id": 10, "player_name": "Jane Doe"})
+    state["odp_roster_entries"].append({
+        "club_id": 10, "player_name": "Jane Doe",
+    })
+
+    conn = FakeConn(state)
+    res = merge_canonical_clubs(loser_id=10, winner_id=20, conn=conn)
+
+    assert res.committed
+    assert state["canonical_clubs"].get(10) is None
+    assert state["commitments"][0]["club_id"] == 20
+    assert state["ynt_call_ups"][0]["club_id"] == 20
+    assert state["odp_roster_entries"][0]["club_id"] == 20
+    # Redirect counts reported in the result.
+    assert res.rows_redirected.get("commitments.club_id") == 1
+    assert res.rows_redirected.get("ynt_call_ups.club_id") == 1
+    assert res.rows_redirected.get("odp_roster_entries.club_id") == 1
 
 
 def test_merge_dedupes_composite_uq_collisions():
