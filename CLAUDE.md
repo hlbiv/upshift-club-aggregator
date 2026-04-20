@@ -332,6 +332,8 @@ Idempotent — only touches rows where the FK is currently NULL.
 
 **Downstream consumers depend on this running:** `/api/events/search?club_id=N` (SincSports events scraper in PR #11 writes NULL FKs by design), `matches` → `club_results` rollup. Neither works end-to-end without at least one linker pass.
 
+The analogous `link-canonical-schools` job (resolves `hs_rosters.school_id` via `canonical_schools` + `school_aliases`) is scheduled via `.replit` as `nightly-canonical-school-linker` at `30 3 * * *` UTC; it runs nightly and picks up whatever the operator-invoked MaxPreps scraper wrote since the last pass.
+
 See `docs/path-a-data-model.md` for the full domain-by-domain spec + changelog.
 
 ---

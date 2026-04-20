@@ -36,6 +36,11 @@ cron = "0 3 * * *"
 command = "cd scraper && python3 run.py --source link-canonical-clubs"
 
 [[deployment.scheduledJobs]]
+name = "nightly-canonical-school-linker"
+cron = "30 3 * * *"
+command = "cd scraper && python3 run.py --source link-canonical-schools"
+
+[[deployment.scheduledJobs]]
 name = "daily-club-results-rollup"
 cron = "0 4 * * *"
 command = "cd scraper && python3 run.py --rollup club-results"
