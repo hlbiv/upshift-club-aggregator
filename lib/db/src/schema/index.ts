@@ -267,5 +267,6 @@ export * from "./odp";
 export * from "./rosters-and-tryouts";
 export * from "./scrape-health";
 export * from "./api-keys";
+export * from "./admin";
 export * from "./player-id-selections";
 export * from "./ynt";

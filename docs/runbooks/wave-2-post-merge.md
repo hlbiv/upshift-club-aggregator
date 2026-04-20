@@ -128,33 +128,25 @@ The middleware tests that shipped with #62 already cover correctness — the smo
    ```
 
 3. In Secrets: set `ARCHIVE_RAW_HTML_ENABLED=true`.
-4. Smoke with a timestamped key so you can grep-and-delete after:
+4. Smoke with a concrete named key so you can clean up deterministically:
 
    ```bash
-   export SMOKE_URL="https://example.com/runbook-smoke-$(date +%Y%m%dT%H%M%S)"
+   SMOKE_KEY="smoke-tests/runbook-check-$(date +%s).html"
+   export SMOKE_URL="https://example.com/$SMOKE_KEY"
    python3 -c "
    from scraper.utils.html_archive import archive_raw_html
    import os
    result = archive_raw_html(os.environ['SMOKE_URL'], '<html>hi</html>')
    print(result)
    "
+   # Cleanup (same shell session, before leaving §5):
+   psql "$DATABASE_URL" -c "DELETE FROM raw_html_archive WHERE bucket_path LIKE 'smoke-tests/%';"
+   # Then manually remove the object from Replit Object Storage console.
    ```
 
-   Expect `{sha256, bucket_path, content_bytes}`. If `None`: check stderr for the one-time init warning.
+   Expect `{sha256, bucket_path, content_bytes}`. If `None`: check stderr for the one-time init warning. The `smoke-tests/` prefix keeps every runbook smoke in its own bucket namespace — the row-level DELETE above clears the DB side; the console click clears the bucket side.
 
-5. **Cleanup after smoke** (otherwise you accumulate one test object per runbook run):
-
-   ```sql
-   -- Find the smoke row:
-   SELECT id, sha256, bucket_path, archived_at
-   FROM raw_html_archive
-   WHERE source_url LIKE '%runbook-smoke-%'
-   ORDER BY archived_at DESC LIMIT 5;
-   ```
-
-   Delete the `bucket_path` object from Replit Object Storage console manually, then `DELETE FROM raw_html_archive WHERE id = <row_id>;`.
-
-6. **Real smoke** (after any scrape run):
+5. **Real smoke** (after any scrape run):
 
    ```sql
    SELECT count(*) FROM raw_html_archive
@@ -391,13 +383,18 @@ If anything misbehaves, flip one of these in Secrets and restart the api-server 
 - [ ] API docs reachable at `/api/docs` (auth not required for docs page itself)
 - [ ] Rate-limit headers present on authed requests (or parallel burst trips 429s)
 - [ ] `raw_html_archive` has rows after first scrape with flag on
-- [ ] Smoke-test bucket object cleaned up (§5 step 5)
+- [ ] Smoke-test bucket object cleaned up (§5 step 4 cleanup block)
 - [ ] One manual scheduler-script run logged as `triggered_by='manual'`
 - [ ] Next-morning: at least one `triggered_by='scheduler'` row in `scrape_run_logs`
 - [ ] Sibling repo (`upshift-studio`) builds clean + tests pass
 - [ ] One new API key minted, plaintext stored in sibling's `UPSHIFT_DATA_API_KEY`
 - [ ] Linker pass run once; NULL FK counts verified shrinking
 - [ ] WIP stash in sibling recovered or intentionally dropped
-- [ ] At least one `replay-html` run succeeded end-to-end (`python3 scraper/run.py --source replay-html --run-id <recent-uuid> --limit 5`) — validates §5 archival + §9 replay loop closes
+- [ ] At least one `replay-html` run succeeded end-to-end — validates §5 archival + §9 replay loop closes:
+
+  ```bash
+  run_id=$(psql "$DATABASE_URL" -tAc "SELECT run_id FROM scrape_run_logs WHERE status='success' ORDER BY completed_at DESC LIMIT 1")
+  python3 scraper/run.py --source replay-html --run-id "$run_id" --limit 5
+  ```
 
 If any box stays unchecked after a full pass, file an issue tagged `post-wave-2` with the failing command + output.

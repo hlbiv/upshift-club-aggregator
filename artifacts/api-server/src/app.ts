@@ -1,13 +1,19 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type Express } from "express";
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { apiKeyAuth } from "./middlewares/apiKeyAuth";
 import { buildRateLimiter } from "./middlewares/rateLimit";
+import { requireAdmin } from "./middlewares/requireAdmin";
 import { buildDocsRouter } from "./routes/docs";
+import {
+  unauthAdminRouter,
+  authedAdminRouter,
+} from "./routes/admin";
 
 const app: Express = express();
 
@@ -33,6 +39,10 @@ app.use(
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Cookie parser — needed for `/v1/admin/*` which uses the
+// `upshift_admin_sid` session cookie. Harmless for the public `/api/*`
+// surface (M2M callers don't set cookies).
+app.use(cookieParser());
 
 // M2M API-key auth. Runs before the router so every `/api/*` path except
 // the liveness probe requires a valid key. See middlewares/apiKeyAuth.ts.
@@ -98,6 +108,37 @@ if (docsRouter) {
 app.use("/api", router);
 
 // --------------------------------------------------------------------------
+// Admin surface — `/v1/admin/*`.
+//
+// Two mounts, in this order:
+//
+//   1. `POST /v1/admin/auth/login` is mounted OUTSIDE the requireAdmin
+//      guard — it IS the auth entry point and can't require an already-
+//      authenticated caller. Rate-limited at 10/min per IP to slow password
+//      spraying (tighter than the 120/min read limit on everything else).
+//
+//   2. Everything else is mounted behind requireAdmin (session cookie OR
+//      API key with the `admin` scope) + a 120/min-per-key-or-IP limiter.
+//      Mutations inside the admin surface should use 30/min, but Phase B.1
+//      only ships reads + auth, so the single 120/min is enough for now.
+//
+// The admin surface intentionally does NOT piggyback on `apiKeyAuth`'s
+// `/api/*` path prefix — see middlewares/requireAdmin.ts for the detailed
+// auth protocol.
+// --------------------------------------------------------------------------
+app.use(
+  "/v1/admin",
+  buildRateLimiter({ authLimit: 10, ipLimit: 10 }),
+  unauthAdminRouter,
+);
+app.use(
+  "/v1/admin",
+  requireAdmin,
+  buildRateLimiter({ authLimit: 120, ipLimit: 120 }),
+  authedAdminRouter,
+);
+
+// --------------------------------------------------------------------------
 // Serve the built mockup-sandbox frontend as static files.
 // In production the Vite build output lives at ../../mockup-sandbox/dist.
 // All non-API requests fall through to index.html (SPA client-side routing).
@@ -107,8 +148,10 @@ const frontendDist = path.resolve(__dirname, "../../mockup-sandbox/dist");
 
 app.use(express.static(frontendDist));
 app.get("/{*path}", (_req, res, next) => {
-  // Don't intercept /api routes that didn't match
+  // Don't intercept /api or /v1/admin routes that didn't match — let them
+  // 404 as JSON instead of falling through to the SPA's index.html.
   if (_req.path.startsWith("/api")) return next();
+  if (_req.path.startsWith("/v1/admin")) return next();
   res.sendFile(path.join(frontendDist, "index.html"), (err) => {
     if (err) next();
   });

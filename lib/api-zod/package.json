@@ -1,6 +1,6 @@
 {
   "name": "@hlbiv/api-zod",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Orval-generated Zod validators and TypeScript types for the Upshift Data API (youth soccer club graph).",
   "license": "UNLICENSED",
   "type": "module",
@@ -12,6 +12,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./admin": {
+      "types": "./dist/admin/index.d.ts",
+      "import": "./dist/admin/index.js",
+      "default": "./dist/admin/index.js"
     }
   },
   "files": [

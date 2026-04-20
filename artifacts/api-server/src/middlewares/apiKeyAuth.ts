@@ -17,14 +17,9 @@ import { hashApiKey, findApiKeyByHash, type ApiKey } from "@workspace/db";
 
 type ApiKeyLookup = (hash: string) => Promise<ApiKey | null>;
 
-declare module "express" {
-  interface Request {
-    apiKey?: Pick<
-      ApiKey,
-      "id" | "name" | "keyPrefix" | "scopes" | "createdAt"
-    >;
-  }
-}
+// Module augmentation for `req.apiKey` is centralized in
+// src/types/express.d.ts — keep this file free of `declare module` so both
+// the type declaration and this runtime file agree on one source.
 
 // Paths are compared against req.path, which inside a mounted sub-app
 // excludes the mount prefix. Since this middleware is mounted at `/api`
