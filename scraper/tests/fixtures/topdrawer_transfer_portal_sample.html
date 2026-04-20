@@ -1,84 +1,103 @@
 <!--
-  Synthesized fixture — approximates the TopDrawerSoccer transfer-tracker
-  article HTML structure. Names below are fictional composites to avoid
-  reproducing real player PII; the HTML shape (single <table> with three
-  columns, position prefix on the Name cell, alphabetical by Incoming
-  College) is representative of what the extractor must handle.
+  Trimmed real capture from TopDrawerSoccer 2026 Women's D1 transfer tracker.
+  Source URL:
+    https://www.topdrawersoccer.com/college-soccer-articles/2026-womens-division-i-transfer-tracker_aid55352
+  Captured: 2026-04-20. Kept 10 representative data rows + header.
+
+  Player names are real but these are officially-announced D1 transfers
+  published on TopDrawerSoccer — no PII concern.
+
+  Key structural facts this fixture exercises (and that the prior
+  synthesized fixture did NOT):
+    * NO <thead> element.
+    * Header row lives inside <tbody> as <tr><td><strong>Name</strong>...
+      i.e. <td> cells wrapped in <strong>, NOT <th>. The parser's
+      td-fallback header path must pick this up.
+    * Cells contain literal &nbsp; between the position token and the
+      player name (e.g. "D/F&nbsp;Chloe Bryant&nbsp;") and as trailing
+      whitespace. BeautifulSoup decodes these to U+00A0 which
+      Python's str.split() treats as whitespace — _clean() normalizes.
+    * Some Name cells embed the player name inside an <a> tag (e.g.
+      "D <a>Leah Klurman</a>") and some put it as plain text.
+    * Table element has no <thead>/<th>, no class, only inline style
+      and a legacy border="5" attribute.
 -->
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>2026 Women's Division I Transfer Tracker — TopDrawerSoccer</title>
-</head>
+<head><meta charset="utf-8"><title>2026 Women's Division I Transfer Tracker &mdash; TopDrawerSoccer</title></head>
 <body>
-  <header>
-    <nav>
-      <a href="/">Home</a>
-      <a href="/college-soccer">College Soccer</a>
-    </nav>
-  </header>
   <main>
     <h1>2026 Women's Division I Transfer Tracker</h1>
     <p>Listed players have either announced their destination on social
        media or been announced by the school itself.</p>
-
-    <table class="transfer-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Outgoing College</th>
-          <th>Incoming College</th>
-        </tr>
-      </thead>
+    <table style="width: 600px;" border="5">
       <tbody>
         <tr>
-          <td>D/F Chloe Bryant</td>
-          <td>Grambling State</td>
-          <td>Akron</td>
+          <td><strong>Name</strong></td>
+          <td><strong>Outgoing College</strong></td>
+          <td><strong>Incoming College</strong></td>
         </tr>
         <tr>
-          <td>D Hadley Hendrickson</td>
-          <td>Eastern Illinois</td>
-          <td>Akron</td>
+          <td>D/F&nbsp;Chloe Bryant&nbsp;</td>
+          <td><a href="/college-soccer/college-soccer-details/women/grambling-state/clgid-302">Grambling State</a></td>
+          <td><a href="/college-soccer/college-soccer-details/women/akron/clgid-128">Akron</a></td>
         </tr>
         <tr>
-          <td>M/F Reece Paget</td>
-          <td>Seton Hall</td>
-          <td>Akron</td>
+          <td>D&nbsp;Hadley Hendrickson</td>
+          <td><a href="/college-soccer/college-soccer-details/women/eastern-illinois/clgid-255">Eastern Illinois</a>&nbsp;</td>
+          <td><a href="/college-soccer/college-soccer-details/women/akron/clgid-128">Akron</a></td>
         </tr>
         <tr>
-          <td>GK Mira Okafor</td>
-          <td>Towson</td>
-          <td>Boston College</td>
+          <td>M/F&nbsp;Reece Paget</td>
+          <td><a href="/college-soccer/college-soccer-details/women/seton-hall/clgid-46">Seton Hall</a></td>
+          <td><a href="/college-soccer/college-soccer-details/women/akron/clgid-128">Akron</a></td>
         </tr>
         <tr>
-          <td>F Josephine Vance</td>
-          <td>UNC Greensboro</td>
-          <td>Clemson</td>
+          <td>D&nbsp;Tewabech Seerup</td>
+          <td><a href="/college-soccer/college-soccer-details/women/depaul/clgid-42">DePaul</a></td>
+          <td><a href="/college-soccer/college-soccer-details/women/akron/clgid-128">Akron</a></td>
         </tr>
         <tr>
-          <td>M Ana Castellanos</td>
-          <td>Wake Forest</td>
-          <td>Duke</td>
+          <td>D <a href="/college-soccer/college-player-profile/leah-klurman/cpid-123313">Leah Klurman</a></td>
+          <td><a href="/college-soccer/college-soccer-details/women/tennessee/clgid-282">Tennessee</a></td>
+          <td><a href="/college-soccer/college-soccer-details/women/alabama/clgid-280">Alabama</a></td>
         </tr>
-        <!-- malformed row: no player name — must be dropped -->
+        <tr>
+          <td>GK Olivia Herrera</td>
+          <td><a href="/college-soccer/college-soccer-details/women/arizona-state/clgid-274">Arizona State</a>&nbsp;</td>
+          <td><a href="/college-soccer/college-soccer-details/women/alabama/clgid-280">Alabama</a>&nbsp;</td>
+        </tr>
+        <tr>
+          <td>D <a href="/college-soccer/college-player-profile/madden-mcdonald/cpid-1028290">Madden McDonald</a></td>
+          <td><a href="/college-soccer/college-soccer-details/women/south-carolina/clgid-276">South Carolina</a></td>
+          <td><a href="/college-soccer/college-soccer-details/women/arkansas/clgid-286">Arkansas</a></td>
+        </tr>
+        <tr>
+          <td>F Aurora Gaines</td>
+          <td><a href="/college-soccer/college-soccer-details/women/arizona/clgid-270">Arizona</a></td>
+          <td><a href="/college-soccer/college-soccer-details/women/auburn/clgid-279">Auburn</a></td>
+        </tr>
+        <tr>
+          <td>M <a href="/college-soccer/college-player-profile/kelly-gordon/cpid-146071">Kelly Gordon</a></td>
+          <td><a href="/college-soccer/college-soccer-details/women/smu/clgid-96">SMU</a>&nbsp;</td>
+          <td><a href="/college-soccer/college-soccer-details/women/auburn/clgid-279">Auburn</a></td>
+        </tr>
+        <tr>
+          <td>GK Kennedy Zorn</td>
+          <td><a href="/college-soccer/college-soccer-details/women/michigan-state/clgid-497">Michigan State</a>&nbsp;</td>
+          <td><a href="/college-soccer/college-soccer-details/women/arizona-state/clgid-274">Arizona State</a>&nbsp;</td>
+        </tr>
+        <!-- malformed row: empty player name — must be dropped -->
         <tr>
           <td></td>
-          <td>Some Origin</td>
-          <td>Some Destination</td>
+          <td><a href="/college-soccer/college-soccer-details/women/origin/clgid-1">Some Origin</a></td>
+          <td><a href="/college-soccer/college-soccer-details/women/dest/clgid-2">Some Destination</a></td>
         </tr>
-        <!-- malformed row: missing outgoing — must be dropped -->
+        <!-- malformed row: missing outgoing college — must be dropped -->
         <tr>
           <td>F Someone Else</td>
           <td></td>
-          <td>Destination University</td>
-        </tr>
-        <!-- row with no position prefix — position=None, name intact -->
-        <tr>
-          <td>Priya Ambedkar</td>
-          <td>Oregon State</td>
-          <td>Stanford</td>
+          <td><a href="/college-soccer/college-soccer-details/women/dest/clgid-2">Destination University</a></td>
         </tr>
       </tbody>
     </table>
