@@ -4,18 +4,16 @@
  *   GET /api/v1/admin/scrape-runs?since=&source=&status=&limit=&page=
  *   GET /api/v1/admin/scrape-runs/:id
  *
- * The DB schema (see lib/db/src/schema/scrape-health.ts) and the API
- * contract (docs/planning/upshift-data-admin-api-contract.md) diverge on
- * field names — `scraper_key` vs. `source`, `completed_at` vs.
- * `finishedAt`, `records_created + records_updated` vs. `rowsIn/rowsOut`.
- * This route is the single place we translate between the two shapes so
- * the contract is stable even if the DB evolves.
+ * As of api-zod v0.4.0 the contract field names mirror the DB column names
+ * (scraperKey, completedAt, recordsTouched, status enum
+ * `running|ok|partial|failed`). We select the rows and let Zod's `.parse()`
+ * strip unknown DB-only fields (records_created, error_message detail, etc.).
  *
- * Status mapping:
- *   DB status is one of: 'running' | 'ok' | 'partial' | 'failed'
- *   Contract status is:  'running' | 'success' | 'failure'
- *   Mapping: ok → success, partial → success (it completed), failed → failure,
- *            running → running.
+ * `?source=` query param is preserved for backward compatibility — it maps
+ * to a `scraperKey` filter. Likewise the `?status=` filter accepts either
+ * the legacy contract enum (`success`/`failure`) or the new DB enum
+ * (`ok`/`partial`/`failed`/`running`) so callers mid-migration continue to
+ * work.
  */
 import { Router, type IRouter } from "express";
 import { and, desc, eq, gte, sql, type SQL } from "drizzle-orm";
@@ -25,57 +23,23 @@ import { parsePagination } from "../../lib/pagination";
 
 const router: IRouter = Router();
 
-type ContractStatus = "success" | "failure" | "running";
-
-function mapStatus(dbStatus: string): ContractStatus {
-  if (dbStatus === "running") return "running";
-  if (dbStatus === "failed") return "failure";
-  // 'ok' and 'partial' both represent "run completed" — collapse to success.
-  return "success";
-}
-
 /**
- * Inverse mapping: from a contract-status filter to a SQL predicate on the
- * DB column. Returns undefined for an unknown status (caller skips the
- * filter rather than returning a 400 — matches the other /api/* routes).
+ * Map a status query param to a SQL predicate on the DB column. Accepts
+ * the DB enum directly (`running`/`ok`/`partial`/`failed`) plus the two
+ * legacy contract aliases (`success` → `ok|partial`, `failure` → `failed`)
+ * so callers mid-migration don't break.
  */
 function statusFilterSQL(value: string): SQL | undefined {
   if (value === "running") return eq(scrapeRunLogs.status, "running");
-  if (value === "failure") return eq(scrapeRunLogs.status, "failed");
+  if (value === "ok") return eq(scrapeRunLogs.status, "ok");
+  if (value === "partial") return eq(scrapeRunLogs.status, "partial");
+  if (value === "failed" || value === "failure") {
+    return eq(scrapeRunLogs.status, "failed");
+  }
   if (value === "success") {
     return sql`${scrapeRunLogs.status} IN ('ok', 'partial')`;
   }
   return undefined;
-}
-
-function rowToContract(row: typeof scrapeRunLogs.$inferSelect): unknown {
-  const rowsIn =
-    row.recordsCreated != null || row.recordsUpdated != null
-      ? (row.recordsCreated ?? 0) + (row.recordsUpdated ?? 0)
-      : null;
-  return {
-    id: row.id,
-    source: row.scraperKey,
-    // No dedicated jobKey column yet — scheduler work will add one. Until
-    // then, the best approximation is the scraper_key (scrape source).
-    // Keep it explicitly null so clients don't think it's populated data.
-    jobKey: null,
-    status: mapStatus(row.status),
-    startedAt: row.startedAt.toISOString(),
-    finishedAt: row.completedAt ? row.completedAt.toISOString() : null,
-    rowsIn,
-    rowsOut: row.recordsTouched ?? null,
-    errorMessage: row.errorMessage ?? null,
-    // No metadata jsonb column on scrape_run_logs today; surface the
-    // failure_kind + triggered_by as a synthetic metadata bag so admin UIs
-    // don't have to special-case.
-    metadata: {
-      failureKind: row.failureKind ?? null,
-      triggeredBy: row.triggeredBy,
-      sourceUrl: row.sourceUrl ?? null,
-      leagueName: row.leagueName ?? null,
-    },
-  };
 }
 
 router.get("/", async (req, res, next): Promise<void> => {
@@ -123,9 +87,28 @@ router.get("/", async (req, res, next): Promise<void> => {
       .limit(pageSize)
       .offset(offset);
 
+    // No dedicated `jobKey` column yet — scheduler work will add one. The
+    // contract permits null so we surface null explicitly. `metadata` is
+    // synthesized from supplementary scrape_run_logs columns that don't
+    // have their own contract fields (failure_kind, triggered_by, etc.).
     res.json(
       ScrapeRunLogList.parse({
-        runs: rows.map(rowToContract),
+        runs: rows.map((row) => ({
+          id: row.id,
+          scraperKey: row.scraperKey,
+          jobKey: null,
+          status: row.status,
+          startedAt: row.startedAt.toISOString(),
+          completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+          recordsTouched: row.recordsTouched ?? null,
+          errorMessage: row.errorMessage ?? null,
+          metadata: {
+            failureKind: row.failureKind ?? null,
+            triggeredBy: row.triggeredBy,
+            sourceUrl: row.sourceUrl ?? null,
+            leagueName: row.leagueName ?? null,
+          },
+        })),
         total,
         page,
         pageSize,
@@ -155,7 +138,24 @@ router.get("/:id", async (req, res, next): Promise<void> => {
       return;
     }
 
-    res.json(ScrapeRunLog.parse(rowToContract(row)));
+    res.json(
+      ScrapeRunLog.parse({
+        id: row.id,
+        scraperKey: row.scraperKey,
+        jobKey: null,
+        status: row.status,
+        startedAt: row.startedAt.toISOString(),
+        completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+        recordsTouched: row.recordsTouched ?? null,
+        errorMessage: row.errorMessage ?? null,
+        metadata: {
+          failureKind: row.failureKind ?? null,
+          triggeredBy: row.triggeredBy,
+          sourceUrl: row.sourceUrl ?? null,
+          leagueName: row.leagueName ?? null,
+        },
+      }),
+    );
   } catch (err) {
     next(err);
   }

@@ -4,17 +4,13 @@
  *   GET /api/v1/admin/scrape-health
  *   GET /api/v1/admin/scrape-health/:entity_type/:entity_id
  *
- * The `scrape_health` table has an `(entity_type, entity_id)` composite key
- * — not a surrogate serial — so the detail route is 2-segment. Status
- * mapping is the same as scrape-runs.ts: DB `ok`/`stale`/`failed`/`never`
- * collapses to contract `success`/`failure`/`running`/null:
- *   ok → success, stale → success (it DID run), failed → failure,
- *   never → null (nothing has ever run for this entity).
+ * The `scrape_health` table has an `(entity_type, entity_id)` composite
+ * key — not a surrogate serial — so the detail route is 2-segment.
  *
- * Pagination: `scrape_health` is bounded by real entity counts today, which
- * keeps the list well under the 1000-row cap even for the whole club graph.
- * The route still supports `?page=&page_size=` to future-proof against
- * eventual growth.
+ * As of api-zod v0.4.0 `lastStatus` uses the DB enum
+ * `running|ok|partial|failed`. The DB column itself can also be `stale` or
+ * `never`; we map those: `stale` → `ok` (the entity DID run successfully
+ * once), `never` → null (nothing has ever run for this entity).
  */
 import { Router, type IRouter } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -24,13 +20,15 @@ import { parsePagination } from "../../lib/pagination";
 
 const router: IRouter = Router();
 
-type ContractStatus = "success" | "failure" | "running" | null;
+type ContractStatus = "running" | "ok" | "partial" | "failed" | null;
 
-function mapStatus(db: string): ContractStatus {
-  if (db === "never") return null;
-  if (db === "failed") return "failure";
-  // 'ok' or 'stale' — the entity has been scraped at some point.
-  return "success";
+function mapStatus(dbStatus: string): ContractStatus {
+  if (dbStatus === "never") return null;
+  if (dbStatus === "failed") return "failed";
+  if (dbStatus === "partial") return "partial";
+  if (dbStatus === "running") return "running";
+  // 'ok' or legacy 'stale' — the entity has been scraped successfully.
+  return "ok";
 }
 
 const VALID_ENTITY_TYPES = new Set([
