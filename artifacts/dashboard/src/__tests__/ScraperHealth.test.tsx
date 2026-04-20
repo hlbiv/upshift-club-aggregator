@@ -109,7 +109,7 @@ describe("ScraperHealthPage", () => {
     expect(screen.getByText("event-12345")).toBeInTheDocument();
     expect(screen.getByText("sincsports-events")).toBeInTheDocument();
 
-    // Status badges render for ok / failed / running.
+    // Status badges render for ok / failed / running under the new enum.
     const okBadges = screen.getAllByText("ok");
     expect(okBadges.length).toBeGreaterThanOrEqual(1);
     const failedBadges = screen.getAllByText("failed");

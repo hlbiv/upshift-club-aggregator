@@ -236,16 +236,18 @@ function StatusBadge({
     );
   }
   const base = "inline-block rounded px-2 py-0.5 text-xs font-medium";
+  // ok → green success; partial → amber (it finished but not cleanly);
+  // failed → red; running → blue pulse.
   if (status === "ok") {
     return <span className={`${base} bg-green-100 text-green-800`}>ok</span>;
-  }
-  if (status === "failed") {
-    return <span className={`${base} bg-red-100 text-red-800`}>failed</span>;
   }
   if (status === "partial") {
     return (
       <span className={`${base} bg-amber-100 text-amber-800`}>partial</span>
     );
+  }
+  if (status === "failed") {
+    return <span className={`${base} bg-red-100 text-red-800`}>failed</span>;
   }
   // status === "running"
   return (
