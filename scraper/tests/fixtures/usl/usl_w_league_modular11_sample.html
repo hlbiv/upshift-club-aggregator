@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>Modular11 - USL W League Schedule</title>
+</head>
+<body>
+<!--Filters-->
+<div class="container-fluid container-schedule-list container-select-info-public container-select-info-public-usl">
+	<div class="row marg-0">
+		<div class="col-xs-12 col-sm-3 pad-right">
+			<label>Team
+				<select data-live-search="true" data-dropup-auto="false"
+						class="selectpicker survey-select-picker-small selectpicker-usl"
+						name="team" js-team>
+					<option value="0" selected>Nothing Selected</option>
+					<option value="2143">AC Connecticut</option>
+					<option value="2079">AFC Ann Arbor</option>
+					<option value="3811">AHFC Royals</option>
+					<option value="3833">ALBION SC Colorado</option>
+					<option value="2150">Detroit City FC</option>
+					<option value="2148">Indy Eleven</option>
+					<option value="2089">Kalamazoo FC</option>
+					<option value="2102">Racing Louisville FC</option>
+					<option value="4893">Toledo Villa FC</option>
+					<option value="4894">Union FC Macomb</option>
+				</select>
+			</label>
+		</div>
+
+		<div class="col-xs-12 col-sm-3 pad-right">
+			<label>Division
+				<select class="selectpicker survey-select-picker-small filter-select-custom selectpicker-usl" js-groups multiple="multiple">
+					<option value="158">Chesapeake</option>
+					<option value="41">Northeast</option>
+					<option value="160">Great Lakes</option>
+				</select>
+			</label>
+		</div>
+	</div>
+</div>
+
+<!-- Page config: tournament id lives inline in a let/var. -->
+<script type="text/javascript">
+	let scheduleConfig = {
+		filter: {
+			tournament: 25,
+			age: 0,
+			gender: 0,
+			brackets: null
+		},
+		filterActivated: true,
+	};
+	let leagueSchedulePublic = new LeagueSchedule(scheduleConfig);
+</script>
+</body>
+</html>
