@@ -191,6 +191,30 @@ class FakeCursor:
                 for r in self.state["tryouts"]
                 if r["club_id"] is None
             ]
+        elif sql.startswith("SELECT id, club_name_raw FROM commitments"):
+            self._last_result = [
+                (r["id"], r["club_name_raw"])
+                for r in self.state["commitments"]
+                if r["club_id"] is None
+            ]
+        elif sql.startswith("SELECT id, club_name_raw FROM ynt_call_ups"):
+            self._last_result = [
+                (r["id"], r["club_name_raw"])
+                for r in self.state["ynt_call_ups"]
+                if r["club_id"] is None
+            ]
+        elif sql.startswith("SELECT id, club_name_raw FROM odp_roster_entries"):
+            self._last_result = [
+                (r["id"], r["club_name_raw"])
+                for r in self.state["odp_roster_entries"]
+                if r["club_id"] is None
+            ]
+        elif sql.startswith("SELECT id, club_name_raw FROM player_id_selections"):
+            self._last_result = [
+                (r["id"], r["club_name_raw"])
+                for r in self.state["player_id_selections"]
+                if r["club_id"] is None
+            ]
         elif sql.startswith("UPDATE club_roster_snapshots"):
             club_id, row_id = params
             for r in self.state["club_roster_snapshots"]:
@@ -209,6 +233,30 @@ class FakeCursor:
                 if r["id"] == row_id and r["club_id"] is None:
                     r["club_id"] = club_id
                     self.state["writes"].append(("tryouts", row_id, club_id))
+        elif sql.startswith("UPDATE commitments"):
+            club_id, row_id = params
+            for r in self.state["commitments"]:
+                if r["id"] == row_id and r["club_id"] is None:
+                    r["club_id"] = club_id
+                    self.state["writes"].append(("commitments", row_id, club_id))
+        elif sql.startswith("UPDATE ynt_call_ups"):
+            club_id, row_id = params
+            for r in self.state["ynt_call_ups"]:
+                if r["id"] == row_id and r["club_id"] is None:
+                    r["club_id"] = club_id
+                    self.state["writes"].append(("ynt_call_ups", row_id, club_id))
+        elif sql.startswith("UPDATE odp_roster_entries"):
+            club_id, row_id = params
+            for r in self.state["odp_roster_entries"]:
+                if r["id"] == row_id and r["club_id"] is None:
+                    r["club_id"] = club_id
+                    self.state["writes"].append(("odp_roster_entries", row_id, club_id))
+        elif sql.startswith("UPDATE player_id_selections"):
+            club_id, row_id = params
+            for r in self.state["player_id_selections"]:
+                if r["id"] == row_id and r["club_id"] is None:
+                    r["club_id"] = club_id
+                    self.state["writes"].append(("player_id_selections", row_id, club_id))
         elif sql.startswith("UPDATE event_teams"):
             club_id, row_id = params
             for r in self.state["event_teams"]:
@@ -273,6 +321,10 @@ def _base_state():
         "club_roster_snapshots": [],
         "roster_diffs": [],
         "tryouts": [],
+        "commitments": [],
+        "ynt_call_ups": [],
+        "odp_roster_entries": [],
+        "player_id_selections": [],
         "writes": [],
     }
 
@@ -392,6 +444,10 @@ def test_linker_stats_details():
     stats.roster_snapshots_linked = 7
     stats.roster_diffs_linked = 4
     stats.tryouts_linked = 1
+    stats.commitments_linked = 6
+    stats.ynt_call_ups_linked = 2
+    stats.odp_roster_entries_linked = 8
+    stats.player_id_selections_linked = 3
     stats.pass_hits.update({1: 6, 2: 2, 3: 2, 4: 1})
     stats.unmatched_names["Weird Team"] = 1
     details = stats.to_details()
@@ -399,12 +455,16 @@ def test_linker_stats_details():
     assert details["roster_snapshots_linked"] == 7
     assert details["roster_diffs_linked"] == 4
     assert details["tryouts_linked"] == 1
+    assert details["commitments_linked"] == 6
+    assert details["ynt_call_ups_linked"] == 2
+    assert details["odp_roster_entries_linked"] == 8
+    assert details["player_id_selections_linked"] == 3
     assert details["pass_1_alias_hits"] == 6
     assert details["no_match_count"] == 1
     assert details["unmatched_unique_count"] == 1
     assert "Weird Team" in details["unmatched_sample"]
-    # total_linked sums all six sources.
-    assert stats.total_linked() == 5 + 3 + 2 + 7 + 4 + 1
+    # total_linked sums all ten sources.
+    assert stats.total_linked() == 5 + 3 + 2 + 7 + 4 + 1 + 6 + 2 + 8 + 3
 
 
 # ---------------------------------------------------------------------------
@@ -476,3 +536,178 @@ def test_link_all_new_tables_skip_non_null_rows():
     assert state["club_roster_snapshots"][0]["club_id"] == 999
     assert state["roster_diffs"][0]["club_id"] == 999
     assert state["tryouts"][0]["club_id"] == 999
+
+
+# ---------------------------------------------------------------------------
+# link_all — newest Path A tables (commitments, ynt, odp, player_id_selections)
+# ---------------------------------------------------------------------------
+
+def test_link_all_commitment_exact_alias_hit():
+    state = _base_state()
+    state["commitments"].append({
+        "id": 1,
+        "club_name_raw": "Concorde Fire Soccer Club",
+        "club_id": None,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    assert stats.commitments_linked == 1
+    assert state["commitments"][0]["club_id"] == 101
+    assert conn.committed
+
+
+def test_link_all_ynt_call_up_exact_canonical_hit():
+    state = _base_state()
+    state["ynt_call_ups"].append({
+        "id": 1,
+        "club_name_raw": "Concorde Fire 2011 Boys",
+        "club_id": None,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    assert stats.ynt_call_ups_linked == 1
+    assert state["ynt_call_ups"][0]["club_id"] == 101
+
+
+def test_link_all_odp_roster_entry_fuzzy_hit():
+    state = _base_state()
+    state["odp_roster_entries"].append({
+        "id": 1,
+        "club_name_raw": "Concorde Fire Phoenix 2011 Boys",
+        "club_id": None,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    assert stats.odp_roster_entries_linked == 1
+    assert state["odp_roster_entries"][0]["club_id"] == 101
+
+
+def test_link_all_player_id_selection_exact_alias_hit():
+    state = _base_state()
+    state["player_id_selections"].append({
+        "id": 1,
+        "club_name_raw": "Concorde Fire Soccer Club",
+        "club_id": None,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    assert stats.player_id_selections_linked == 1
+    assert state["player_id_selections"][0]["club_id"] == 101
+
+
+def test_link_all_newest_tables_skip_non_null_rows():
+    """Idempotency guard — rows already linked stay untouched."""
+    state = _base_state()
+    state["commitments"].append({
+        "id": 1,
+        "club_name_raw": "Concorde Fire",
+        "club_id": 999,
+    })
+    state["ynt_call_ups"].append({
+        "id": 2,
+        "club_name_raw": "Concorde Fire",
+        "club_id": 999,
+    })
+    state["odp_roster_entries"].append({
+        "id": 3,
+        "club_name_raw": "Concorde Fire",
+        "club_id": 999,
+    })
+    state["player_id_selections"].append({
+        "id": 4,
+        "club_name_raw": "Concorde Fire",
+        "club_id": 999,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    assert stats.commitments_linked == 0
+    assert stats.ynt_call_ups_linked == 0
+    assert stats.odp_roster_entries_linked == 0
+    assert stats.player_id_selections_linked == 0
+    assert state["commitments"][0]["club_id"] == 999
+    assert state["ynt_call_ups"][0]["club_id"] == 999
+    assert state["odp_roster_entries"][0]["club_id"] == 999
+    assert state["player_id_selections"][0]["club_id"] == 999
+
+
+def test_linker_target_tables_coverage():
+    """
+    Audit smoke test — asserts every table in the canonical-club-linker
+    pattern is covered by ``link_all``. If a new raw-col / FK-col table
+    is added in schema/, it must show up here so the linker is extended
+    in lockstep.
+    """
+    import canonical_club_linker as linker
+
+    expected_tables = {
+        "event_teams",
+        "matches",
+        "club_roster_snapshots",
+        "roster_diffs",
+        "tryouts",
+        "commitments",
+        "ynt_call_ups",
+        "odp_roster_entries",
+        "player_id_selections",
+    }
+    # Each table has a `_fetch_null_<table>` or `_fetch_null_matches`
+    # helper. Verify they all exist and are callable.
+    expected_fetches = {
+        "event_teams": "_fetch_null_event_teams",
+        "matches": "_fetch_null_matches",
+        "club_roster_snapshots": "_fetch_null_roster_snapshots",
+        "roster_diffs": "_fetch_null_roster_diffs",
+        "tryouts": "_fetch_null_tryouts",
+        "commitments": "_fetch_null_commitments",
+        "ynt_call_ups": "_fetch_null_ynt_call_ups",
+        "odp_roster_entries": "_fetch_null_odp_roster_entries",
+        "player_id_selections": "_fetch_null_player_id_selections",
+    }
+    for table in expected_tables:
+        assert hasattr(linker, expected_fetches[table]), (
+            f"linker missing fetch helper for {table}"
+        )
+        assert callable(getattr(linker, expected_fetches[table]))
+
+    # Every new table must have a dedicated stat counter on LinkerStats.
+    stats = linker.LinkerStats()
+    for counter in (
+        "commitments_linked",
+        "ynt_call_ups_linked",
+        "odp_roster_entries_linked",
+        "player_id_selections_linked",
+    ):
+        assert hasattr(stats, counter), (
+            f"LinkerStats missing counter {counter}"
+        )
+
+
+def test_link_all_picks_up_all_new_tables_end_to_end():
+    """
+    End-to-end smoke: a candidate row in each of the 4 new tables is
+    linked in a single ``link_all`` pass. This catches "added a fetch
+    helper but forgot to call it in the orchestrator" regressions.
+    """
+    state = _base_state()
+    state["commitments"].append({
+        "id": 1, "club_name_raw": "Concorde Fire", "club_id": None,
+    })
+    state["ynt_call_ups"].append({
+        "id": 1, "club_name_raw": "Concorde Fire", "club_id": None,
+    })
+    state["odp_roster_entries"].append({
+        "id": 1, "club_name_raw": "Concorde Fire", "club_id": None,
+    })
+    state["player_id_selections"].append({
+        "id": 1, "club_name_raw": "Concorde Fire", "club_id": None,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    assert stats.commitments_linked == 1
+    assert stats.ynt_call_ups_linked == 1
+    assert stats.odp_roster_entries_linked == 1
+    assert stats.player_id_selections_linked == 1
+    assert state["commitments"][0]["club_id"] == 101
+    assert state["ynt_call_ups"][0]["club_id"] == 101
+    assert state["odp_roster_entries"][0]["club_id"] == 101
+    assert state["player_id_selections"][0]["club_id"] == 101
