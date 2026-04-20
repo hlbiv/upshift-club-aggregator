@@ -6,6 +6,7 @@ import type {
   ScrapeRunLogList,
 } from "@hlbiv/api-zod/admin";
 import { adminFetch } from "../lib/api";
+import AdminNav from "../components/AdminNav";
 
 /**
  * Scraper health dashboard.
@@ -78,6 +79,7 @@ export default function ScraperHealthPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
+      <AdminNav />
       <header className="mb-8">
         <h1 className="text-2xl font-semibold text-neutral-900">
           Scraper health
