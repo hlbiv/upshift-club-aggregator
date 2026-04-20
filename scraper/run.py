@@ -634,19 +634,12 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
     """
     Replay archived HTML through the extractor registry.
 
-    Reads rows from ``raw_html_archive`` matching ``--run-id``
-    (interpreted as the integer ``scrape_run_logs.id`` FK stored in
-    ``raw_html_archive.scrape_run_log_id``), downloads the gzipped blob
-    for each from Replit Object Storage, decompresses, and feeds the
-    HTML back through the per-site extractor that matches the stored
-    ``source_url``. The goal is to re-parse without re-fetching — handy
-    for testing extractor changes against a fixed corpus, or recovering
-    rows after a parse regression.
-
-    Note: the CLI flag is still named ``--run-id`` for continuity, but
-    its semantics changed in the run_id→scrape_run_log_id migration — it
-    must now be an integer matching ``scrape_run_logs.id``, not the old
-    UUID value.
+    Reads rows from ``raw_html_archive`` matching ``--run-id``,
+    downloads the gzipped blob for each from Replit Object Storage,
+    decompresses, and feeds the HTML back through the per-site
+    extractor that matches the stored ``source_url``. The goal is to
+    re-parse without re-fetching — handy for testing extractor changes
+    against a fixed corpus, or recovering rows after a parse regression.
 
     Scope limit (this PR): only extractors that expose a pure-function
     parser (module-level ``parse_html(html, source_url=..., league_name=...)``)
@@ -659,23 +652,11 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
     path is a skip-with-warning, so the flag is effectively a no-op
     until a follow-up wires at least one pure parser through.)
     """
-    run_id_raw = getattr(args, "run_id", None)
-    if run_id_raw is None or run_id_raw == "":
+    run_id = getattr(args, "run_id", None)
+    if not run_id:
         logger.error(
-            "--source replay-html requires --run-id <scrape_run_logs.id>. "
-            "Query raw_html_archive.scrape_run_log_id for the run you want "
-            "to replay."
-        )
-        sys.exit(2)
-
-    try:
-        scrape_run_log_id = int(run_id_raw)
-    except (TypeError, ValueError):
-        logger.error(
-            "--source replay-html: --run-id must be an integer matching "
-            "scrape_run_logs.id (got %r). The column type changed from UUID "
-            "to integer FK in the scrape_run_log_id migration.",
-            run_id_raw,
+            "--source replay-html requires --run-id <uuid>. "
+            "Query raw_html_archive for the run you want to replay."
         )
         sys.exit(2)
 
@@ -709,9 +690,9 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
             cur.execute(
                 "SELECT sha256, source_url "
                 "FROM raw_html_archive "
-                "WHERE scrape_run_log_id = %s "
+                "WHERE run_id = %s "
                 "ORDER BY archived_at ASC",
-                (scrape_run_log_id,),
+                (run_id,),
             )
             rows = cur.fetchall()
     finally:
@@ -723,7 +704,7 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
     if not rows:
         logger.warning(
             "[replay-html] no archived HTML for run_id %s — nothing to replay.",
-            scrape_run_log_id,
+            run_id,
         )
         return
 
@@ -838,7 +819,7 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
         summary["rows_written"] += n_records
 
     print("=" * 60)
-    print(f"  replay-html summary (run_id={scrape_run_log_id})")
+    print(f"  replay-html summary (run_id={run_id})")
     print("=" * 60)
     for k, v in summary.items():
         print(f"  {k:>28} : {v}")
@@ -855,6 +836,141 @@ def _handle_duda_360player_clubs(args: argparse.Namespace) -> None:
         limit=args.limit,
     )
     _d360_print_summary(outcome)
+
+
+def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
+    """Single-school NCAA D1 roster scrape.
+
+    Requires ``--school-url``. ``--school-name`` is also required unless
+    the caller is fine with the hostname-derived default ("Unknown").
+    Optional flags: ``--division`` (D1/D2/D3, default D1), ``--gender``
+    (mens/womens, default mens), ``--state``.
+
+    Writes to ``colleges`` + ``college_coaches`` + ``college_roster_history``
+    via ``scraper.ingest.ncaa_roster_writer``. Dry-run parses without
+    touching the DB.
+    """
+    school_url = getattr(args, "school_url", None)
+    if not school_url:
+        logger.error("--source ncaa-rosters requires --school-url")
+        sys.exit(2)
+
+    school_name = getattr(args, "school_name", None) or _derive_school_name(school_url)
+    division = getattr(args, "division", None) or "D1"
+    gender = getattr(args, "gender", None) or "mens"
+    # argparse `--gender` has choices boys/girls/boys_and_girls for the
+    # league path; ncaa-rosters wants mens/womens. Translate the alias.
+    gender_program = {"boys": "mens", "girls": "womens"}.get(gender, gender)
+    if gender_program not in ("mens", "womens", "both"):
+        logger.error("--source ncaa-rosters: --gender must be mens|womens (got %r)", gender)
+        sys.exit(2)
+    state = getattr(args, "state", None)
+
+    from extractors.ncaa_rosters import scrape_school_url as _scrape_school
+    from extractors.ncaa_rosters import SCRAPER_KEY_MAP as _SCRAPER_KEY_MAP
+
+    scraper_key = _SCRAPER_KEY_MAP.get(division, f"ncaa-{division.lower()}-rosters")
+    run_log: Optional[ScrapeRunLogger] = None
+    if not args.dry_run:
+        run_log = ScrapeRunLogger(
+            scraper_key=scraper_key,
+            league_name=f"NCAA {division} rosters",
+        )
+        run_log.start(source_url=school_url)
+
+    try:
+        parsed = _scrape_school(
+            school_url,
+            name=school_name,
+            division=division,
+            gender_program=gender_program,
+            state=state,
+        )
+    except Exception as exc:
+        kind = _classify_exception(exc)
+        logger.error("[ncaa-rosters] scrape failed for %s: %s", school_url, exc)
+        if run_log is not None:
+            run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+        alert_scraper_failure(
+            scraper_key=scraper_key,
+            failure_kind=kind.value,
+            error_message=str(exc),
+            source_url=school_url,
+            league_name=f"NCAA {division} rosters",
+        )
+        sys.exit(1)
+
+    n_players = len(parsed["players"])
+    n_coaches = len(parsed["coaches"])
+    logger.info(
+        "[ncaa-rosters] %s (%s %s) → %d player(s), %d head coach row(s), sidearm=%s",
+        parsed["college"]["name"], division, gender_program,
+        n_players, n_coaches, parsed["sidearm"],
+    )
+
+    if args.dry_run:
+        logger.info("[ncaa-rosters] [dry-run] skipping DB writes")
+        return
+
+    from ingest.ncaa_roster_writer import (
+        upsert_college as _upsert_college,
+        upsert_coaches as _upsert_coaches,
+        upsert_roster_players as _upsert_players,
+    )
+    from dataclasses import asdict as _asdict
+
+    college_id, college_inserted = _upsert_college(parsed["college"])
+    if college_id is None:
+        logger.error("[ncaa-rosters] college upsert returned no id; aborting write")
+        if run_log is not None:
+            run_log.finish_failed(
+                DbFailureKind.UNKNOWN,
+                error_message="college upsert returned no id",
+            )
+        sys.exit(1)
+
+    coach_counts = _upsert_coaches(
+        parsed["coaches"], college_id=college_id,
+    )
+    player_counts = _upsert_players(
+        [_asdict(p) for p in parsed["players"]],
+        college_id=college_id,
+        academic_year=parsed["academic_year"],
+    )
+
+    logger.info(
+        "[ncaa-rosters] college_id=%d (new=%s) coaches inserted=%d updated=%d "
+        "players inserted=%d updated=%d skipped=%d",
+        college_id, college_inserted,
+        coach_counts["inserted"], coach_counts["updated"],
+        player_counts["inserted"], player_counts["updated"], player_counts["skipped"],
+    )
+    if run_log is not None:
+        run_log.finish_ok(
+            records_created=player_counts["inserted"] + coach_counts["inserted"]
+                            + (1 if college_inserted else 0),
+            records_updated=player_counts["updated"] + coach_counts["updated"]
+                            + (0 if college_inserted else 1),
+            records_failed=player_counts["skipped"] + coach_counts["skipped"],
+        )
+
+
+def _derive_school_name(url: str) -> str:
+    """Last-resort school-name fallback if --school-name is missing.
+
+    Returns the hostname minus common athletic-site suffixes
+    (``goheels.com`` → ``goheels``). Operators should always pass
+    ``--school-name`` explicitly — this is just so a smoke-test run
+    doesn't fail on an argparse error when the URL looks reasonable.
+    """
+    from urllib.parse import urlparse
+    host = urlparse(url).hostname or "unknown"
+    stem = host.split(".")[0]
+    for prefix in ("www", "athletics"):
+        if stem == prefix and "." in host:
+            stem = host.split(".")[1]
+            break
+    return stem.capitalize()
 
 
 def _handle_topdrawer_commitments(args: argparse.Namespace) -> None:
@@ -930,6 +1046,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ussoccer_ynt": _handle_ussoccer_ynt,
     "duda-360player-clubs": _handle_duda_360player_clubs,
     "duda_360player_clubs": _handle_duda_360player_clubs,
+    "ncaa-rosters": _handle_ncaa_rosters,
+    "ncaa_rosters": _handle_ncaa_rosters,
 }
 
 # One entry per UNIQUE source (kebab form only). Used to build the
@@ -964,6 +1082,7 @@ SOURCE_HELP: dict[str, str] = {
     "usclub-seeds": "seed only — National Cup + NPL Finals GotSport events, skip discovery",
     "usclub-id": "discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API (scaffold)",
     "ussoccer-ynt": "scrape US Soccer Youth National Team (YNT) call-ups from ussoccer.com press releases into ynt_call_ups",
+    "ncaa-rosters": "single-school NCAA D1/D2/D3 soccer roster scrape (SIDEARM-first). Requires --school-url + --school-name; writes colleges + college_coaches + college_roster_history.",
 }
 
 
@@ -1217,8 +1336,11 @@ def main() -> None:
                         help="Filter by scrape priority")
     parser.add_argument("--tier", type=int, metavar="N",
                         help="Filter by tier number (1=national elite … 4=state association)")
-    parser.add_argument("--gender", choices=["boys", "girls", "boys_and_girls"],
-                        help="Filter by gender program")
+    parser.add_argument("--gender",
+                        choices=["boys", "girls", "boys_and_girls", "mens", "womens"],
+                        help="Filter by gender program. Youth leagues use "
+                             "boys/girls/boys_and_girls; NCAA college sources "
+                             "use mens/womens.")
     parser.add_argument("--scope", choices=["national", "national_regional", "regional", "state"],
                         help="Filter by geographic scope")
     parser.add_argument("--dry-run", action="store_true",
@@ -1260,12 +1382,18 @@ def main() -> None:
                         choices=["sportsengine", "leagueapps", "wordpress", "unknown"],
                         dest="platform_family",
                         help="Platform family filter for --source youth-coaches.")
-    parser.add_argument("--run-id", metavar="ID", dest="run_id",
-                        help="For --source replay-html: integer "
-                             "scrape_run_logs.id of the scrape run whose "
-                             "archived raw HTML should be replayed. (Note: "
-                             "raw_html_archive.scrape_run_log_id replaced the "
-                             "old UUID run_id column; semantics are integer FK.)")
+    parser.add_argument("--run-id", metavar="UUID", dest="run_id",
+                        help="For --source replay-html: UUID of the scrape run "
+                             "whose archived raw HTML should be replayed.")
+    parser.add_argument("--school-url", metavar="URL", dest="school_url",
+                        help="For --source ncaa-rosters: full roster page URL "
+                             "(e.g. https://goheels.com/sports/mens-soccer/roster).")
+    parser.add_argument("--school-name", metavar="NAME", dest="school_name",
+                        help="For --source ncaa-rosters: display name for the "
+                             "colleges row (e.g. 'North Carolina'). Falls back "
+                             "to hostname stem if omitted.")
+    parser.add_argument("--division", choices=["D1", "D2", "D3", "NAIA", "NJCAA"],
+                        help="For --source ncaa-rosters: division (default D1).")
     parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune"],
                         help="Run a derived-data rollup over existing DB rows.")
     args = parser.parse_args()
