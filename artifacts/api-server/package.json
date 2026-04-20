@@ -7,13 +7,14 @@
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "test": "DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/apiKeyAuth.test.ts && DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/rateLimit.test.ts && DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/docs.test.ts",
+    "test": "DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/apiKeyAuth.test.ts && DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/rateLimit.test.ts && DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/docs.test.ts && DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/requireAdmin.test.ts && DATABASE_URL=postgres://unused@localhost/test tsx src/__tests__/adminAuth.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@hlbiv/api-zod": "workspace:*",
     "@workspace/api-spec": "workspace:*",
     "@workspace/db": "workspace:*",
+    "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2",
     "drizzle-orm": "catalog:",
