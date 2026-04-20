@@ -733,6 +733,101 @@ def _fetch_and_parse_with_fallback(
 
 
 # ---------------------------------------------------------------------------
+# Historical-season roster URLs (PR-6)
+#
+# SIDEARM and Nuxt both expose prior-season rosters via the same base URL
+# plus a year segment. Patterns discovered from live probes + dropdown
+# ``<option value>`` attributes:
+#
+#   SIDEARM : /sports/<sport>/roster/<YYYY>          (Georgetown's dropdown)
+#   Nuxt    : /sports/<sport>/roster/season/<YYYY>   (Stanford: roster-season-<YYYY>
+#                                                     class on root confirms)
+#
+# Year is the 4-digit *start year* — "2023-24" season → "2023". Academic-year
+# strings throughout the scraper use the "YYYY-YY" range form; this helper
+# extracts the start year.
+#
+# Neither platform accepts the range form (``/roster/2023-24`` on SIDEARM
+# returned current-season HTML; ``/roster/season/2023-24`` on Nuxt 404'd).
+# Same-shape patterns apply to D2/D3/NAIA/NJCAA — both vendors use
+# consistent URL conventions across divisions.
+# ---------------------------------------------------------------------------
+
+# Ordered templates. First 200-with-players wins. Same "try multiple,
+# first match wins" pattern as the PR-3 multi-path resolver.
+_HISTORICAL_URL_TEMPLATES: tuple = (
+    "{base}/roster/{start_year}",         # SIDEARM
+    "{base}/roster/season/{start_year}",  # Nuxt
+)
+
+
+def _start_year_from_academic_year(academic_year: str) -> str:
+    """Given ``"2023-24"`` return ``"2023"``. Validates format strictly."""
+    if not re.match(r"^\d{4}-\d{2}$", academic_year or ""):
+        raise ValueError(
+            f"academic_year must be 'YYYY-YY' (got {academic_year!r})"
+        )
+    return academic_year.split("-", 1)[0]
+
+
+def compose_historical_roster_urls(
+    current_roster_url: str,
+    academic_year: str,
+) -> List[str]:
+    """Pure: return candidate historical roster URLs for a prior season.
+
+    ``current_roster_url`` is the live /roster page (from
+    ``colleges.soccer_program_url`` after PR-2's resolver ran — typically
+    shaped ``https://host/sports/<sport>/roster``). ``academic_year`` is the
+    "YYYY-YY" season string; the start year is substituted into each
+    template.
+
+    The caller probes the returned URLs in order; first that returns ≥1
+    player wins. Order is SIDEARM-first because SIDEARM is the majority of
+    D1 athletics sites (~130/145 programs with rosters).
+    """
+    if not current_roster_url:
+        raise ValueError("current_roster_url must be non-empty")
+    start_year = _start_year_from_academic_year(academic_year)
+    # Strip trailing /roster or /roster/ so we can re-append the templated
+    # path. Case-insensitive for sites that capitalize 'Roster'.
+    base = re.sub(r"/roster/?$", "", current_roster_url, flags=re.IGNORECASE)
+    return [tmpl.format(base=base, start_year=start_year) for tmpl in _HISTORICAL_URL_TEMPLATES]
+
+
+def _find_historical_roster(
+    session: requests.Session,
+    current_roster_url: str,
+    academic_year: str,
+) -> Tuple[Optional[str], str, List["RosterPlayer"]]:
+    """Probe historical URL candidates; return (url, html, players) on hit.
+
+    Falls back through ``_HISTORICAL_URL_TEMPLATES`` in order; first
+    candidate that returns HTML with ≥1 parseable player wins.
+    HEAD-probing is insufficient here because malformed SIDEARM URLs
+    can return 200 with current-season HTML (observed on
+    ``/roster/2023-24`` — 200 but same content as /roster). A proper
+    decision requires parsing.
+
+    Returns ``(None, "", [])`` if every candidate fails to produce players.
+    The caller treats that as "skip this season for this college".
+    """
+    candidates = compose_historical_roster_urls(current_roster_url, academic_year)
+    for candidate in candidates:
+        html, players = _fetch_and_parse_with_fallback(session, candidate)
+        if html is None:
+            continue
+        if not players:
+            # URL returned HTML but parser couldn't extract anything.
+            # Could be a false 200 serving current-season shell, or a
+            # real historical page with markup we don't handle — either
+            # way, try the next candidate.
+            continue
+        return candidate, html, players
+    return None, "", []
+
+
+# ---------------------------------------------------------------------------
 # Single-school entry point — used by ``run.py --source ncaa-rosters``
 # ---------------------------------------------------------------------------
 
@@ -973,11 +1068,28 @@ def _update_last_scraped(cur, college_id: int) -> None:
 # Main scraper
 # ---------------------------------------------------------------------------
 
+def _prior_academic_years(current: str, n: int) -> List[str]:
+    """Return ``[current, current-1, ..., current-n]`` as 'YYYY-YY' strings.
+
+    Example: ``_prior_academic_years("2025-26", 2)`` →
+    ``["2025-26", "2024-25", "2023-24"]``. Pure; used by backfill loop.
+    """
+    if n < 0:
+        raise ValueError(f"n must be >= 0 (got {n})")
+    start = int(_start_year_from_academic_year(current))
+    seasons: List[str] = []
+    for i in range(n + 1):
+        s = start - i
+        seasons.append(f"{s}-{str(s + 1)[-2:]}")
+    return seasons
+
+
 def scrape_college_rosters(
     division: Optional[str] = None,
     gender: Optional[str] = None,
     limit: Optional[int] = None,
     dry_run: bool = False,
+    backfill_seasons: int = 0,
 ) -> Dict:
     """Scrape NCAA rosters and write to college_roster_history.
 
@@ -987,15 +1099,23 @@ def scrape_college_rosters(
     gender   : 'mens', 'womens', or None (all)
     limit    : max number of colleges to process (for testing)
     dry_run  : if True, parse pages but skip DB writes
+    backfill_seasons : 0 = current season only (default). N > 0 = also
+        pull rosters for each of the prior N seasons via the
+        ``/roster/<YYYY>`` (SIDEARM) or ``/roster/season/<YYYY>`` (Nuxt)
+        URL pattern. Writes land in ``college_roster_history`` keyed on
+        ``(college_id, player_name, academic_year)`` — same natural key
+        as current-season rows, so re-runs are idempotent.
 
     Returns
     -------
     dict with keys: scraped, rows_inserted, rows_updated, errors
     """
-    academic_year = current_academic_year()
+    current_season = current_academic_year()
+    seasons = _prior_academic_years(current_season, backfill_seasons)
     logger.info(
-        "Starting NCAA roster scrape: division=%s gender=%s limit=%s dry_run=%s academic_year=%s",
-        division, gender, limit, dry_run, academic_year,
+        "Starting NCAA roster scrape: division=%s gender=%s limit=%s dry_run=%s "
+        "seasons=%s",
+        division, gender, limit, dry_run, seasons,
     )
 
     conn = _get_connection()
