@@ -618,6 +618,38 @@ assertTable(schema.duplicateReviewDecisions, "duplicate_review_decisions", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain — Video sources (Pipeline 1a + Pipeline 3)
+// ---------------------------------------------------------------------------
+
+assertTable(schema.videoSources, "video_sources", {
+  cols: [
+    "id",
+    "club_id",
+    "club_name_raw",
+    "source_platform",
+    "video_type",
+    "external_id",
+    "source_url",
+    "title",
+    "published_at",
+    "duration_seconds",
+    "thumbnail_url",
+    "metadata",
+    "first_seen_at",
+    "last_seen_at",
+  ],
+  uniques: ["video_sources_platform_external_id_uq"],
+  checks: [
+    "video_sources_source_platform_enum",
+    "video_sources_video_type_enum",
+  ],
+  indexes: [
+    "video_sources_club_id_idx",
+    "video_sources_published_at_idx",
+  ],
+});
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 
