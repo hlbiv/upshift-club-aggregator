@@ -839,31 +839,49 @@ def _handle_duda_360player_clubs(args: argparse.Namespace) -> None:
 
 
 def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
-    """Single-school NCAA D1 roster scrape.
+    """NCAA D1 roster scrape — single school OR bulk enumeration.
 
-    Requires ``--school-url``. ``--school-name`` is also required unless
-    the caller is fine with the hostname-derived default ("Unknown").
-    Optional flags: ``--division`` (D1/D2/D3, default D1), ``--gender``
-    (mens/womens, default mens), ``--state``.
+    Two modes, mutually exclusive:
 
-    Writes to ``colleges`` + ``college_coaches`` + ``college_roster_history``
-    via ``scraper.ingest.ncaa_roster_writer``. Dry-run parses without
-    touching the DB.
+    * ``--school-url`` (+ optional ``--school-name``, ``--state``) —
+      single-program scrape. Writes to ``colleges`` + ``college_coaches``
+      + ``college_roster_history`` via ``ingest.ncaa_roster_writer``.
+
+    * ``--all`` — bulk enumeration. Iterates every row in ``colleges``
+      matching ``--division`` + ``--gender`` (both required) via
+      ``extractors.ncaa_rosters.scrape_college_rosters``. Requires the
+      ``colleges`` table to be populated first (PR-1: ``--source ncaa-seed-d1``,
+      or existing DB-seed rows).
+
+    Optional flags in both modes: ``--division`` (D1/D2/D3, default D1),
+    ``--gender`` (mens/womens, default mens), ``--dry-run``.
     """
     school_url = getattr(args, "school_url", None)
-    if not school_url:
-        logger.error("--source ncaa-rosters requires --school-url")
+    run_all = bool(getattr(args, "all", False))
+
+    if school_url and run_all:
+        logger.error("--source ncaa-rosters: --all and --school-url are mutually exclusive")
+        sys.exit(2)
+    if not school_url and not run_all:
+        logger.error("--source ncaa-rosters requires exactly one of --school-url or --all")
         sys.exit(2)
 
-    school_name = getattr(args, "school_name", None) or _derive_school_name(school_url)
     division = getattr(args, "division", None) or "D1"
     gender = getattr(args, "gender", None) or "mens"
-    # argparse `--gender` has choices boys/girls/boys_and_girls for the
-    # league path; ncaa-rosters wants mens/womens. Translate the alias.
     gender_program = {"boys": "mens", "girls": "womens"}.get(gender, gender)
-    if gender_program not in ("mens", "womens", "both"):
+    if gender_program not in ("mens", "womens"):
         logger.error("--source ncaa-rosters: --gender must be mens|womens (got %r)", gender)
         sys.exit(2)
+
+    if run_all:
+        _run_ncaa_rosters_all(
+            division=division,
+            gender_program=gender_program,
+            dry_run=bool(getattr(args, "dry_run", False)),
+        )
+        return
+
+    school_name = getattr(args, "school_name", None) or _derive_school_name(school_url)
     state = getattr(args, "state", None)
 
     from extractors.ncaa_rosters import scrape_school_url as _scrape_school
@@ -952,6 +970,183 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
             records_updated=player_counts["updated"] + coach_counts["updated"]
                             + (0 if college_inserted else 1),
             records_failed=player_counts["skipped"] + coach_counts["skipped"],
+        )
+
+
+def _run_ncaa_rosters_all(
+    *,
+    division: str,
+    gender_program: str,
+    dry_run: bool,
+) -> None:
+    """Dispatch to the pre-existing bulk enumerator.
+
+    ``scrape_college_rosters`` in ``extractors.ncaa_rosters`` handles
+    per-run logging (one ``scrape_run_logs`` row per division), rate
+    limiting (1.5s between schools), and write-through to all three
+    NCAA tables. We just route into it — no fresh logic here.
+    """
+    from extractors.ncaa_rosters import scrape_college_rosters
+
+    logger.info(
+        "[ncaa-rosters] --all division=%s gender=%s dry_run=%s",
+        division, gender_program, dry_run,
+    )
+    result = scrape_college_rosters(
+        division=division,
+        gender=gender_program,
+        dry_run=dry_run,
+    )
+    logger.info(
+        "[ncaa-rosters] --all done: scraped=%d inserted=%d updated=%d errors=%d",
+        result.get("scraped", 0),
+        result.get("rows_inserted", 0),
+        result.get("rows_updated", 0),
+        result.get("errors", 0),
+    )
+
+
+def _handle_ncaa_resolve_urls(args: argparse.Namespace) -> None:
+    """Resolve ``colleges.soccer_program_url`` via SIDEARM probing.
+
+    Iterates rows where ``soccer_program_url IS NULL`` (scoped by
+    optional ``--division``, default D1), composes the canonical
+    SIDEARM roster URL from ``colleges.website``, probes it, and
+    ``UPDATE``s the row on hit. Misses are logged for operator review.
+
+    Respects ``--limit N`` for smoke-testing. Rate-limits at 1.0s
+    between rows (lighter than the roster scrape because these are
+    HEAD requests).
+    """
+    from extractors.ncaa_directory import (
+        resolve_soccer_program_url,
+        USER_AGENT as _NCAA_UA,
+    )
+
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        logger.error("[ncaa-resolve-urls] psycopg2 not available; cannot query DB")
+        sys.exit(1)
+
+    division = getattr(args, "division", None) or "D1"
+    dry_run = bool(getattr(args, "dry_run", False))
+    limit = getattr(args, "limit", None)
+    rate_delay = 1.0
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.error("[ncaa-resolve-urls] DATABASE_URL env var not set")
+        sys.exit(1)
+
+    import requests as _requests
+    import time as _time
+
+    session = _requests.Session()
+    session.headers.update({
+        "User-Agent": _NCAA_UA,
+        "Accept": "text/html,application/xhtml+xml,*/*",
+    })
+
+    run_log: Optional[ScrapeRunLogger] = None
+    if not dry_run:
+        run_log = ScrapeRunLogger(
+            scraper_key="ncaa-resolve-urls",
+            league_name=f"NCAA {division} URL resolver",
+        )
+        run_log.start()
+
+    resolved = 0
+    missed = 0
+    errors = 0
+    unresolved_names: list[str] = []
+
+    try:
+        conn = psycopg2.connect(database_url)
+        try:
+            with conn.cursor() as cur:
+                select_sql = """
+                    SELECT id, name, website, gender_program
+                    FROM colleges
+                    WHERE division = %s
+                      AND soccer_program_url IS NULL
+                      AND website IS NOT NULL
+                    ORDER BY name
+                """
+                if limit is not None:
+                    select_sql += f" LIMIT {int(limit)}"
+                cur.execute(select_sql, (division,))
+                rows = cur.fetchall()
+
+            logger.info(
+                "[ncaa-resolve-urls] %d %s college(s) to resolve%s",
+                len(rows), division, " (dry-run)" if dry_run else "",
+            )
+
+            for row in rows:
+                college_id, name, website, gender_program = row
+                try:
+                    url = resolve_soccer_program_url(
+                        website, gender_program, session=session
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[ncaa-resolve-urls] resolver error for %s: %s",
+                        name, exc,
+                    )
+                    errors += 1
+                    _time.sleep(rate_delay)
+                    continue
+
+                if url is None:
+                    missed += 1
+                    unresolved_names.append(name)
+                    _time.sleep(rate_delay)
+                    continue
+
+                if dry_run:
+                    logger.info(
+                        "[ncaa-resolve-urls] [dry-run] would set %s → %s",
+                        name, url,
+                    )
+                else:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE colleges SET soccer_program_url = %s WHERE id = %s",
+                            (url, college_id),
+                        )
+                    conn.commit()
+
+                resolved += 1
+                _time.sleep(rate_delay)
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    logger.info(
+        "[ncaa-resolve-urls] done: resolved=%d missed=%d errors=%d%s",
+        resolved, missed, errors, " (dry-run)" if dry_run else "",
+    )
+    if unresolved_names:
+        logger.info(
+            "[ncaa-resolve-urls] unresolved (manual fill needed): %s",
+            ", ".join(unresolved_names[:25])
+            + (f" … ({len(unresolved_names) - 25} more)" if len(unresolved_names) > 25 else ""),
+        )
+
+    if run_log is not None:
+        run_log.finish_ok(
+            records_created=0,
+            records_updated=resolved,
+            records_failed=errors,
         )
 
 
@@ -1147,6 +1342,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_rosters": _handle_ncaa_rosters,
     "ncaa-seed-d1": _handle_ncaa_seed_d1,
     "ncaa_seed_d1": _handle_ncaa_seed_d1,
+    "ncaa-resolve-urls": _handle_ncaa_resolve_urls,
+    "ncaa_resolve_urls": _handle_ncaa_resolve_urls,
 }
 
 # One entry per UNIQUE source (kebab form only). Used to build the
@@ -1181,8 +1378,9 @@ SOURCE_HELP: dict[str, str] = {
     "usclub-seeds": "seed only — National Cup + NPL Finals GotSport events, skip discovery",
     "usclub-id": "discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API (scaffold)",
     "ussoccer-ynt": "scrape US Soccer Youth National Team (YNT) call-ups from ussoccer.com press releases into ynt_call_ups",
-    "ncaa-rosters": "single-school NCAA D1/D2/D3 soccer roster scrape (SIDEARM-first). Requires --school-url + --school-name; writes colleges + college_coaches + college_roster_history.",
+    "ncaa-rosters": "NCAA D1/D2/D3 soccer roster scrape (SIDEARM-first). Exactly one of --school-url (single) OR --all (bulk; --division + --gender required). Writes colleges + college_coaches + college_roster_history.",
     "ncaa-seed-d1": "seed colleges table from stats.ncaa.org D1 men's + women's soccer program lists. Optional --gender mens|womens (default: both); --dry-run.",
+    "ncaa-resolve-urls": "resolve colleges.soccer_program_url by probing the canonical SIDEARM roster path for each college.website. Scoped by --division (default D1); --limit N for smoke-tests; --dry-run.",
 }
 
 
@@ -1494,6 +1692,10 @@ def main() -> None:
                              "to hostname stem if omitted.")
     parser.add_argument("--division", choices=["D1", "D2", "D3", "NAIA", "NJCAA"],
                         help="For --source ncaa-rosters: division (default D1).")
+    parser.add_argument("--all", action="store_true", dest="all",
+                        help="For --source ncaa-rosters: enumerate every colleges row "
+                             "matching --division + --gender (bulk mode; mutually "
+                             "exclusive with --school-url).")
     parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune"],
                         help="Run a derived-data rollup over existing DB rows.")
     args = parser.parse_args()
