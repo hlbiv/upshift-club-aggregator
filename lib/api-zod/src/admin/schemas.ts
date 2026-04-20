@@ -140,3 +140,30 @@ export const ClubDuplicateMergeResponse = z.object({
   rosterSnapshotsReparented: z.number().int(),
 });
 export type ClubDuplicateMergeResponse = z.infer<typeof ClubDuplicateMergeResponse>;
+
+/**
+ * Request body for POST /v1/admin/data-quality/ga-premier-orphans.
+ *
+ * `dryRun` defaults to true — callers must explicitly opt in to destructive
+ * DELETEs. `limit` caps the scan/delete size per invocation (max 10k).
+ */
+export const GaPremierOrphanCleanupRequest = z.object({
+  dryRun: z.boolean().default(true),
+  limit: z.number().int().positive().max(10_000).default(500),
+});
+export type GaPremierOrphanCleanupRequest = z.infer<typeof GaPremierOrphanCleanupRequest>;
+
+/**
+ * Response body for POST /v1/admin/data-quality/ga-premier-orphans.
+ *
+ * `scanned` = rows inspected, `flagged` = rows matching the bad-token
+ * patterns, `deleted` = rows actually removed (0 on dry-run). `sampleNames`
+ * is capped at 20 representative `club_name_raw` values for operator review.
+ */
+export const GaPremierOrphanCleanupResponse = z.object({
+  scanned: z.number().int(),
+  flagged: z.number().int(),
+  deleted: z.number().int(),
+  sampleNames: z.array(z.string()).max(20),
+});
+export type GaPremierOrphanCleanupResponse = z.infer<typeof GaPremierOrphanCleanupResponse>;
