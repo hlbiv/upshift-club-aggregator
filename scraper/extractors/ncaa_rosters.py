@@ -523,6 +523,139 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
 
 
 # ---------------------------------------------------------------------------
+# Playwright fallback for JS-rendered rosters
+# ---------------------------------------------------------------------------
+
+# Many D1 SIDEARM sites (Stanford, Notre Dame, Virginia, Penn State,
+# Georgia Tech, Vanderbilt, etc.) ship a shell HTML and hydrate the
+# roster client-side via React/Vue. The static ``requests`` fetch sees
+# the shell → ``parse_roster_html`` returns 0 players.
+#
+# This fallback renders the page via headless Chromium and re-parses
+# the hydrated DOM. Guarded by an env flag so CI / sandbox environments
+# without Playwright don't blow up, and so the operator can disable it
+# without code changes if bulk runs get too slow.
+
+_PLAYWRIGHT_FALLBACK_ENV = "NCAA_PLAYWRIGHT_FALLBACK"
+_PLAYWRIGHT_RENDER_TIMEOUT_MS = 25_000
+_PLAYWRIGHT_SELECTOR_TIMEOUT_MS = 5_000
+
+
+def _playwright_fallback_enabled() -> bool:
+    """True when ``NCAA_PLAYWRIGHT_FALLBACK`` is set to a truthy value.
+
+    Kept off by default: Playwright adds ~3-5s per page for the render,
+    which matters at 185+ programs × 2 genders. Operator turns it on
+    on Replit after PR-4 merges.
+    """
+    return os.environ.get(_PLAYWRIGHT_FALLBACK_ENV, "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _render_with_playwright(url: str) -> Optional[str]:
+    """Render ``url`` in headless Chromium; return post-hydration HTML or None.
+
+    Returns None on any of: Playwright not installed, launch failure,
+    navigation timeout, or unexpected exception. Caller treats None as
+    'no further fallback available' and skips the program.
+    """
+    try:
+        from playwright.sync_api import (  # type: ignore
+            sync_playwright,
+            TimeoutError as PlaywrightTimeout,
+        )
+    except ImportError:
+        logger.warning(
+            "[ncaa-rosters] NCAA_PLAYWRIGHT_FALLBACK set but playwright is not "
+            "installed — skipping fallback for %s",
+            url,
+        )
+        return None
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                ctx = browser.new_context(user_agent=USER_AGENT)
+                page = ctx.new_page()
+                page.goto(
+                    url,
+                    timeout=_PLAYWRIGHT_RENDER_TIMEOUT_MS,
+                    wait_until="domcontentloaded",
+                )
+                # Wait for either a SIDEARM roster card or a generic
+                # table row — whichever renders first. Roster pages
+                # always have one or the other once hydrated.
+                try:
+                    page.wait_for_selector(
+                        "li.sidearm-roster-player, "
+                        "div.sidearm-roster-player, "
+                        "table tr[data-player-id], "
+                        "table tbody tr",
+                        timeout=_PLAYWRIGHT_SELECTOR_TIMEOUT_MS,
+                    )
+                except PlaywrightTimeout:
+                    # Fall through — parser will still try; some sites
+                    # use non-standard markup we'll catch regardless.
+                    pass
+                return page.content()
+            finally:
+                browser.close()
+    except Exception as exc:
+        logger.warning(
+            "[ncaa-rosters] Playwright render failed for %s: %s", url, exc
+        )
+        return None
+
+
+def _fetch_and_parse_with_fallback(
+    session: requests.Session,
+    url: str,
+) -> Tuple[Optional[str], List["RosterPlayer"]]:
+    """Fetch + parse a roster URL, with optional Playwright fallback.
+
+    Returns ``(html, players)``. If the requests-based parse returns 0
+    players AND the Playwright fallback is enabled AND the render
+    succeeds AND the rendered parse returns ≥1 player, the rendered
+    HTML + player list replace the shell ones.
+
+    ``html`` is returned (rather than re-fetching) so the caller can
+    run ``extract_head_coach_from_html`` against the same DOM that
+    produced the players — staff blocks are also JS-rendered on the
+    same pages.
+    """
+    html = fetch_with_retry(session, url)
+    if not html:
+        return None, []
+
+    players = parse_roster_html(html)
+    if players or not _playwright_fallback_enabled():
+        return html, players
+
+    logger.info(
+        "[ncaa-rosters] 0 players from static HTML; trying Playwright fallback: %s",
+        url,
+    )
+    rendered = _render_with_playwright(url)
+    if rendered is None:
+        return html, players  # still 0; caller handles SKIP
+
+    rendered_players = parse_roster_html(rendered)
+    if not rendered_players:
+        logger.info(
+            "[ncaa-rosters] Playwright render also yielded 0 players: %s", url
+        )
+        return rendered, rendered_players  # DOM captured, just no players
+
+    logger.info(
+        "[ncaa-rosters] Playwright fallback recovered %d player(s): %s",
+        len(rendered_players), url,
+    )
+    return rendered, rendered_players
+
+
+# ---------------------------------------------------------------------------
 # Single-school entry point — used by ``run.py --source ncaa-rosters``
 # ---------------------------------------------------------------------------
 
@@ -571,11 +704,9 @@ def scrape_school_url(
         raise ValueError(f"invalid gender_program: {gender_program!r}")
 
     sess = session or _get_session()
-    html = fetch_with_retry(sess, school_url)
-    if not html:
+    html, players = _fetch_and_parse_with_fallback(sess, school_url)
+    if html is None:
         raise RuntimeError(f"failed to fetch roster page: {school_url}")
-
-    players = parse_roster_html(html)
     if not players:
         raise RuntimeError(f"parsed 0 players from {school_url}")
 
@@ -835,13 +966,11 @@ def scrape_college_rosters(
                 total_errors += 1
                 continue
 
-            html = fetch_with_retry(session, roster_url)
-            if not html:
+            html, players = _fetch_and_parse_with_fallback(session, roster_url)
+            if html is None:
                 logger.warning("  FAIL %s - fetch failed: %s", tag, roster_url)
                 total_errors += 1
                 continue
-
-            players = parse_roster_html(html)
             if not players:
                 logger.info("  SKIP %s - no players parsed from %s", tag, roster_url)
                 total_errors += 1
