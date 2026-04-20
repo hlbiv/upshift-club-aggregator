@@ -10,6 +10,10 @@ Populates:
   - club_roster_snapshots.club_id       (from club_roster_snapshots.club_name_raw)
   - roster_diffs.club_id                (from roster_diffs.club_name_raw)
   - tryouts.club_id                     (from tryouts.club_name_raw)
+  - commitments.club_id                 (from commitments.club_name_raw)
+  - ynt_call_ups.club_id                (from ynt_call_ups.club_name_raw)
+  - odp_roster_entries.club_id          (from odp_roster_entries.club_name_raw)
+  - player_id_selections.club_id        (from player_id_selections.club_name_raw)
 
 Resolution strategy (4 passes, each optimistic, short-circuits on first hit):
   1. Exact alias match          SELECT club_id FROM club_aliases WHERE alias_name = ?
@@ -414,6 +418,97 @@ def _update_tryout(cur, row_id: int, club_id: int) -> None:
     )
 
 
+def _fetch_null_commitments(cur, limit: Optional[int]) -> List[Tuple[int, str]]:
+    sql = (
+        "SELECT id, club_name_raw FROM commitments "
+        "WHERE club_id IS NULL "
+        "AND club_name_raw IS NOT NULL AND club_name_raw <> '' "
+        "ORDER BY id"
+    )
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    cur.execute(sql)
+    return list(cur.fetchall())
+
+
+def _update_commitment(cur, row_id: int, club_id: int) -> None:
+    cur.execute(
+        "UPDATE commitments SET club_id = %s "
+        "WHERE id = %s AND club_id IS NULL",
+        (club_id, row_id),
+    )
+
+
+def _fetch_null_ynt_call_ups(cur, limit: Optional[int]) -> List[Tuple[int, str]]:
+    sql = (
+        "SELECT id, club_name_raw FROM ynt_call_ups "
+        "WHERE club_id IS NULL "
+        "AND club_name_raw IS NOT NULL AND club_name_raw <> '' "
+        "ORDER BY id"
+    )
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    cur.execute(sql)
+    return list(cur.fetchall())
+
+
+def _update_ynt_call_up(cur, row_id: int, club_id: int) -> None:
+    cur.execute(
+        "UPDATE ynt_call_ups SET club_id = %s "
+        "WHERE id = %s AND club_id IS NULL",
+        (club_id, row_id),
+    )
+
+
+def _fetch_null_odp_roster_entries(
+    cur, limit: Optional[int]
+) -> List[Tuple[int, str]]:
+    # Note: club_name_raw is nullable on odp_roster_entries — some ODP
+    # state sites don't print a club. The WHERE clause filters those
+    # rows out (nothing to link).
+    sql = (
+        "SELECT id, club_name_raw FROM odp_roster_entries "
+        "WHERE club_id IS NULL "
+        "AND club_name_raw IS NOT NULL AND club_name_raw <> '' "
+        "ORDER BY id"
+    )
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    cur.execute(sql)
+    return list(cur.fetchall())
+
+
+def _update_odp_roster_entry(cur, row_id: int, club_id: int) -> None:
+    cur.execute(
+        "UPDATE odp_roster_entries SET club_id = %s "
+        "WHERE id = %s AND club_id IS NULL",
+        (club_id, row_id),
+    )
+
+
+def _fetch_null_player_id_selections(
+    cur, limit: Optional[int]
+) -> List[Tuple[int, str]]:
+    sql = (
+        "SELECT id, club_name_raw FROM player_id_selections "
+        "WHERE club_id IS NULL "
+        "AND club_name_raw IS NOT NULL AND club_name_raw <> '' "
+        "ORDER BY id"
+    )
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    cur.execute(sql)
+    return list(cur.fetchall())
+
+
+def _update_player_id_selection(cur, row_id: int, club_id: int) -> None:
+    cur.execute(
+        "UPDATE player_id_selections SET club_id = %s "
+        "WHERE id = %s AND club_id IS NULL",
+        (club_id, row_id),
+    )
+
+
 def _insert_alias(cur, club_id: int, alias_name: str) -> None:
     """
     Cache a fuzzy-hit alias so future runs short-circuit at pass #1.
@@ -439,6 +534,10 @@ class LinkerStats:
     roster_snapshots_linked: int = 0
     roster_diffs_linked: int = 0
     tryouts_linked: int = 0
+    commitments_linked: int = 0
+    ynt_call_ups_linked: int = 0
+    odp_roster_entries_linked: int = 0
+    player_id_selections_linked: int = 0
     unmatched_names: Counter = field(default_factory=Counter)
     pass_hits: Counter = field(default_factory=Counter)
     aliases_written: int = 0
@@ -451,6 +550,10 @@ class LinkerStats:
             + self.roster_snapshots_linked
             + self.roster_diffs_linked
             + self.tryouts_linked
+            + self.commitments_linked
+            + self.ynt_call_ups_linked
+            + self.odp_roster_entries_linked
+            + self.player_id_selections_linked
         )
 
     def unmatched_sample(self, n: int = 20) -> List[str]:
@@ -464,6 +567,10 @@ class LinkerStats:
             "roster_snapshots_linked": self.roster_snapshots_linked,
             "roster_diffs_linked": self.roster_diffs_linked,
             "tryouts_linked": self.tryouts_linked,
+            "commitments_linked": self.commitments_linked,
+            "ynt_call_ups_linked": self.ynt_call_ups_linked,
+            "odp_roster_entries_linked": self.odp_roster_entries_linked,
+            "player_id_selections_linked": self.player_id_selections_linked,
             "pass_1_alias_hits": self.pass_hits.get(1, 0),
             "pass_2_canonical_hits": self.pass_hits.get(2, 0),
             "pass_3_fuzzy_hits": self.pass_hits.get(3, 0),
@@ -521,15 +628,25 @@ def link_all(
         roster_snapshot_rows = _fetch_null_roster_snapshots(cur, limit)
         roster_diff_rows = _fetch_null_roster_diffs(cur, limit)
         tryout_rows = _fetch_null_tryouts(cur, limit)
+        commitment_rows = _fetch_null_commitments(cur, limit)
+        ynt_rows = _fetch_null_ynt_call_ups(cur, limit)
+        odp_rows = _fetch_null_odp_roster_entries(cur, limit)
+        player_id_rows = _fetch_null_player_id_selections(cur, limit)
         log.info(
             "Candidates: %d event_teams, %d matches.home, %d matches.away, "
-            "%d roster_snapshots, %d roster_diffs, %d tryouts",
+            "%d roster_snapshots, %d roster_diffs, %d tryouts, "
+            "%d commitments, %d ynt_call_ups, %d odp_roster_entries, "
+            "%d player_id_selections",
             len(event_team_rows),
             len(matches_home),
             len(matches_away),
             len(roster_snapshot_rows),
             len(roster_diff_rows),
             len(tryout_rows),
+            len(commitment_rows),
+            len(ynt_rows),
+            len(odp_rows),
+            len(player_id_rows),
         )
 
         def _handle(raw: str) -> ResolveResult:
@@ -608,6 +725,42 @@ def link_all(
             if not dry_run:
                 _update_tryout(cur, row_id, res.club_id)
 
+        # commitments
+        for row_id, raw in commitment_rows:
+            res = _handle(raw)
+            if res.club_id is None:
+                continue
+            stats.commitments_linked += 1
+            if not dry_run:
+                _update_commitment(cur, row_id, res.club_id)
+
+        # ynt_call_ups
+        for row_id, raw in ynt_rows:
+            res = _handle(raw)
+            if res.club_id is None:
+                continue
+            stats.ynt_call_ups_linked += 1
+            if not dry_run:
+                _update_ynt_call_up(cur, row_id, res.club_id)
+
+        # odp_roster_entries
+        for row_id, raw in odp_rows:
+            res = _handle(raw)
+            if res.club_id is None:
+                continue
+            stats.odp_roster_entries_linked += 1
+            if not dry_run:
+                _update_odp_roster_entry(cur, row_id, res.club_id)
+
+        # player_id_selections
+        for row_id, raw in player_id_rows:
+            res = _handle(raw)
+            if res.club_id is None:
+                continue
+            stats.player_id_selections_linked += 1
+            if not dry_run:
+                _update_player_id_selection(cur, row_id, res.club_id)
+
         if dry_run:
             conn.rollback()
         else:
@@ -672,6 +825,10 @@ def run_cli(dry_run: bool = False, limit: Optional[int] = None) -> int:
         f"{stats.roster_snapshots_linked} roster_snapshots, "
         f"{stats.roster_diffs_linked} roster_diffs, "
         f"{stats.tryouts_linked} tryouts, "
+        f"{stats.commitments_linked} commitments, "
+        f"{stats.ynt_call_ups_linked} ynt_call_ups, "
+        f"{stats.odp_roster_entries_linked} odp_roster_entries, "
+        f"{stats.player_id_selections_linked} player_id_selections, "
         f"{len(stats.unmatched_names)} unmatched unique raw names."
     )
     if stats.unmatched_names:
