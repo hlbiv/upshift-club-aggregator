@@ -13,11 +13,6 @@ import AdminNav from "../components/AdminNav";
  *
  *   GET /api/v1/admin/scrape-health         → ScrapeHealthList (rollup)
  *   GET /api/v1/admin/scrape-runs?limit=50  → ScrapeRunLogList (recent)
- *
- * Proof-of-concept page for the Orval-generated React Query hooks. Other
- * admin pages still use the hand-rolled `adminFetch()` helper; this one
- * is intentionally first so the pattern can be reviewed in isolation.
- * See Workstream A notes in CLAUDE.md.
  */
 
 export default function ScraperHealthPage() {
