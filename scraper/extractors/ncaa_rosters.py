@@ -988,13 +988,79 @@ _HEAD_COACH_RE = re.compile(
 )
 
 
-def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]]:
-    """Extract a single head-coach entry from SIDEARM-style markup.
+def _extract_email_from_el(el) -> Optional[str]:
+    mailto = el.find("a", href=re.compile(r"^mailto:", re.IGNORECASE))
+    if mailto:
+        return (
+            mailto.get("href", "")
+            .replace("mailto:", "")
+            .split("?")[0]
+            .strip()
+            .lower()
+        )
+    return None
 
-    Strategy order:
-      1. ``.sidearm-staff-member`` whose ``.sidearm-staff-member-title``
-         matches the head-coach regex.
-      2. Any ``<a>`` text neighbour whose title sibling matches the regex.
+
+def _extract_phone_from_el(el) -> Optional[str]:
+    m = re.search(r"\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}", el.get_text())
+    return m.group(0) if m else None
+
+
+# Stricter "Head Coach" regex used by the new s-person-card / inline
+# strategies so we can distinguish a true head coach from "Associate
+# Head Coach" / "Assistant Head Coach" / "Director of ..." titles. The
+# original ``_HEAD_COACH_RE`` is left intact for backward compat with
+# the legacy sidearm-staff-member strategy below.
+_STRICT_HEAD_COACH_RE = re.compile(
+    r"\bhead\s+(?:men'?s?|women'?s?)?\s*(?:soccer\s+)?coach\b",
+    re.IGNORECASE,
+)
+
+# Matches any subordinate variant of "head coach" we have seen on staff
+# pages — these must be filtered out so a real Head Coach card isn't
+# clobbered by a sibling Associate / Assistant card in the same grid.
+# Covers: Associate / Assoc / Assoc., Assistant / Asst / Asst.,
+# "Assistant to the Head Coach", and prefixes like "Volunteer" or
+# "Interim" before any of the above.
+_NON_HEAD_COACH_RE = re.compile(
+    r"\b(?:assoc(?:iate|\.?)|assistant|asst\.?)"
+    r"(?:\s+to\s+the)?"
+    r"\s+head\s+coach\b",
+    re.IGNORECASE,
+)
+
+
+def _is_strict_head_coach(title: Optional[str]) -> bool:
+    """True only for plain "Head Coach" variants. Excludes every
+    subordinate form we've observed on D1-D3 staff cards: Associate /
+    Assoc. / Assoc, Assistant / Asst. / Asst, and "Assistant to the
+    Head Coach". This guard keeps a real Head Coach card from being
+    promoted by mistake when an Associate / Assistant card sits next
+    to it in the same staff grid."""
+    if not title:
+        return False
+    t = title.strip()
+    if _NON_HEAD_COACH_RE.search(t):
+        return False
+    return bool(_STRICT_HEAD_COACH_RE.search(t))
+
+
+def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]]:
+    """Extract a single head-coach entry from a roster-page HTML.
+
+    Strategy order (each returns the first hit; later strategies are
+    tried only if the prior ones miss):
+
+      1. ``.sidearm-staff-member`` (legacy SIDEARM staff page markup).
+      2. ``.s-person-card`` (modern SIDEARM nextgen markup — the
+         dominant pattern on current D1 roster pages, where the head
+         coach is rendered alongside players in the same card grid).
+      3. ``.sidearm-roster-coach`` (legacy SIDEARM roster pages that
+         embed the coaching staff in a small ``<ul>`` block beneath
+         the player list).
+      4. ``.roster-staff-members-card-item`` / ``.roster-card-item``
+         (WMT/Vue-style staff card layout used by Stanford and other
+         non-SIDEARM CMSs).
 
     Returns a dict ``{name, title, email, phone, is_head_coach}`` or
     ``None`` if the page does not expose a head coach block (typical
@@ -1003,12 +1069,17 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
     """
     soup = BeautifulSoup(html, "html.parser")
 
+    # --- Strategy 1: legacy ``.sidearm-staff-member`` -----------------
     for el in soup.select(".sidearm-staff-member, [class*='staff-member']"):
         title_el = el.select_one(
             ".sidearm-staff-member-title, [class*='title'], [class*='position']"
         )
         title = title_el.get_text().strip() if title_el else ""
         if not title or not _HEAD_COACH_RE.search(title):
+            continue
+        # Filter out associate / assistant head coach so the legacy
+        # strategy matches the strict semantics of strategies 2-4.
+        if not _is_strict_head_coach(title):
             continue
         name_el = el.select_one(
             ".sidearm-staff-member-name a, .sidearm-staff-member-name, "
@@ -1017,19 +1088,97 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
         name = name_el.get_text().strip() if name_el else ""
         if not name or len(name) < 3:
             continue
-        email = None
-        mailto = el.find("a", href=re.compile(r"^mailto:", re.IGNORECASE))
-        if mailto:
-            email = mailto.get("href", "").replace("mailto:", "").split("?")[0].strip().lower()
-        phone = None
-        phone_match = re.search(r"\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}", el.get_text())
-        if phone_match:
-            phone = phone_match.group(0)
         return {
             "name": name,
             "title": title,
-            "email": email,
-            "phone": phone,
+            "email": _extract_email_from_el(el),
+            "phone": _extract_phone_from_el(el),
+            "is_head_coach": True,
+        }
+
+    # --- Strategy 2: modern SIDEARM ``.s-person-card`` ----------------
+    # The card grid contains every player AND the staff. Head coach is
+    # the card whose ``.s-person-details__position`` text matches the
+    # strict "Head Coach" regex. Name comes from
+    # ``.s-person-details__personal-single-line``; aria-label fallback
+    # ("<Name> full bio") covers older payload variants.
+    for el in soup.select(".s-person-card"):
+        title_el = el.select_one(
+            ".s-person-details__position, [class*='position']"
+        )
+        if not title_el:
+            continue
+        title = title_el.get_text(" ", strip=True)
+        if not _is_strict_head_coach(title):
+            continue
+        name_el = el.select_one(
+            "[data-test-id='s-person-details__personal-single-line'], "
+            ".s-person-details__personal-single-line, "
+            ".s-text-paragraph-large-bold"
+        )
+        name = name_el.get_text(" ", strip=True) if name_el else ""
+        if not name:
+            aria_link = el.select_one("a[aria-label]")
+            if aria_link:
+                aria = aria_link.get("aria-label", "")
+                # aria-label is consistently "<Name> full bio"
+                m = re.match(r"^(.+?)\s+full\s+bio\s*$", aria, re.I)
+                if m:
+                    name = m.group(1).strip()
+                elif aria:
+                    name = aria.strip()
+        if not name or len(name) < 3:
+            continue
+        return {
+            "name": name,
+            "title": title,
+            "email": _extract_email_from_el(el),
+            "phone": _extract_phone_from_el(el),
+            "is_head_coach": True,
+        }
+
+    # --- Strategy 3: legacy ``.sidearm-roster-coach`` (inline list) ---
+    for el in soup.select(".sidearm-roster-coach"):
+        title_el = el.select_one(".sidearm-roster-coach-title")
+        if not title_el:
+            continue
+        title = title_el.get_text(" ", strip=True)
+        if not _is_strict_head_coach(title):
+            continue
+        name_el = el.select_one(".sidearm-roster-coach-name")
+        name = name_el.get_text(" ", strip=True) if name_el else ""
+        if not name or len(name) < 3:
+            continue
+        return {
+            "name": name,
+            "title": title,
+            "email": _extract_email_from_el(el),
+            "phone": _extract_phone_from_el(el),
+            "is_head_coach": True,
+        }
+
+    # --- Strategy 4: WMT/Vue ``.roster-staff-members-card-item`` ------
+    for el in soup.select(".roster-staff-members-card-item, .roster-card-item"):
+        title_el = el.select_one(
+            ".roster-card-item__position, [class*='position']"
+        )
+        if not title_el:
+            continue
+        title = title_el.get_text(" ", strip=True)
+        if not _is_strict_head_coach(title):
+            continue
+        name_el = el.select_one(
+            ".roster-card-item__title, .roster-card-item__title--link, "
+            "[class*='title']"
+        )
+        name = name_el.get_text(" ", strip=True) if name_el else ""
+        if not name or len(name) < 3:
+            continue
+        return {
+            "name": name,
+            "title": title,
+            "email": _extract_email_from_el(el),
+            "phone": _extract_phone_from_el(el),
             "is_head_coach": True,
         }
 

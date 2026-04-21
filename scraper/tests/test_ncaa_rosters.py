@@ -25,6 +25,7 @@ from extractors.ncaa_rosters import (  # noqa: E402
     current_academic_year,
     scrape_college_rosters,
     _fetch_colleges,
+    extract_head_coach_from_html,
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "ncaa"
@@ -208,6 +209,154 @@ class TestParseSidearmVueEmbeddedJson:
         by_name = {p.player_name: p for p in players}
         # Jack Desroches is R-Sr. in the source JSON — should normalize to "senior"
         assert by_name["Jack Desroches"].year == "senior"
+
+
+# ---------------------------------------------------------------------------
+# extract_head_coach_from_html — inline coach selector strategies (Task #34)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractHeadCoachInline:
+    """Strategies 2-4 of ``extract_head_coach_from_html``: inline coach
+    markup variants discovered in the Task #34 diagnostic probe of
+    cached D1 men's-soccer roster pages.
+
+    Strategy 1 (legacy ``.sidearm-staff-member``) already has implicit
+    coverage via ``sample_staff_sidearm.html`` in the dry-run + writer
+    tests; we add an explicit assertion below so any regression in the
+    legacy path also fails.
+    """
+
+    def test_legacy_sidearm_staff_member(self):
+        """Strategy 1 — the original `.sidearm-staff-member` block."""
+        html = _read("sample_staff_sidearm.html")
+        out = extract_head_coach_from_html(html)
+        assert out is not None, "legacy sidearm-staff-member strategy regressed"
+        assert out["name"] == "John Smith"
+        assert "Head Coach" in out["title"]
+        assert out["is_head_coach"] is True
+        assert out["email"] == "jsmith@testuniv.edu"
+
+    def test_modern_sidearm_s_person_card(self):
+        """Strategy 2 — modern SIDEARM `.s-person-card` markup. The
+        dominant pattern across current D1 roster pages (Xavier, Ohio
+        State, Providence, Seton Hall, etc.). Must pick the plain
+        "Head Coach" card and skip both player cards AND the
+        "Associate Head Coach" card sitting next to it.
+        """
+        html = _read("sidearm_s_person_card_head_coach.html")
+        out = extract_head_coach_from_html(html)
+        assert out is not None
+        assert out["name"] == "John Higgins"
+        assert out["title"] == "Head Coach"
+        assert out["is_head_coach"] is True
+        # Email + phone live in the contact-details sub-block.
+        assert out["email"] == "higginsj5@xavier.edu"
+        assert out["phone"] == "513.745.3879"
+
+    def test_s_person_card_skips_associate_when_no_real_head(self):
+        """Even when only Associate / Assistant Head Coach cards exist,
+        we must NOT misclassify them as the head coach. Returning None
+        lets the caller fall back to the separate /coaches page.
+        """
+        html = """
+        <div class="s-person-card">
+          <div class="s-person-details__personal-single-line">Jane Doe</div>
+          <div class="s-person-details__position">Associate Head Coach</div>
+        </div>
+        <div class="s-person-card">
+          <div class="s-person-details__personal-single-line">Bob Roe</div>
+          <div class="s-person-details__position">Assistant Head Coach</div>
+        </div>
+        """
+        assert extract_head_coach_from_html(html) is None
+
+    def test_s_person_card_aria_label_name_fallback(self):
+        """When `.s-person-details__personal-single-line` is absent (older
+        payload variant), the parser falls back to the `aria-label` on
+        the bio link, which is consistently "<Name> full bio".
+        """
+        html = """
+        <div class="s-person-card">
+          <a aria-label="Pat Example full bio" href="/staff/pat-example">link</a>
+          <div class="s-person-details__position">Head Coach</div>
+        </div>
+        """
+        out = extract_head_coach_from_html(html)
+        assert out is not None
+        assert out["name"] == "Pat Example"
+        assert out["is_head_coach"] is True
+
+    def test_legacy_sidearm_roster_coach_inline(self):
+        """Strategy 3 — `.sidearm-roster-coach` block embedded directly
+        on the roster page (Portland-style)."""
+        html = _read("sidearm_inline_roster_coach.html")
+        out = extract_head_coach_from_html(html)
+        assert out is not None
+        assert out["name"] == "Nick Carlin-Voigt"
+        assert out["title"] == "Head Coach"
+        assert out["is_head_coach"] is True
+
+    def test_wmt_vue_staff_card(self):
+        """Strategy 4 — Stanford-style `.roster-staff-members-card-item`
+        with title in `.roster-card-item__position` and name in
+        `.roster-card-item__title`. Must pick the plain "Head Coach"
+        card, not the Associate/Assistant cards.
+        """
+        html = _read("staff_card_position_title.html")
+        out = extract_head_coach_from_html(html)
+        assert out is not None
+        assert out["name"] == "Jeremy Gunn"
+        assert out["title"] == "Head Coach"
+        assert out["is_head_coach"] is True
+
+    def test_returns_none_for_pure_player_roster(self):
+        """A roster page with only players and no coach blocks must
+        return None so the caller can fall back to a separate /coaches
+        probe instead of silently dropping head-coach signal.
+        """
+        html = """
+        <html><body>
+          <div class="s-person-card">
+            <div class="s-person-details__personal-single-line">Player One</div>
+            <div class="s-person-details__position">Forward</div>
+          </div>
+          <div class="s-person-card">
+            <div class="s-person-details__personal-single-line">Player Two</div>
+            <div class="s-person-details__position">Midfielder</div>
+          </div>
+        </body></html>
+        """
+        assert extract_head_coach_from_html(html) is None
+
+    @pytest.mark.parametrize(
+        "subordinate_title",
+        [
+            "Associate Head Coach",
+            "Assistant Head Coach",
+            "Assoc. Head Coach",
+            "Assoc Head Coach",
+            "Asst. Head Coach",
+            "Asst Head Coach",
+            "Assistant to the Head Coach",
+            "Volunteer Assistant Head Coach",
+        ],
+    )
+    def test_subordinate_head_coach_titles_are_rejected(self, subordinate_title):
+        """Negative-coverage matrix: every subordinate-of-head-coach
+        variant we've seen on D1-D3 staff cards must NOT be promoted to
+        head coach, even when it's the only card on the page. The
+        caller relies on a None return to fall back to a /coaches probe.
+        """
+        html = f"""
+        <div class="s-person-card">
+          <div class="s-person-details__personal-single-line">Pat Example</div>
+          <div class="s-person-details__position">{subordinate_title}</div>
+        </div>
+        """
+        assert extract_head_coach_from_html(html) is None, (
+            f"subordinate title {subordinate_title!r} was misclassified as head coach"
+        )
 
 
 # ---------------------------------------------------------------------------

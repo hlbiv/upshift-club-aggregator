@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<!--
+  Fixture for the modern SIDEARM `.s-person-card` markup used on
+  current D1 men's soccer roster pages (e.g. Xavier, Ohio State,
+  Providence, Seton Hall). The roster page lists every player AND
+  the coaching staff inside `.s-person-card` containers; the head
+  coach is identified by `.s-person-details__position` containing
+  "Head Coach". Names live in
+  `.s-person-details__personal-single-line` (with `a[aria-label]`
+  as a fallback that always carries "<Name> full bio").
+
+  Trimmed from a real Xavier capture — image/picture/srcset noise
+  removed; player + coach text content is structurally accurate
+  but personal details are sanitized fictional values.
+-->
+<html lang="en">
+<head><title>Men's Soccer Roster - Test U</title></head>
+<body>
+
+<!-- A few PLAYER cards (must NOT be returned as head coach). -->
+<div class="s-person-card s-person-card--list" data-test-id="s-person-card-list__root">
+  <div class="s-person-card__content">
+    <div class="s-person-card__content__person-details">
+      <div class="s-person-details">
+        <div class="s-person-details__thumbnail">
+          <a aria-label="Austin Nowak full bio" href="/sports/mens-soccer/roster/austin-nowak/12774"></a>
+        </div>
+        <div class="s-person-details__detail-wrapper">
+          <div data-test-id="s-person-details__personal-single-line"
+               class="s-person-details__personal-single-line">Austin Nowak</div>
+          <div class="s-person-details__position s-text-details">
+            <div>Goalkeeper</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="s-person-card s-person-card--list" data-test-id="s-person-card-list__root">
+  <div class="s-person-card__content">
+    <div class="s-person-card__content__person-details">
+      <div class="s-person-details">
+        <div class="s-person-details__thumbnail">
+          <a aria-label="Reece Cousino full bio" href="/sports/mens-soccer/roster/reece-cousino/12768"></a>
+        </div>
+        <div class="s-person-details__detail-wrapper">
+          <div data-test-id="s-person-details__personal-single-line"
+               class="s-person-details__personal-single-line">Reece Cousino</div>
+          <div class="s-person-details__position s-text-details">
+            <div>Defender</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HEAD COACH card. -->
+<div class="s-person-card s-person-card--list" data-test-id="s-person-card-list__root">
+  <div class="s-person-card__content">
+    <div class="s-person-card__content__person-details">
+      <div class="s-person-details">
+        <div class="s-person-details__thumbnail">
+          <a aria-label="John Higgins full bio" href="/sports/mens-soccer/roster/coaches/john-higgins/4977"></a>
+        </div>
+        <div class="s-person-details__detail-wrapper">
+          <div data-test-id="s-person-details__personal-single-line"
+               class="s-person-details__personal-single-line">John Higgins</div>
+          <div class="s-person-details__position s-text-details">
+            <div>Head Coach</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="s-person-card__content__contact-details">
+      <a href="mailto:higginsj5@xavier.edu">higginsj5@xavier.edu</a>
+      <span>513.745.3879</span>
+    </div>
+  </div>
+</div>
+
+<!-- ASSOCIATE Head Coach card (must NOT be picked over the actual Head Coach
+     when both are present, but is acceptable as a fallback if no plain
+     "Head Coach" is found). -->
+<div class="s-person-card s-person-card--list" data-test-id="s-person-card-list__root">
+  <div class="s-person-card__content">
+    <div class="s-person-card__content__person-details">
+      <div class="s-person-details">
+        <div class="s-person-details__thumbnail">
+          <a aria-label="Shaun Mahoney full bio" href="/sports/mens-soccer/roster/coaches/shaun-mahoney/4978"></a>
+        </div>
+        <div class="s-person-details__detail-wrapper">
+          <div data-test-id="s-person-details__personal-single-line"
+               class="s-person-details__personal-single-line">Shaun Mahoney</div>
+          <div class="s-person-details__position s-text-details">
+            <div>Associate Head Coach</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
