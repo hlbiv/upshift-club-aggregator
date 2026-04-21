@@ -157,9 +157,9 @@ export const tryoutsRelations = relations(tryouts, ({ one }) => ({
 /**
  * Per-snapshot data-quality flag for `club_roster_snapshots`.
  *
- * Phase 1 (this PR) ships the table + read-only API + dashboard panel. The
- * scraper-side detection heuristic that populates `roster_quality_flags` is
- * deliberately Phase 2 — the table will be empty at merge time.
+ * The table, read API, dashboard panel, and Resolve mutation are all shipped.
+ * The Phase 2 detector at `scraper/nav_leaked_names_detector.py` populates
+ * the `nav_leaked_name` flag type nightly.
  *
  * flag_type is a text column with a CHECK constraint (not a pgEnum), matching
  * the repo convention for extensible enum-like columns (see
@@ -174,10 +174,10 @@ export const tryoutsRelations = relations(tryouts, ({ one }) => ({
  * Snapshot-supersession semantics: when a later snapshot replaces an earlier
  * one, existing flags on the earlier snapshot STAY FLAGGED (historical
  * record). They do not auto-resolve. Operators resolve flags explicitly via
- * the panel (Phase 3+).
+ * the panel.
  *
  * resolved_by is an FK to admin_users.id (not a string) so the panel can
- * join and show the resolver's real email in Phase 2+.
+ * join and show the resolver's real email.
  *
  * Per-(snapshot_id, flag_type) uniqueness prevents the detector re-inserting
  * duplicates if it runs twice on the same snapshot — it should upsert into
