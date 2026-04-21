@@ -43,6 +43,11 @@ function readCsv(filePath: string): Record<string, string>[] {
     skip_empty_lines: true,
     trim: true,
     relax_quotes: true,
+    // Operator-edited CSVs occasionally ship with an unquoted comma in
+    // a free-text field (e.g. notes). Hard-failing the whole seed for
+    // one row's punctuation is worse than silently dropping the stray
+    // trailing field — the extra text lands in the last named column.
+    relax_column_count: true,
   }) as Record<string, string>[];
 }
 

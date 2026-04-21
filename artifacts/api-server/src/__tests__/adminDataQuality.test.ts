@@ -13,7 +13,10 @@
 import type { Request, Response } from "express";
 import {
   makeGaPremierOrphanHandler,
+  makeNavLeakedNamesHandler,
   type DataQualityDeps,
+  type NavLeakedNamesDeps,
+  type NavLeakedNamesRawRow,
 } from "../routes/admin/data-quality";
 
 type Failure = { name: string; issue: string };
@@ -50,10 +53,12 @@ function makeRes(): FakeRes {
   return res;
 }
 
-function makeReq(opts: { body?: unknown } = {}): Request {
+function makeReq(
+  opts: { body?: unknown; query?: Record<string, string> } = {},
+): Request {
   return {
     params: {},
-    query: {},
+    query: opts.query ?? {},
     body: opts.body ?? {},
     adminAuth: {
       kind: "session" as const,
@@ -335,6 +340,269 @@ async function run() {
       res.statusCode === 400,
       "validation",
       `expected 400 for limit > 10k, got ${res.statusCode}`,
+    );
+  }
+
+  // --- Nav-leaked-names: metadata-to-typed-field extraction ---------------
+  //
+  // This is the load-bearing regression guard: until Phase 2 ships the
+  // scraper detector, the prod table is empty — so this fake-DB test is
+  // the only thing proving the handler correctly shreds the jsonb
+  // `metadata` payload into typed `leakedStrings` + `snapshotRosterSize`
+  // columns in the response.
+  {
+    const calls: Array<{
+      page: number;
+      pageSize: number;
+      includeResolved: boolean;
+    }> = [];
+    const fakeRows: NavLeakedNamesRawRow[] = [
+      {
+        id: 1,
+        snapshotId: 101,
+        clubId: 42,
+        clubNameCanonical: "Cactus Soccer Club",
+        metadata: {
+          leaked_strings: ["HOME", "ABOUT", "CONTACT US"],
+          snapshot_roster_size: 24,
+        },
+        flaggedAt: new Date("2026-04-10T12:00:00Z"),
+        resolvedAt: null,
+        resolvedByEmail: null,
+      },
+      {
+        id: 2,
+        snapshotId: 202,
+        // Unlinked snapshot (linker hasn't run) — must survive as null.
+        clubId: null,
+        clubNameCanonical: null,
+        metadata: {
+          leaked_strings: ["Register"],
+          snapshot_roster_size: 1,
+        },
+        flaggedAt: "2026-04-11T09:00:00.000Z",
+        resolvedAt: "2026-04-12T15:30:00.000Z",
+        resolvedByEmail: "ops@upshift.test",
+      },
+    ];
+    const deps: NavLeakedNamesDeps = {
+      listNavLeakedNames: async (args) => {
+        calls.push(args);
+        return { rows: fakeRows, total: 2 };
+      },
+    };
+    const handler = makeNavLeakedNamesHandler(deps);
+    const req = makeReq({
+      query: { page: "1", page_size: "20", include_resolved: "true" },
+    });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "nav-leaked",
+      `expected 200, got ${res.statusCode}`,
+    );
+    assert(
+      calls.length === 1 &&
+        calls[0]?.page === 1 &&
+        calls[0]?.pageSize === 20 &&
+        calls[0]?.includeResolved === true,
+      "nav-leaked",
+      `expected single call with page=1, pageSize=20, includeResolved=true; got ${JSON.stringify(calls)}`,
+    );
+    const body = res.body as {
+      total?: number;
+      page?: number;
+      pageSize?: number;
+      rows?: Array<{
+        id: number;
+        snapshotId: number;
+        clubId: number | null;
+        clubNameCanonical: string | null;
+        leakedStrings: string[];
+        snapshotRosterSize: number;
+        flaggedAt: string;
+        resolvedAt: string | null;
+        resolvedByEmail: string | null;
+      }>;
+    };
+    assert(body.total === 2, "nav-leaked", `total should be 2, got ${body.total}`);
+    assert(
+      Array.isArray(body.rows) && body.rows.length === 2,
+      "nav-leaked",
+      `rows should have 2 entries, got ${body.rows?.length}`,
+    );
+    // Row 0: typed fields extracted from metadata.
+    const r0 = body.rows?.[0];
+    assert(r0?.id === 1, "nav-leaked", `row0.id should be 1, got ${r0?.id}`);
+    assert(
+      Array.isArray(r0?.leakedStrings) &&
+        r0?.leakedStrings.length === 3 &&
+        r0?.leakedStrings[0] === "HOME" &&
+        r0?.leakedStrings[2] === "CONTACT US",
+      "nav-leaked",
+      `row0 leakedStrings should be extracted from metadata.leaked_strings verbatim, got ${JSON.stringify(r0?.leakedStrings)}`,
+    );
+    assert(
+      r0?.snapshotRosterSize === 24,
+      "nav-leaked",
+      `row0 snapshotRosterSize should be 24 (extracted from metadata.snapshot_roster_size), got ${r0?.snapshotRosterSize}`,
+    );
+    assert(
+      r0?.clubId === 42 && r0?.clubNameCanonical === "Cactus Soccer Club",
+      "nav-leaked",
+      `row0 club fields should pass through`,
+    );
+    assert(
+      r0?.flaggedAt === "2026-04-10T12:00:00.000Z",
+      "nav-leaked",
+      `row0 flaggedAt should be ISO-normalized, got ${r0?.flaggedAt}`,
+    );
+    assert(
+      r0?.resolvedAt === null,
+      "nav-leaked",
+      `row0 resolvedAt should be null for active flag, got ${r0?.resolvedAt}`,
+    );
+    // Row 1: unlinked snapshot, resolved.
+    const r1 = body.rows?.[1];
+    assert(
+      r1?.clubId === null && r1?.clubNameCanonical === null,
+      "nav-leaked",
+      `row1 unlinked snapshot should preserve nulls (clubId=${r1?.clubId}, clubNameCanonical=${r1?.clubNameCanonical})`,
+    );
+    assert(
+      r1?.leakedStrings?.[0] === "Register" && r1?.snapshotRosterSize === 1,
+      "nav-leaked",
+      `row1 metadata extraction failed: ${JSON.stringify(r1)}`,
+    );
+    assert(
+      r1?.resolvedAt === "2026-04-12T15:30:00.000Z",
+      "nav-leaked",
+      `row1 resolvedAt should be ISO, got ${r1?.resolvedAt}`,
+    );
+    assert(
+      r1?.resolvedByEmail === "ops@upshift.test",
+      "nav-leaked",
+      `row1 resolvedByEmail should pass through, got ${r1?.resolvedByEmail}`,
+    );
+  }
+
+  // --- Nav-leaked-names: malformed metadata is tolerated -------------------
+  //
+  // If a row slips through with missing / wrong-typed metadata fields, the
+  // handler must NOT 500 — it should degrade to safe defaults ([] / 0) so
+  // one bad row doesn't take out the whole panel.
+  {
+    const deps: NavLeakedNamesDeps = {
+      listNavLeakedNames: async () => ({
+        rows: [
+          {
+            id: 10,
+            snapshotId: 1000,
+            clubId: 1,
+            clubNameCanonical: "Test FC",
+            // Missing leaked_strings entirely; snapshot_roster_size is a string
+            // instead of a number. Both should coerce to safe defaults.
+            metadata: { snapshot_roster_size: "not-a-number" },
+            flaggedAt: new Date("2026-04-13T00:00:00Z"),
+            resolvedAt: null,
+            resolvedByEmail: null,
+          },
+          {
+            id: 11,
+            snapshotId: 1001,
+            clubId: 2,
+            clubNameCanonical: "Other FC",
+            // Null metadata — must not crash the mapper.
+            metadata: null,
+            flaggedAt: new Date("2026-04-13T01:00:00Z"),
+            resolvedAt: null,
+            resolvedByEmail: null,
+          },
+        ],
+        total: 2,
+      }),
+    };
+    const handler = makeNavLeakedNamesHandler(deps);
+    const req = makeReq({ query: {} });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "nav-leaked-malformed",
+      `expected 200 even with malformed metadata, got ${res.statusCode}`,
+    );
+    const body = res.body as {
+      rows?: Array<{ leakedStrings: string[]; snapshotRosterSize: number }>;
+    };
+    assert(
+      body.rows?.[0]?.leakedStrings.length === 0 &&
+        body.rows?.[0]?.snapshotRosterSize === 0,
+      "nav-leaked-malformed",
+      `row with bad metadata should default to [] / 0, got ${JSON.stringify(body.rows?.[0])}`,
+    );
+    assert(
+      body.rows?.[1]?.leakedStrings.length === 0 &&
+        body.rows?.[1]?.snapshotRosterSize === 0,
+      "nav-leaked-malformed",
+      `row with null metadata should default to [] / 0, got ${JSON.stringify(body.rows?.[1])}`,
+    );
+  }
+
+  // --- Nav-leaked-names: defaults applied when query is empty --------------
+  {
+    const calls: Array<{
+      page: number;
+      pageSize: number;
+      includeResolved: boolean;
+    }> = [];
+    const deps: NavLeakedNamesDeps = {
+      listNavLeakedNames: async (args) => {
+        calls.push(args);
+        return { rows: [], total: 0 };
+      },
+    };
+    const handler = makeNavLeakedNamesHandler(deps);
+    const req = makeReq({ query: {} });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "nav-leaked-defaults",
+      `expected 200, got ${res.statusCode}`,
+    );
+    assert(
+      calls[0]?.page === 1 &&
+        calls[0]?.pageSize === 20 &&
+        calls[0]?.includeResolved === false,
+      "nav-leaked-defaults",
+      `empty query should apply page=1/pageSize=20/includeResolved=false, got ${JSON.stringify(calls[0])}`,
+    );
+    const body = res.body as { total?: number; rows?: unknown[] };
+    assert(
+      body.total === 0 && body.rows?.length === 0,
+      "nav-leaked-defaults",
+      `empty response should round-trip`,
+    );
+  }
+
+  // --- Nav-leaked-names: invalid page_size → 400 ---------------------------
+  {
+    const deps: NavLeakedNamesDeps = {
+      listNavLeakedNames: async () => ({ rows: [], total: 0 }),
+    };
+    const handler = makeNavLeakedNamesHandler(deps);
+    const req = makeReq({ query: { page_size: "500" } });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "nav-leaked-validation",
+      `expected 400 for page_size > 100, got ${res.statusCode}`,
     );
   }
 

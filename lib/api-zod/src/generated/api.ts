@@ -1001,6 +1001,57 @@ export const GetEmptyStaffPagesResponse = zod.object({
 });
 
 /**
+ * Paginated list of `roster_quality_flags` rows with `flag_type = 'nav_leaked_name'`, joined to the parent `club_roster_snapshots` and the snapshot's `canonical_clubs` resolution (if any — `club_id` is NULL until the canonical-club linker runs). `leakedStrings` and `snapshotRosterSize` are extracted from the flag row's jsonb `metadata` into typed response fields; callers never see the raw jsonb. `resolvedByEmail` is joined from `admin_users.email` if the flag has been resolved.
+Phase 1 scope: the table is populated by Phase 2 scraper detection — this endpoint returns an empty list at merge time by design.
+
+ * @summary Roster snapshots flagged as having a nav-menu string leak
+ */
+export const getNavLeakedNamesQueryPageDefault = 1;
+
+export const getNavLeakedNamesQueryPageSizeDefault = 20;
+export const getNavLeakedNamesQueryPageSizeMax = 100;
+
+export const getNavLeakedNamesQueryIncludeResolvedDefault = false;
+
+export const GetNavLeakedNamesQueryParams = zod.object({
+  page: zod.coerce.number().min(1).default(getNavLeakedNamesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .min(1)
+    .max(getNavLeakedNamesQueryPageSizeMax)
+    .default(getNavLeakedNamesQueryPageSizeDefault),
+  include_resolved: zod.coerce
+    .boolean()
+    .default(getNavLeakedNamesQueryIncludeResolvedDefault)
+    .describe(
+      "If true, include rows whose `resolved_at` is set. Default false.",
+    ),
+});
+
+export const GetNavLeakedNamesResponse = zod.object({
+  rows: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        snapshotId: zod.number(),
+        clubId: zod.number().nullable(),
+        clubNameCanonical: zod.string().nullable(),
+        leakedStrings: zod.array(zod.string()),
+        snapshotRosterSize: zod.number(),
+        flaggedAt: zod.coerce.date(),
+        resolvedAt: zod.coerce.date().nullable(),
+        resolvedByEmail: zod.string().nullable(),
+      })
+      .describe(
+        "One `roster_quality_flags` row joined to its `club_roster_snapshots` parent (and the snapshot's `canonical_clubs` resolution if the linker has run). `leakedStrings` and `snapshotRosterSize` are extracted from the jsonb `metadata` payload into typed columns at the API boundary — callers do not see raw jsonb. `clubId` \/ `clubNameCanonical` are nullable because the canonical-club linker may not have run yet. `resolvedByEmail` is joined from `admin_users` when the flag has been resolved.\n",
+      ),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
  * Paginated list of `scrape_health` rows whose `last_scraped_at` is older than `threshold_days` days or NULL. `entityName` is a best-effort human label joined from `canonical_clubs` / `leagues_master` / `colleges` / `coaches` per `entity_type`; when the join fails (deleted entity, unjoinable type) it is null.
 
  * @summary scrape_health entities whose last_scraped_at exceeds a threshold

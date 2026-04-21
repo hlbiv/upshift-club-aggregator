@@ -528,6 +528,29 @@ export interface EmptyStaffPagesResponse {
 }
 
 /**
+ * One `roster_quality_flags` row joined to its `club_roster_snapshots` parent (and the snapshot's `canonical_clubs` resolution if the linker has run). `leakedStrings` and `snapshotRosterSize` are extracted from the jsonb `metadata` payload into typed columns at the API boundary — callers do not see raw jsonb. `clubId` / `clubNameCanonical` are nullable because the canonical-club linker may not have run yet. `resolvedByEmail` is joined from `admin_users` when the flag has been resolved.
+
+ */
+export interface NavLeakedNamesRow {
+  id: number;
+  snapshotId: number;
+  clubId: number | null;
+  clubNameCanonical: string | null;
+  leakedStrings: string[];
+  snapshotRosterSize: number;
+  flaggedAt: string;
+  resolvedAt: string | null;
+  resolvedByEmail: string | null;
+}
+
+export interface NavLeakedNamesResponse {
+  rows: NavLeakedNamesRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
  * One scrape_health row whose last_scraped_at is older than `thresholdDays` or NULL. `entityName` is a best-effort join label.
 
  */
@@ -881,6 +904,22 @@ export type GetEmptyStaffPagesParams = {
    * @maximum 100
    */
   page_size?: number;
+};
+
+export type GetNavLeakedNamesParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  page_size?: number;
+  /**
+   * If true, include rows whose `resolved_at` is set. Default false.
+   */
+  include_resolved?: boolean;
 };
 
 export type GetStaleScrapesParams = {

@@ -1,0 +1,320 @@
+<!--
+  Fixture for the NextGen / Sidearm Nuxt `list` view_template.
+  Modeled on the live rendered DOM from hokiesports.com/sports/mens-soccer/roster
+  and goaztecs.com/sports/womens-soccer/roster (Spring 2026 capture).
+
+  Player personal details are fictional. Structural markup (class names,
+  BEM modifiers on .roster-player-list-profile-field, staff-members guard)
+  matches the live NextGen Nuxt template exactly.
+
+  12 player cards + 1 staff card (which the parser MUST skip).
+-->
+<html>
+<head><title>Men's Soccer Roster | Example D1</title></head>
+<body>
+<main class="roster-page roster roster-sport-mens-soccer roster-season-2025">
+  <div class="roster__content-box">
+    <h2 class="roster__content-box-title roster__content-box-title--players">Roster</h2>
+    <div class="roster-players">
+      <div class="roster-players__group">
+        <ul class="roster-players-list">
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">0</strong>
+              <a href="/sports/mens-soccer/roster/player/leo-ledin" class="roster-list-item__image-wrapper"><img alt="Leo Ledin" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/leo-ledin" class="roster-list-item__title">Leo Ledin</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Sophomore</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Goalkeeper</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">Stockholm, Sweden</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Solna Gymnasium</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--previous-school">Wofford</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">1</strong>
+              <a href="/sports/mens-soccer/roster/player/sam-joseph" class="roster-list-item__image-wrapper"><img alt="Sam Joseph" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/sam-joseph" class="roster-list-item__title">Sam Joseph</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Senior</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Goalkeeper</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">San Diego, Calif.</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Saint Augustine High School</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--previous-school">UCLA</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">2</strong>
+              <a href="/sports/mens-soccer/roster/player/amir-ariely" class="roster-list-item__image-wrapper"><img alt="Amir Ariely" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/amir-ariely" class="roster-list-item__title">Amir Ariely</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Freshman</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Defender</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">Barnsley, England</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Barnsley College</span>
+                    
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">3</strong>
+              <a href="/sports/mens-soccer/roster/player/ethan-page" class="roster-list-item__image-wrapper"><img alt="Ethan Page" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/ethan-page" class="roster-list-item__title">Ethan Page</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Freshman</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Defender</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">Brentwood, UK</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Ardingly College</span>
+                    
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">4</strong>
+              <a href="/sports/mens-soccer/roster/player/evan-schroeder" class="roster-list-item__image-wrapper"><img alt="Evan Schroeder" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/evan-schroeder" class="roster-list-item__title">Evan Schroeder</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Senior</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Defender</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">Atlanta, Ga.</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Druid Hills</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--previous-school">Georgia State</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">5</strong>
+              <a href="/sports/mens-soccer/roster/player/yanis-belatrache" class="roster-list-item__image-wrapper"><img alt="Yanis Belatrache" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/yanis-belatrache" class="roster-list-item__title">Yanis Belatrache</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Junior</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Midfielder</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">Paris, France</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Lycée Paris</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--previous-school">UCF</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">6</strong>
+              <a href="/sports/mens-soccer/roster/player/mathias-yohannes" class="roster-list-item__image-wrapper"><img alt="Mathias Yohannes" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/mathias-yohannes" class="roster-list-item__title">Mathias Yohannes</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Senior</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Midfielder</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">South Riding, Va.</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Freedom HS</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--previous-school">Kentucky</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">7</strong>
+              <a href="/sports/mens-soccer/roster/player/declan-quill" class="roster-list-item__image-wrapper"><img alt="Declan Quill" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/declan-quill" class="roster-list-item__title">Declan Quill</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Senior</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Forward</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">Falls Church, Va.</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">George Mason HS</span>
+                    
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">8</strong>
+              <a href="/sports/mens-soccer/roster/player/ugo-bertelli" class="roster-list-item__image-wrapper"><img alt="Ugo Bertelli" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/ugo-bertelli" class="roster-list-item__title">Ugo Bertelli</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Junior</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Midfielder</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">Marseilles, France</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Lycée Mandela</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--previous-school">Campbell</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">9</strong>
+              <a href="/sports/mens-soccer/roster/player/alex-perez" class="roster-list-item__image-wrapper"><img alt="Alex Perez" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/alex-perez" class="roster-list-item__title">Alex Perez</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Sophomore</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Forward</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">Austin, Tex.</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Westlake HS</span>
+                    
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">10</strong>
+              <a href="/sports/mens-soccer/roster/player/marcus-oswald" class="roster-list-item__image-wrapper"><img alt="Marcus Oswald" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/marcus-oswald" class="roster-list-item__title">Marcus Oswald</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">RS-Jr</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Defender</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">Portland, Ore.</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Lincoln HS</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--previous-school">Oregon State</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="roster-list-item">
+            <div class="roster-list-item__wrapper">
+              <strong class="roster-list-item__jersey-number">11</strong>
+              <a href="/sports/mens-soccer/roster/player/oliver-tan" class="roster-list-item__image-wrapper"><img alt="Oliver Tan" class="image roster-list-item__image" loading="lazy" src="data:image/gif;base64,R0lGODlh"/></a>
+              <div class="roster-list-item__info">
+                <div class="roster-list-item__heading">
+                  <h3 class="roster-list-item__title-wrapper"><a href="/sports/mens-soccer/roster/player/oliver-tan" class="roster-list-item__title">Oliver Tan</a></h3>
+                </div>
+                <div class="roster-list-item__profile-fields-wrapper">
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--class-level">Freshman</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--height"><span>6′ 0″</span></span>
+                  </div>
+                  <div class="roster-list-item__profile-fields">
+                    <strong class="roster-player-list-profile-field roster-player-list-profile-field--position">Midfielder</strong>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--hometown">Singapore</span>
+                    <span class="roster-player-list-profile-field roster-player-list-profile-field--high-school">Raffles Institution</span>
+                    
+                  </div>
+                </div>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Coaching staff section: must NOT be returned as players.
+         NextGen uses the same container class + a staff-specific modifier. -->
+    <section class="roster-staff-members">
+      <ul class="roster-staff-members-list">
+        <li class="roster-list-item roster-staff-members-list-item">
+          <div class="roster-list-item__wrapper">
+            <strong class="roster-list-item__jersey-number"></strong>
+            <div class="roster-list-item__info">
+              <div class="roster-list-item__heading">
+                <h3 class="roster-list-item__title-wrapper"><a href="/staff/head-coach" class="roster-list-item__title">Coach Pat Nameson</a></h3>
+              </div>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </section>
+  </div>
+</main>
+</body>
+</html>

@@ -601,78 +601,169 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
         if players:
             return players
 
-    # --- Strategy 4: Nuxt-based roster template ---
-    # Non-SIDEARM template used by a meaningful chunk of D1 programs
-    # (observed: Stanford, Penn State, USC, Virginia, Virginia Tech,
-    # Oregon, Minnesota, Pepperdine, Notre Dame women's, Georgia Tech,
-    # Oklahoma, New Mexico, Iowa women's, Wyoming, Utah State, Tulane,
-    # San Diego State, San Jose State, Auburn, George Mason). Markup
-    # signature: nested ``.roster-card-item`` nodes with ``data-v-*``
-    # attributes (Vue SFC-compiled template). Fields:
-    #   .roster-card-item__title         → player name (via <a>)
-    #   .roster-card-item__jersey-number → jersey
-    #   .roster-card-item__position      → position (abbreviated: GK/D/M/F)
-    #   .roster-player-card-profile-field with labeled <strong> + value <span>s:
-    #       "Hometown" / "Previous School" / "High School" / "Major"
-    #   profile-fields--basic block has unlabeled height/weight/class-year
-    nuxt_cards = [
-        c for c in soup.select(".roster-card-item")
-        if "roster-staff-members-card-item" not in (c.get("class") or [])
+    # --- Strategy 4: Nuxt-based roster template (card / list / player-list) ---
+    # Non-SIDEARM template used by a meaningful chunk of D1 programs.
+    # Observed container classes (driven by the NextGen/Nuxt view_template
+    # field — ``card`` / ``list`` / Penn-State-custom-``list``):
+    #
+    #   .roster-card-item      — card view  (Stanford, Georgia Tech, Auburn, ...)
+    #   .roster-list-item      — list view  (Virginia Tech / hokiesports, San Diego State)
+    #   .player-list-item      — Penn State ``list`` variant (gopsusports)
+    #
+    # For each container, child classes are the stem + a known suffix:
+    #   {stem}__title                → player name (via <a>, else element text)
+    #   {stem}__jersey-number        → jersey
+    #   {stem}__position             — Nuxt card only; list/player variants put
+    #                                   the position into a labeled profile-field
+    #
+    # Two labeled-field conventions coexist, both supported below:
+    #
+    #   Nuxt card:
+    #     .roster-player-card-profile-field / __label / __value
+    #     basic block (unlabeled ordered) + --additional block (labeled)
+    #
+    #   Nuxt list (hokiesports / goaztecs):
+    #     .roster-player-list-profile-field with BEM modifier classes
+    #     --class-level / --height / --position / --hometown / --high-school
+    #     / --previous-school
+    #
+    #   Penn-State variant:
+    #     .profile-field-content with
+    #       .profile-field-content__title (label) +
+    #       .profile-field-content__value (value)
+    #     labels: "Year" / "Height" / "Hometown" / "High School" / "Club Team"
+    #
+    # Staff cards (same container class but with ``-staff-members-`` in the
+    # class list) are filtered out up front so we don't return the head coach
+    # as a player.
+    NUXT_CONTAINERS: list = [
+        # (container selector, stem for __title / __jersey-number / __position)
+        (".roster-card-item", "roster-card-item"),
+        (".roster-list-item", "roster-list-item"),
+        (".player-list-item", "player-list-item"),
     ]
-    for card in nuxt_cards:
-        name_el = card.select_one(".roster-card-item__title")
-        name = name_el.get_text().strip() if name_el else ""
-        if not name or len(name) < 2:
+
+    def _is_nuxt_staff_card(el) -> bool:
+        cls = el.get("class") or []
+        return any("staff-members" in c for c in cls)
+
+    for container_sel, stem in NUXT_CONTAINERS:
+        cards = [c for c in soup.select(container_sel) if not _is_nuxt_staff_card(c)]
+        if not cards:
             continue
 
-        jersey_el = card.select_one(".roster-card-item__jersey-number")
-        jersey = jersey_el.get_text().strip() if jersey_el else None
-
-        position_el = card.select_one(".roster-card-item__position")
-        position = position_el.get_text().strip() if position_el else None
-
-        # --basic block has no labels; values are ordered height, weight,
-        # class-year. We only care about the class-year (scan every value
-        # against normalize_year; first hit wins).
-        year: Optional[str] = None
-        for value_el in card.select(
-            ".roster-players-cards-item__profile-fields--basic "
-            ".roster-player-card-profile-field__value"
-        ):
-            normalized = normalize_year(value_el.get_text().strip())
-            if normalized:
-                year = normalized
-                break
-
-        # --additional block has labeled fields (Hometown, Major, etc.)
-        hometown: Optional[str] = None
-        prev_club: Optional[str] = None
-        for field in card.select(
-            ".roster-players-cards-item__profile-fields--additional "
-            ".roster-player-card-profile-field"
-        ):
-            label_el = field.select_one(".roster-player-card-profile-field__label")
-            value_el = field.select_one(".roster-player-card-profile-field__value")
-            if not (label_el and value_el):
+        for card in cards:
+            name_el = card.select_one(f".{stem}__title")
+            # Some variants nest the name inside an <a> child of the title wrapper
+            # (e.g. hokiesports: ``a.roster-list-item__title`` directly).
+            # Others nest <a> inside an <h3> .__title-wrapper.
+            if name_el is None:
+                name_el = card.select_one(f".{stem}__title-wrapper a, .{stem}__title-link")
+            name = name_el.get_text().strip() if name_el else ""
+            if not name or len(name) < 2:
                 continue
-            label = label_el.get_text().strip().lower().rstrip(":")
-            value = value_el.get_text().strip()
-            if "hometown" in label:
-                hometown = value
-            elif "previous" in label or "high school" in label or "last school" in label:
-                prev_club = value
 
-        players.append(RosterPlayer(
-            player_name=name,
-            position=position or None,
-            year=year,
-            hometown=hometown or None,
-            prev_club=prev_club or None,
-            jersey_number=jersey or None,
-        ))
+            jersey_el = card.select_one(f".{stem}__jersey-number")
+            jersey = jersey_el.get_text().strip() if jersey_el else None
 
-    if players:
-        return players
+            position_el = card.select_one(f".{stem}__position")
+            position = position_el.get_text().strip() if position_el else None
+
+            year: Optional[str] = None
+            hometown: Optional[str] = None
+            prev_club: Optional[str] = None
+
+            # --- Nuxt card: --basic (unlabeled) + --additional (labeled) ---
+            for value_el in card.select(
+                ".roster-players-cards-item__profile-fields--basic "
+                ".roster-player-card-profile-field__value"
+            ):
+                normalized = normalize_year(value_el.get_text().strip())
+                if normalized:
+                    year = normalized
+                    break
+
+            for field in card.select(
+                ".roster-players-cards-item__profile-fields--additional "
+                ".roster-player-card-profile-field"
+            ):
+                label_el = field.select_one(".roster-player-card-profile-field__label")
+                value_el = field.select_one(".roster-player-card-profile-field__value")
+                if not (label_el and value_el):
+                    continue
+                label = label_el.get_text().strip().lower().rstrip(":")
+                value = value_el.get_text().strip()
+                if "hometown" in label and not hometown:
+                    hometown = value
+                elif (("previous" in label) or ("high school" in label)
+                      or ("last school" in label) or ("club team" in label)):
+                    if not prev_club:
+                        prev_club = value
+
+            # --- Nuxt list: BEM-modifier classes on profile-list-field ---
+            #
+            # Each field's text itself IS the value — no label element — because
+            # the DOM uses the BEM --<kind> class as the semantic marker.
+            # Position sometimes lands here instead of the card-item's __position.
+            #
+            # Prev-club precedence: ``--previous-school`` outranks
+            # ``--high-school`` when both are present. On the live hokiesports
+            # DOM, high-school renders first in source order; without the
+            # explicit precedence we'd stick with the HS name and throw away
+            # the more-informative last-collegiate-program name (e.g. Sam
+            # Joseph → "Saint Augustine HS" instead of "UCLA").
+            hs_fallback: Optional[str] = None
+            for field in card.select(".roster-player-list-profile-field"):
+                cls = " ".join(field.get("class") or [])
+                txt = field.get_text().strip()
+                if not txt:
+                    continue
+                if "--class-level" in cls and year is None:
+                    year = normalize_year(txt)
+                elif "--position" in cls and not position:
+                    position = txt
+                elif "--hometown" in cls and not hometown:
+                    hometown = txt
+                elif "--previous-school" in cls and not prev_club:
+                    prev_club = txt
+                elif "--high-school" in cls and hs_fallback is None:
+                    hs_fallback = txt
+            if not prev_club and hs_fallback:
+                prev_club = hs_fallback
+
+            # --- Penn-State variant: profile-field-content label/value pairs ---
+            for field in card.select(".profile-field-content"):
+                label_el = field.select_one(".profile-field-content__title")
+                value_el = field.select_one(".profile-field-content__value")
+                if not (label_el and value_el):
+                    continue
+                label = label_el.get_text().strip().lower().rstrip(":")
+                value = value_el.get_text().strip()
+                if not value:
+                    continue
+                if "year" in label or "class" in label:
+                    if year is None:
+                        year = normalize_year(value)
+                elif "hometown" in label and not hometown:
+                    hometown = value
+                elif (("previous" in label) or ("high school" in label)
+                      or ("last school" in label) or ("club team" in label)):
+                    if not prev_club:
+                        prev_club = value
+                elif "position" in label and not position:
+                    position = value
+
+            players.append(RosterPlayer(
+                player_name=name,
+                position=position or None,
+                year=year,
+                hometown=hometown or None,
+                prev_club=prev_club or None,
+                jersey_number=jersey or None,
+            ))
+
+        if players:
+            return players
 
     # --- Strategy 5: Sidearm Vue-embedded roster JSON ---
     # A cluster of classic-SIDEARM programs (e.g. gomason.com) ship a Vue
@@ -962,6 +1053,26 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
 _PLAYWRIGHT_FALLBACK_ENV = "NCAA_PLAYWRIGHT_FALLBACK"
 _PLAYWRIGHT_RENDER_TIMEOUT_MS = 25_000
 _PLAYWRIGHT_SELECTOR_TIMEOUT_MS = 5_000
+# Wait up to this long for the NextGen/Nuxt roster XHR to fire during the
+# extra Playwright pass. Longer than the selector-wait because the XHR
+# typically fires only after all Nuxt JS chunks have loaded.
+_PLAYWRIGHT_XHR_TIMEOUT_MS = 15_000
+
+# Regex predicate matching the Sidearm NextGen / Nuxt roster JSON endpoint.
+# Observed on hokiesports.com (sport_id=8), goaztecs.com (sport_id=18),
+# gopsusports.com (sport_id=28), richmondspiders.com, soonersports.com,
+# gowyo.com, utahstateaggies.com. Shape:
+#   https://<host>/website-api/rosters?filter[sport_id]=<N>&include=season&...
+#
+# Firing this response is the deterministic "roster is about to render"
+# signal on NextGen — the Nuxt store populates its ``rosterPlayers``
+# key right after. Waiting on the response (rather than a DOM selector)
+# gets us in front of hydration flakes where the card DOM lags behind
+# the data by a few hundred ms.
+_NUXT_XHR_PATH_RE = re.compile(
+    r"/website-api/rosters(?:\?|/|$)",
+    re.IGNORECASE,
+)
 
 
 def _playwright_fallback_enabled() -> bool:
@@ -982,6 +1093,32 @@ def _render_with_playwright(url: str) -> Optional[str]:
     Returns None on any of: Playwright not installed, launch failure,
     navigation timeout, or unexpected exception. Caller treats None as
     'no further fallback available' and skips the program.
+
+    Two-phase hydration wait. The NextGen / Nuxt shell cluster
+    (hokiesports.com, goaztecs.com, gopsusports.com, ...) fetches its
+    roster JSON from ``/website-api/rosters?filter[sport_id]=<N>``
+    *after* DOMContentLoaded — the DOM selector for a player card does
+    not appear until that response lands and the Nuxt store hydrates.
+    The classic SIDEARM fallback's 5-second selector wait is too short
+    for that path and times out before the cards ever paint.
+
+    Phase 1: ``page.wait_for_response`` against the NextGen roster
+    endpoint predicate. Matches on path (``/website-api/rosters``),
+    not host — same predicate works across every NextGen tenant.
+    Treated as best-effort: SIDEARM classic sites never fire this XHR,
+    so a timeout here is expected, not fatal.
+
+    Phase 2: ``page.wait_for_selector`` for any known roster card
+    container (SIDEARM, Nuxt card, Nuxt list, Penn-State player-list,
+    or a plain ``<tbody> <tr>``). This catches sites where phase 1
+    matched (NextGen post-XHR DOM paint) AND sites that skipped
+    phase 1 (SIDEARM classic, which already hydrates before the
+    selector wait).
+
+    If both waits time out the function still returns ``page.content()``
+    — the parser tries all strategies and may still succeed on an
+    off-template site. Returning None only on hard failure (launch,
+    navigation) preserves diagnostic value.
     """
     try:
         from playwright.sync_api import (  # type: ignore
@@ -1007,20 +1144,49 @@ def _render_with_playwright(url: str) -> Optional[str]:
                     timeout=_PLAYWRIGHT_RENDER_TIMEOUT_MS,
                     wait_until="domcontentloaded",
                 )
-                # Wait for either a SIDEARM roster card or a generic
-                # table row — whichever renders first. Roster pages
-                # always have one or the other once hydrated.
+
+                # Phase 1: NextGen / Nuxt roster XHR. Best-effort — SIDEARM
+                # classic + WMT + Vue-embedded-JSON sites never fire this.
+                # Note: Playwright sync API exposes XHR waits via
+                # ``page.wait_for_event("response", predicate=...)`` — the
+                # ``page.wait_for_response(...)`` symbol wraps ``event_info``
+                # return semantics and is not present on every Playwright
+                # version. ``wait_for_event`` is stable across versions.
+                try:
+                    page.wait_for_event(
+                        "response",
+                        predicate=lambda r: (
+                            r.status == 200
+                            and bool(_NUXT_XHR_PATH_RE.search(r.url))
+                        ),
+                        timeout=_PLAYWRIGHT_XHR_TIMEOUT_MS,
+                    )
+                    # Give Nuxt a tick to paint the card DOM after the
+                    # response lands. Observed ~200-400 ms gap on
+                    # hokiesports.com / goaztecs.com between XHR ack and
+                    # first ``.roster-list-item`` appearing.
+                    page.wait_for_timeout(750)
+                except PlaywrightTimeout:
+                    pass
+
+                # Phase 2: DOM selector across every known template.
+                # Widened vs pre-XHR version to include Nuxt list/card
+                # containers and Penn-State's ``player-list-item`` —
+                # previously only SIDEARM + raw table rows.
                 try:
                     page.wait_for_selector(
                         "li.sidearm-roster-player, "
                         "div.sidearm-roster-player, "
+                        ".roster-card-item:not(.roster-staff-members-card-item), "
+                        ".roster-list-item, "
+                        ".player-list-item, "
                         "table tr[data-player-id], "
                         "table tbody tr",
                         timeout=_PLAYWRIGHT_SELECTOR_TIMEOUT_MS,
                     )
                 except PlaywrightTimeout:
-                    # Fall through — parser will still try; some sites
-                    # use non-standard markup we'll catch regardless.
+                    # Still return the content; parser will try every
+                    # strategy and may catch a non-standard shape.
                     pass
                 return page.content()
             finally:

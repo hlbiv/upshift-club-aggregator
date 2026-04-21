@@ -4,6 +4,7 @@
  *   POST /api/v1/admin/data-quality/ga-premier-orphans
  *   GET  /api/v1/admin/data-quality/empty-staff-pages
  *   GET  /api/v1/admin/data-quality/stale-scrapes
+ *   GET  /api/v1/admin/data-quality/nav-leaked-names
  *
  * GA Premier orphan cleanup
  * -------------------------
@@ -51,8 +52,17 @@
  * read-only panels below are inline handlers following the scrape-runs /
  * scrape-health pattern (tested end-to-end via the dashboard test suite).
  *
- * Future panel (nav-leaked-names) is deferred — needs a persistence
- * decision first.
+ * Nav-leaked-names
+ * ----------------
+ * Phase 1 read-only panel for `roster_quality_flags` rows with
+ * `flag_type = 'nav_leaked_name'`. Joins the flag to its snapshot, the
+ * snapshot's canonical club (nullable — linker pattern), and the resolver
+ * admin (if resolved). `leakedStrings` and `snapshotRosterSize` are
+ * extracted from the jsonb `metadata` into typed response fields at the
+ * API boundary — the caller never sees raw jsonb. Phase 2 (scraper
+ * detection) ships separately; the table is empty at Phase-1 merge time
+ * and this endpoint is the regression guard for the jsonb → typed
+ * extraction shape.
  */
 import { Router, type IRouter, type RequestHandler } from "express";
 import { sql } from "drizzle-orm";
@@ -65,6 +75,8 @@ import {
   leaguesMaster,
   colleges,
   coaches,
+  rosterQualityFlags,
+  adminUsers,
 } from "@workspace/db";
 import {
   GaPremierOrphanCleanupRequest,
@@ -73,6 +85,8 @@ import {
   EmptyStaffPagesResponse,
   StaleScrapesRequest,
   StaleScrapesResponse,
+  NavLeakedNamesRequest,
+  NavLeakedNamesResponse,
 } from "@hlbiv/api-zod/admin";
 
 // ---------------------------------------------------------------------------
@@ -201,8 +215,201 @@ export function makeDataQualityRouter(deps: DataQualityDeps): IRouter {
   router.post("/ga-premier-orphans", makeGaPremierOrphanHandler(deps));
   router.get("/empty-staff-pages", emptyStaffPagesHandler);
   router.get("/stale-scrapes", staleScrapesHandler);
+  router.get(
+    "/nav-leaked-names",
+    makeNavLeakedNamesHandler(prodNavLeakedNamesDeps),
+  );
   return router;
 }
+
+// ---------------------------------------------------------------------------
+// Nav-leaked-names — DI surface + handler factory + prod wiring.
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw row shape returned by the DB layer. The handler is responsible for
+ * mapping this into the typed response (extracting fields out of jsonb,
+ * ISO-normalizing timestamps). Keeping this explicit in the DI surface
+ * lets the unit test drive the handler with a plain object literal.
+ */
+export interface NavLeakedNamesRawRow {
+  id: number;
+  snapshotId: number;
+  clubId: number | null;
+  clubNameCanonical: string | null;
+  // jsonb payload as returned by node-pg — an arbitrary object. The
+  // handler extracts typed fields out of this at the API boundary.
+  metadata: unknown;
+  flaggedAt: Date | string;
+  resolvedAt: Date | string | null;
+  resolvedByEmail: string | null;
+}
+
+export interface NavLeakedNamesDeps {
+  listNavLeakedNames: (args: {
+    page: number;
+    pageSize: number;
+    includeResolved: boolean;
+  }) => Promise<{ rows: NavLeakedNamesRawRow[]; total: number }>;
+}
+
+/**
+ * Extract `leaked_strings` + `snapshot_roster_size` from a
+ * `roster_quality_flags.metadata` jsonb payload. Tolerant of missing /
+ * malformed fields — defaults to [] / 0 rather than throwing, so one
+ * malformed row cannot take out the whole panel.
+ */
+function extractNavLeakedMetadata(raw: unknown): {
+  leakedStrings: string[];
+  snapshotRosterSize: number;
+} {
+  if (raw === null || typeof raw !== "object") {
+    return { leakedStrings: [], snapshotRosterSize: 0 };
+  }
+  const m = raw as Record<string, unknown>;
+  const leakedStrings = Array.isArray(m.leaked_strings)
+    ? m.leaked_strings.filter((x): x is string => typeof x === "string")
+    : [];
+  const sizeRaw = m.snapshot_roster_size;
+  const snapshotRosterSize =
+    typeof sizeRaw === "number" && Number.isFinite(sizeRaw)
+      ? Math.trunc(sizeRaw)
+      : 0;
+  return { leakedStrings, snapshotRosterSize };
+}
+
+export function makeNavLeakedNamesHandler(
+  deps: NavLeakedNamesDeps,
+): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const parsed = NavLeakedNamesRequest.safeParse({
+        page: toNumberOrUndefined(req.query.page),
+        pageSize:
+          toNumberOrUndefined(req.query.page_size) ??
+          toNumberOrUndefined(req.query.pageSize) ??
+          toNumberOrUndefined(req.query.limit),
+        includeResolved:
+          toBooleanOrUndefined(req.query.include_resolved) ??
+          toBooleanOrUndefined(req.query.includeResolved),
+      });
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid query params" });
+        return;
+      }
+      const { page, pageSize, includeResolved } = parsed.data;
+
+      const { rows, total } = await deps.listNavLeakedNames({
+        page,
+        pageSize,
+        includeResolved,
+      });
+
+      const mapped = rows.map((r) => {
+        const { leakedStrings, snapshotRosterSize } = extractNavLeakedMetadata(
+          r.metadata,
+        );
+        return {
+          id: r.id,
+          snapshotId: r.snapshotId,
+          clubId: r.clubId,
+          clubNameCanonical: r.clubNameCanonical,
+          leakedStrings,
+          snapshotRosterSize,
+          flaggedAt: toIsoRequired(r.flaggedAt),
+          resolvedAt: toIsoOrNull(r.resolvedAt),
+          resolvedByEmail: r.resolvedByEmail,
+        };
+      });
+
+      res.json(
+        NavLeakedNamesResponse.parse({
+          rows: mapped,
+          total,
+          page,
+          pageSize,
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+/**
+ * Production DB-backed dep. Single SQL query with a COUNT(*) OVER () window
+ * to avoid a separate round-trip for the total. Orders unresolved flags
+ * oldest-first (so the worst-aged offenders bubble up on page 1); when
+ * `includeResolved=true`, resolved rows sort after unresolved.
+ */
+export const prodNavLeakedNamesDeps: NavLeakedNamesDeps = {
+  listNavLeakedNames: async ({ page, pageSize, includeResolved }) => {
+    const offset = (page - 1) * pageSize;
+    const includeResolvedLit = includeResolved ? sql`true` : sql`false`;
+
+    const result = await defaultDb.execute<{
+      id: number;
+      snapshot_id: number;
+      club_id: number | null;
+      club_name_canonical: string | null;
+      metadata: unknown;
+      flagged_at: Date | string;
+      resolved_at: Date | string | null;
+      resolved_by_email: string | null;
+      total: string;
+    }>(sql`
+      SELECT
+        rqf.id,
+        rqf.snapshot_id,
+        crs.club_id,
+        cc.club_name_canonical,
+        rqf.metadata,
+        rqf.created_at AS flagged_at,
+        rqf.resolved_at,
+        au.email AS resolved_by_email,
+        COUNT(*) OVER () AS total
+      FROM ${rosterQualityFlags} rqf
+      JOIN ${clubRosterSnapshots} crs ON crs.id = rqf.snapshot_id
+      LEFT JOIN ${canonicalClubs} cc ON cc.id = crs.club_id
+      LEFT JOIN ${adminUsers} au ON au.id = rqf.resolved_by
+      WHERE rqf.flag_type = 'nav_leaked_name'
+        AND (${includeResolvedLit} OR rqf.resolved_at IS NULL)
+      ORDER BY
+        (rqf.resolved_at IS NOT NULL) ASC,
+        rqf.created_at ASC,
+        rqf.id ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `);
+
+    const list = Array.from(
+      result as unknown as Array<{
+        id: number;
+        snapshot_id: number;
+        club_id: number | null;
+        club_name_canonical: string | null;
+        metadata: unknown;
+        flagged_at: Date | string;
+        resolved_at: Date | string | null;
+        resolved_by_email: string | null;
+        total: string;
+      }>,
+    );
+
+    const total = Number(list[0]?.total ?? 0);
+    const rows: NavLeakedNamesRawRow[] = list.map((r) => ({
+      id: r.id,
+      snapshotId: r.snapshot_id,
+      clubId: r.club_id,
+      clubNameCanonical: r.club_name_canonical,
+      metadata: r.metadata,
+      flaggedAt: r.flagged_at,
+      resolvedAt: r.resolved_at,
+      resolvedByEmail: r.resolved_by_email,
+    }));
+
+    return { rows, total };
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Production (live DB) dependency wiring.
@@ -552,6 +759,15 @@ function toNumberOrUndefined(raw: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function toBooleanOrUndefined(raw: unknown): boolean | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (typeof raw === "boolean") return raw;
+  const s = String(raw).toLowerCase();
+  if (s === "true" || s === "1") return true;
+  if (s === "false" || s === "0") return false;
+  return undefined;
+}
+
 function toIsoOrNull(value: Date | string | null): string | null {
   if (value === null) return null;
   if (value instanceof Date) return value.toISOString();
@@ -559,6 +775,15 @@ function toIsoOrNull(value: Date | string | null): string | null {
   // Coerce via Date round-trip so the response format is stable ISO-8601.
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function toIsoRequired(value: Date | string): string {
+  if (value instanceof Date) return value.toISOString();
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    throw new Error(`toIsoRequired: unparseable timestamp ${String(value)}`);
+  }
   return d.toISOString();
 }
 

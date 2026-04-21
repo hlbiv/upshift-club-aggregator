@@ -1048,6 +1048,60 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/data-quality/nav-leaked-names:
+    get:
+      operationId: getNavLeakedNames
+      tags: [admin]
+      summary: Roster snapshots flagged as having a nav-menu string leak
+      description: >
+        Paginated list of `roster_quality_flags` rows with
+        `flag_type = 'nav_leaked_name'`, joined to the parent
+        `club_roster_snapshots` and the snapshot's `canonical_clubs`
+        resolution (if any — `club_id` is NULL until the canonical-club
+        linker runs). `leakedStrings` and `snapshotRosterSize` are extracted
+        from the flag row's jsonb `metadata` into typed response fields;
+        callers never see the raw jsonb. `resolvedByEmail` is joined from
+        `admin_users.email` if the flag has been resolved.
+
+        Phase 1 scope: the table is populated by Phase 2 scraper detection —
+        this endpoint returns an empty list at merge time by design.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: include_resolved
+          in: query
+          description: If true, include rows whose `resolved_at` is set. Default false.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Paginated list of nav-leaked-name rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NavLeakedNamesResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/data-quality/stale-scrapes:
     get:
       operationId: getStaleScrapes
@@ -2366,6 +2420,75 @@ components:
         - page
         - pageSize
         - windowDays
+
+    NavLeakedNamesRow:
+      type: object
+      description: >
+        One `roster_quality_flags` row joined to its
+        `club_roster_snapshots` parent (and the snapshot's
+        `canonical_clubs` resolution if the linker has run).
+        `leakedStrings` and `snapshotRosterSize` are extracted from the
+        jsonb `metadata` payload into typed columns at the API boundary —
+        callers do not see raw jsonb. `clubId` / `clubNameCanonical` are
+        nullable because the canonical-club linker may not have run yet.
+        `resolvedByEmail` is joined from `admin_users` when the flag has
+        been resolved.
+      properties:
+        id:
+          type: integer
+        snapshotId:
+          type: integer
+        clubId:
+          type: integer
+          nullable: true
+        clubNameCanonical:
+          type: string
+          nullable: true
+        leakedStrings:
+          type: array
+          items:
+            type: string
+        snapshotRosterSize:
+          type: integer
+        flaggedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolvedByEmail:
+          type: string
+          nullable: true
+      required:
+        - id
+        - snapshotId
+        - clubId
+        - clubNameCanonical
+        - leakedStrings
+        - snapshotRosterSize
+        - flaggedAt
+        - resolvedAt
+        - resolvedByEmail
+
+    NavLeakedNamesResponse:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/NavLeakedNamesRow"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - rows
+        - total
+        - page
+        - pageSize
 
     StaleScrapesRow:
       type: object
