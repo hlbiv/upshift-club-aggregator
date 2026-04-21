@@ -292,6 +292,215 @@ describe("DataQualityPage — Empty staff pages tab", () => {
   });
 });
 
+describe("DataQualityPage — Nav-leaked names tab", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("loads and renders rows with default include_resolved=false", async () => {
+    const fetchMock = makeFetchMock({
+      "nav-leaked-names": () =>
+        jsonResponse({
+          rows: [
+            {
+              id: 1,
+              snapshotId: 1001,
+              clubId: 42,
+              clubNameCanonical: "Cactus Soccer Club",
+              leakedStrings: ["HOME", "CONTACT"],
+              snapshotRosterSize: 24,
+              flaggedAt: "2026-04-10T12:00:00Z",
+              resolvedAt: null,
+              resolvedByEmail: null,
+            },
+            {
+              id: 2,
+              snapshotId: 2002,
+              // Unlinked snapshot — linker hasn't resolved the club yet.
+              clubId: null,
+              clubNameCanonical: null,
+              leakedStrings: ["Register"],
+              snapshotRosterSize: 1,
+              flaggedAt: "2026-04-11T09:00:00Z",
+              resolvedAt: null,
+              resolvedByEmail: null,
+            },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 20,
+        }),
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /nav-leaked names/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Cactus Soccer Club")).toBeInTheDocument();
+    });
+
+    // Leaked strings render as chips.
+    expect(screen.getByText("HOME")).toBeInTheDocument();
+    expect(screen.getByText("CONTACT")).toBeInTheDocument();
+    expect(screen.getByText("Register")).toBeInTheDocument();
+
+    // Unlinked snapshot renders the fallback marker.
+    expect(screen.getByText(/unlinked snapshot #2002/i)).toBeInTheDocument();
+
+    // Snapshot roster size surfaced.
+    expect(screen.getByText("24")).toBeInTheDocument();
+
+    // Active status badge on unresolved rows (there are 2).
+    expect(screen.getAllByText("Active").length).toBe(2);
+
+    // Request used the default include_resolved=false.
+    const call = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("nav-leaked-names"),
+    );
+    expect(call).toBeDefined();
+    expect(String(call?.[0])).toContain("include_resolved=false");
+    expect(String(call?.[0])).toContain("page=1");
+    expect(String(call?.[0])).toContain("page_size=20");
+  });
+
+  it("renders empty state when rows is empty (default state at Phase 1 merge)", async () => {
+    const fetchMock = makeFetchMock({
+      "nav-leaked-names": () =>
+        jsonResponse({
+          rows: [],
+          total: 0,
+          page: 1,
+          pageSize: 20,
+        }),
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /nav-leaked names/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/no flagged snapshots/i)).toBeInTheDocument();
+    });
+  });
+
+  it("renders error banner on HTTP 500", async () => {
+    const fetchMock = makeFetchMock({
+      "nav-leaked-names": () =>
+        new Response(JSON.stringify({ error: "boom" }), { status: 500 }),
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /nav-leaked names/i }),
+    );
+
+    await waitFor(() => {
+      const alert = screen.getByRole("alert");
+      expect(within(alert).getByText(/500/)).toBeInTheDocument();
+    });
+  });
+
+  it("re-queries with include_resolved=true when checkbox is toggled and refreshed", async () => {
+    const fetchMock = makeFetchMock({
+      "nav-leaked-names": () =>
+        jsonResponse({ rows: [], total: 0, page: 1, pageSize: 20 }),
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /nav-leaked names/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/no flagged snapshots/i),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /include resolved flags/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /refresh/i }));
+
+    await waitFor(() => {
+      const withResolved = fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("include_resolved=true"),
+      );
+      expect(withResolved.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it("renders resolved status with resolver email when resolvedAt is set", async () => {
+    const fetchMock = makeFetchMock({
+      "nav-leaked-names": () =>
+        jsonResponse({
+          rows: [
+            {
+              id: 99,
+              snapshotId: 9000,
+              clubId: 7,
+              clubNameCanonical: "Resolved FC",
+              leakedStrings: ["ABOUT"],
+              snapshotRosterSize: 15,
+              flaggedAt: "2026-04-01T00:00:00Z",
+              resolvedAt: "2026-04-05T00:00:00Z",
+              resolvedByEmail: "ops@upshift.test",
+            },
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        }),
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /nav-leaked names/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Resolved FC")).toBeInTheDocument();
+    });
+    // The resolver email appears verbatim in the resolved badge copy.
+    expect(screen.getByText(/ops@upshift\.test/)).toBeInTheDocument();
+    // "Active" badge should NOT be present on a resolved row.
+    expect(screen.queryByText("Active")).not.toBeInTheDocument();
+  });
+});
+
 describe("DataQualityPage — Stale scrapes tab", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());

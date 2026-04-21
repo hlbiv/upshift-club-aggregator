@@ -13,6 +13,10 @@
  * (a) participate in the linker pattern with a natural key that doesn't
  * depend on clubId being pre-resolved and (b) carry richer diff detail
  * (jersey change, position change) without schema churn.
+ *
+ * Also defines `roster_quality_flags` — admin data-quality flags attached to
+ * `club_roster_snapshots` rows. See the table doc below for the per-flag-type
+ * metadata contract.
  */
 
 import {
@@ -21,6 +25,7 @@ import {
   text,
   integer,
   timestamp,
+  jsonb,
   unique,
   uniqueIndex,
   check,
@@ -28,7 +33,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 import { canonicalClubs } from "./index";
-import { clubSiteChanges } from "./clubs-extended";
+import { clubSiteChanges, clubRosterSnapshots } from "./clubs-extended";
+import { adminUsers } from "./admin";
 
 export const rosterDiffs = pgTable(
   "roster_diffs",
@@ -143,3 +149,95 @@ export const tryoutsRelations = relations(tryouts, ({ one }) => ({
     references: [clubSiteChanges.id],
   }),
 }));
+
+// ---------------------------------------------------------------------------
+// roster_quality_flags — admin data-quality flags on club_roster_snapshots.
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-snapshot data-quality flag for `club_roster_snapshots`.
+ *
+ * Phase 1 (this PR) ships the table + read-only API + dashboard panel. The
+ * scraper-side detection heuristic that populates `roster_quality_flags` is
+ * deliberately Phase 2 — the table will be empty at merge time.
+ *
+ * flag_type is a text column with a CHECK constraint (not a pgEnum), matching
+ * the repo convention for extensible enum-like columns (see
+ * `scrape_run_logs.status`, `scrape_health.status`, `canonical_clubs.website_status`).
+ * Adding a new flag_type is a CHECK-list extension rather than an
+ * ALTER TYPE / pg_catalog dance.
+ *
+ * roster_quality_flags.metadata shape by flag_type:
+ *   nav_leaked_name: { leaked_strings: string[], snapshot_roster_size: number }
+ *   <future flag_types>: <future shapes>
+ *
+ * Snapshot-supersession semantics: when a later snapshot replaces an earlier
+ * one, existing flags on the earlier snapshot STAY FLAGGED (historical
+ * record). They do not auto-resolve. Operators resolve flags explicitly via
+ * the panel (Phase 3+).
+ *
+ * resolved_by is an FK to admin_users.id (not a string) so the panel can
+ * join and show the resolver's real email in Phase 2+.
+ *
+ * Per-(snapshot_id, flag_type) uniqueness prevents the detector re-inserting
+ * duplicates if it runs twice on the same snapshot — it should upsert into
+ * the existing row instead.
+ */
+// Column types intentionally match the referenced PKs. `club_roster_snapshots.id`
+// and `admin_users.id` are both `serial` (int4) today — using `bigint` for the
+// FK columns would make Postgres reject the constraint on a type mismatch.
+// If either PK is widened to bigserial in the future, widen these FKs to match
+// in the same migration.
+export const rosterQualityFlags = pgTable(
+  "roster_quality_flags",
+  {
+    id: serial("id").primaryKey(),
+    snapshotId: integer("snapshot_id")
+      .notNull()
+      .references(() => clubRosterSnapshots.id, { onDelete: "cascade" }),
+    flagType: text("flag_type").notNull(),
+    metadata: jsonb("metadata")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: integer("resolved_by").references(() => adminUsers.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => [
+    check(
+      "roster_quality_flags_flag_type_enum",
+      sql`${t.flagType} IN ('nav_leaked_name')`,
+    ),
+    unique("roster_quality_flags_snapshot_type_uq").on(
+      t.snapshotId,
+      t.flagType,
+    ),
+    index("roster_quality_flags_snapshot_id_idx").on(t.snapshotId),
+    // Partial index: "active flag" lookups — by-far the dominant access
+    // pattern (admin panel filters resolved_at IS NULL by default).
+    index("roster_quality_flags_flag_type_active_idx")
+      .on(t.flagType)
+      .where(sql`resolved_at IS NULL`),
+  ],
+);
+
+export const rosterQualityFlagsRelations = relations(
+  rosterQualityFlags,
+  ({ one }) => ({
+    snapshot: one(clubRosterSnapshots, {
+      fields: [rosterQualityFlags.snapshotId],
+      references: [clubRosterSnapshots.id],
+    }),
+    resolver: one(adminUsers, {
+      fields: [rosterQualityFlags.resolvedBy],
+      references: [adminUsers.id],
+    }),
+  }),
+);
+
+export type RosterQualityFlag = typeof rosterQualityFlags.$inferSelect;
+export type InsertRosterQualityFlag = typeof rosterQualityFlags.$inferInsert;

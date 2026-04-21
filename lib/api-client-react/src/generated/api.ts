@@ -48,6 +48,7 @@ import type {
   GetEmptyStaffPagesParams,
   GetGrowthCoverageTrendParams,
   GetGrowthScrapedCountsParams,
+  GetNavLeakedNamesParams,
   GetStaleScrapesParams,
   HealthStatus,
   LeagueClubsResponse,
@@ -57,6 +58,7 @@ import type {
   ListScrapeHealthParams,
   ListScrapeRunsParams,
   ListScraperScheduleRunsParams,
+  NavLeakedNamesResponse,
   OverlapResponse,
   RunNowRequest,
   RunNowResponse,
@@ -2639,6 +2641,109 @@ export function useGetEmptyStaffPages<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetEmptyStaffPagesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Paginated list of `roster_quality_flags` rows with `flag_type = 'nav_leaked_name'`, joined to the parent `club_roster_snapshots` and the snapshot's `canonical_clubs` resolution (if any — `club_id` is NULL until the canonical-club linker runs). `leakedStrings` and `snapshotRosterSize` are extracted from the flag row's jsonb `metadata` into typed response fields; callers never see the raw jsonb. `resolvedByEmail` is joined from `admin_users.email` if the flag has been resolved.
+Phase 1 scope: the table is populated by Phase 2 scraper detection — this endpoint returns an empty list at merge time by design.
+
+ * @summary Roster snapshots flagged as having a nav-menu string leak
+ */
+export const getGetNavLeakedNamesUrl = (params?: GetNavLeakedNamesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/nav-leaked-names?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/nav-leaked-names`;
+};
+
+export const getNavLeakedNames = async (
+  params?: GetNavLeakedNamesParams,
+  options?: RequestInit,
+): Promise<NavLeakedNamesResponse> => {
+  return customFetch<NavLeakedNamesResponse>(getGetNavLeakedNamesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetNavLeakedNamesQueryKey = (
+  params?: GetNavLeakedNamesParams,
+) => {
+  return [
+    `/api/v1/admin/data-quality/nav-leaked-names`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetNavLeakedNamesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNavLeakedNames>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetNavLeakedNamesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getNavLeakedNames>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetNavLeakedNamesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getNavLeakedNames>>
+  > = ({ signal }) => getNavLeakedNames(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getNavLeakedNames>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetNavLeakedNamesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getNavLeakedNames>>
+>;
+export type GetNavLeakedNamesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Roster snapshots flagged as having a nav-menu string leak
+ */
+
+export function useGetNavLeakedNames<
+  TData = Awaited<ReturnType<typeof getNavLeakedNames>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetNavLeakedNamesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getNavLeakedNames>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetNavLeakedNamesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
