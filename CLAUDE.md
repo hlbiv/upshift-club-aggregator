@@ -315,7 +315,8 @@ Mounted under a separate router family (`artifacts/api-server/src/routes/admin/i
 | PATCH | `/api/v1/admin/data-quality/roster-quality-flags/:id/resolve` | Operator triage: stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on a `roster_quality_flags` row (NULL for API-key callers — same pattern as the dedup PATCH endpoints). Empty body. Returns 204 on first resolve, 400 if the flag is already resolved, 404 if the id is unknown. |
 | GET | `/api/v1/admin/growth/scraped-counts` | Counts of clubs / coaches / events / roster snapshots / matches added since a given ISO timestamp |
 | GET | `/api/v1/admin/growth/coverage-trend` | Day-bucketed scrape-run counts + records touched over a windowed range |
-| GET | `/api/v1/admin/scraper-schedules/:jobKey/runs` | Last N `scheduler_jobs` rows for a jobKey |
+| GET | `/api/v1/admin/scraper-schedules` | All known schedules with metadata (`description`, `cronExpression`) + recent runs inlined. Source of truth is `JOB_METADATA` in `admin/scheduler.ts` — the dashboard Scheduler page renders dynamically from this payload. Adding a new allow-listed jobKey server-side makes it appear in the UI with no code change. |
+| GET | `/api/v1/admin/scraper-schedules/:jobKey/runs` | Last N `scheduler_jobs` rows for a single jobKey (legacy — subsumed by the combined list endpoint above; kept for scripts/smoke tests). |
 | POST | `/api/v1/admin/scraper-schedules/:jobKey/run` | Enqueue a "Run now" (**super_admin gated**, jobKey allow-listed to `nightly_tier1` / `weekly_state` / `hourly_linker`) |
 | GET | `/api/v1/admin/scheduler-jobs/:id` | Single scheduler-job row |
 

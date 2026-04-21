@@ -46,6 +46,7 @@ import type {
   ListScrapeHealthParams,
   ListScrapeRunsParams,
   ListScraperScheduleRunsParams,
+  ListScraperSchedulesParams,
   NavLeakedNamesResponse,
   OverlapResponse,
   RunNowRequest,
@@ -57,6 +58,7 @@ import type {
   ScrapeRunLog,
   ScrapeRunLogList,
   ScrapedCountsDelta,
+  ScraperSchedulesResponse,
   SearchClubsAdvancedParams,
   SearchClubsParams,
   SearchCoachesParams,
@@ -907,6 +909,42 @@ export const getGrowthCoverageTrend = async (
 ): Promise<CoverageTrendResponse> => {
   return customFetch<CoverageTrendResponse>(
     getGetGrowthCoverageTrendUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * Returns every jobKey in the server-side allow-list plus its curated `description`, `cronExpression` (null for Run-Now-only jobs), and the last N `scheduler_jobs` rows. Adding a new allow-listed jobKey to the server causes it to appear here automatically — the dashboard renders dynamically from this payload.
+
+ * @summary List all known scraper schedules with metadata + recent runs
+ */
+export const getListScraperSchedulesUrl = (
+  params?: ListScraperSchedulesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/scraper-schedules?${stringifiedParams}`
+    : `/api/v1/admin/scraper-schedules`;
+};
+
+export const listScraperSchedules = async (
+  params?: ListScraperSchedulesParams,
+  options?: RequestInit,
+): Promise<ScraperSchedulesResponse> => {
+  return customFetch<ScraperSchedulesResponse>(
+    getListScraperSchedulesUrl(params),
     {
       ...options,
       method: "GET",

@@ -1263,6 +1263,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/scraper-schedules:
+    get:
+      operationId: listScraperSchedules
+      tags: [admin]
+      summary: List all known scraper schedules with metadata + recent runs
+      description: >
+        Returns every jobKey in the server-side allow-list plus its curated
+        `description`, `cronExpression` (null for Run-Now-only jobs), and
+        the last N `scheduler_jobs` rows. Adding a new allow-listed jobKey
+        to the server causes it to appear here automatically — the dashboard
+        renders dynamically from this payload.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: limit
+          in: query
+          description: Recent runs per schedule (default 10, max 100).
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+      responses:
+        "200":
+          description: All known schedules with their recent runs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScraperSchedulesResponse"
+        "400":
+          description: Invalid limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/scraper-schedules/{jobKey}/runs:
     get:
       operationId: listScraperScheduleRuns
@@ -2707,6 +2743,41 @@ components:
       required:
         - jobs
         - total
+
+    ScraperSchedule:
+      type: object
+      description: >
+        One known scraper schedule — metadata + recent `scheduler_jobs` rows.
+      properties:
+        jobKey:
+          type: string
+        description:
+          type: string
+        cronExpression:
+          type: string
+          nullable: true
+          description: >
+            Curated display string (e.g. "0 3 * * *") or null when the job
+            runs only via admin-triggered "Run now".
+        recentRuns:
+          type: array
+          items:
+            $ref: "#/components/schemas/SchedulerJob"
+      required:
+        - jobKey
+        - description
+        - cronExpression
+        - recentRuns
+
+    ScraperSchedulesResponse:
+      type: object
+      properties:
+        schedules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScraperSchedule"
+      required:
+        - schedules
 
     RunNowRequest:
       type: object
