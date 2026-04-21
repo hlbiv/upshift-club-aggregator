@@ -6,11 +6,10 @@
  * `docs/design/hudl-phase-0-egress.md` for the "why".
  *
  * What it does:
- *   - Fetches each URL in `URLS_TO_PROBE` via native `fetch`.
- *   - Captures status, elapsed ms, content-length, and the headers that tell
- *     us which CDN / bot-wall is in front of Hudl.
- *   - Dumps the first 500 chars of the response body so the operator can
- *     eyeball real-HTML vs. JS-challenge vs. empty-shell-needing-JS.
+ *   - Fetches each URL in the target list via native `fetch` with a single
+ *     light-UA header set (Chrome UA + Accept + Accept-Language only).
+ *   - Captures status, elapsed ms, content-length, response headers, the
+ *     first 500 chars of body, and a heuristic body classification.
  *   - Writes a JSON report to /tmp/hudl-fan-probe-<timestamp>.json and prints
  *     a human-readable summary to stdout.
  *
@@ -23,8 +22,17 @@
  *   pnpm --filter @workspace/scripts run probe-hudl-fan -- --url https://example.com
  */
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  buildProbeUrlList,
+  buildReportHeader,
+  fetchOnce,
+  formatFetchBlockLines,
+  lightUaHeaders,
+  parseCommonProbeArgs,
+  writeJsonReport,
+  type BaseProbeReportHeader,
+  type SingleFetchResult,
+} from "./lib/spa-probe.js";
 
 // ---- Config ----------------------------------------------------------------
 
@@ -37,105 +45,43 @@ const DEFAULT_ORG_ID = "65443";
 // `--player-id <id>`.
 const DEFAULT_PLAYER_ID = "placeholder";
 
-// Headers we specifically inspect for CDN / bot-wall fingerprinting. All
-// other response headers are still captured in the JSON report.
-const HEADERS_OF_INTEREST = [
-  "server",
-  "via",
-  "cf-ray",
-  "cf-cache-status",
-  "x-akamai-transformed",
-  "x-akamai-request-id",
-  "x-cache",
-  "x-amz-cf-id",
-  "content-type",
-  "content-length",
-  "set-cookie",
-  "x-content-type-options",
-  "x-frame-options",
-  "strict-transport-security",
-];
-
-// Per-request budget. If Hudl's bot-wall hangs us, don't wait forever.
-const REQUEST_TIMEOUT_MS = 15_000;
-
-// Body snippet size captured for eyeballing.
-const BODY_SNIPPET_CHARS = 500;
-
-// Realistic browser-ish UA. Not trying to evade fingerprinting — just
-// avoiding being flagged as a trivially-identifiable bot during a
-// reconnaissance probe.
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-
 // ---- Types -----------------------------------------------------------------
 
-interface ProbeResult {
+interface ProbeResult extends SingleFetchResult {
   url: string;
   label: string;
-  status: number | null;
-  statusText: string | null;
-  elapsedMs: number;
-  contentLength: number | null;
-  headers: Record<string, string>;
-  headersOfInterest: Record<string, string | null>;
-  bodySnippet: string;
-  bodySnippetBytes: number;
-  error: string | null;
-  /** Heuristic classification of the response body. */
-  bodyClass: BodyClass;
 }
 
-type BodyClass =
-  | "real-html"
-  | "js-challenge"
-  | "bot-wall"
-  | "empty-shell"
-  | "redirect"
-  | "error"
-  | "unknown";
-
-interface ProbeReport {
-  ranAt: string;
-  nodeVersion: string;
-  platform: string;
-  userAgent: string;
-  note: string;
+interface ProbeReport extends BaseProbeReportHeader {
   results: ProbeResult[];
 }
 
 // ---- Arg parsing -----------------------------------------------------------
 
-interface CliArgs {
+interface HudlArgs {
   orgId: string;
   playerId: string;
+  onlyUrls: string[];
   extraUrls: string[];
-  onlyUrls: string[]; // if set, ignore the default 3 patterns
 }
 
-function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = {
-    orgId: DEFAULT_ORG_ID,
-    playerId: DEFAULT_PLAYER_ID,
-    extraUrls: [],
-    onlyUrls: [],
-  };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--org-id" && i + 1 < argv.length) {
-      args.orgId = argv[++i]!;
-    } else if (a === "--player-id" && i + 1 < argv.length) {
-      args.playerId = argv[++i]!;
-    } else if (a === "--url" && i + 1 < argv.length) {
-      args.onlyUrls.push(argv[++i]!);
-    } else if (a === "--extra-url" && i + 1 < argv.length) {
-      args.extraUrls.push(argv[++i]!);
-    } else if (a === "--help" || a === "-h") {
-      printUsageAndExit(0);
+function parseArgs(argv: string[]): HudlArgs {
+  let orgId = DEFAULT_ORG_ID;
+  let playerId = DEFAULT_PLAYER_ID;
+  const common = parseCommonProbeArgs(argv, printUsageAndExit, (a, next, advance) => {
+    if (a === "--org-id" && next !== undefined) {
+      orgId = next;
+      advance();
+      return true;
     }
-  }
-  return args;
+    if (a === "--player-id" && next !== undefined) {
+      playerId = next;
+      advance();
+      return true;
+    }
+    return false;
+  });
+  return { orgId, playerId, ...common };
 }
 
 function printUsageAndExit(code: number): never {
@@ -172,7 +118,7 @@ function printUsageAndExit(code: number): never {
  *   2. Does the org-scoped page (team/roster view) render server-side?
  *   3. Does the Hudl fan index / marketing surface differ in CDN treatment?
  */
-function buildDefaultUrls(args: CliArgs): Array<{ url: string; label: string }> {
+function buildDefaultUrls(args: HudlArgs): Array<{ url: string; label: string }> {
   return [
     {
       url: `https://fan.hudl.com/profile/${encodeURIComponent(args.playerId)}`,
@@ -182,126 +128,8 @@ function buildDefaultUrls(args: CliArgs): Array<{ url: string; label: string }> 
       url: `https://fan.hudl.com/organization/${encodeURIComponent(args.orgId)}`,
       label: "organization-page",
     },
-    {
-      url: "https://fan.hudl.com/",
-      label: "fan-index",
-    },
+    { url: "https://fan.hudl.com/", label: "fan-index" },
   ];
-}
-
-// ---- Fetch + classification -----------------------------------------------
-
-async function probeOne(url: string, label: string): Promise<ProbeResult> {
-  const start = Date.now();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      redirect: "manual",
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      signal: controller.signal,
-    });
-
-    const elapsedMs = Date.now() - start;
-
-    const headers: Record<string, string> = {};
-    res.headers.forEach((v, k) => {
-      headers[k.toLowerCase()] = v;
-    });
-
-    const headersOfInterest: Record<string, string | null> = {};
-    for (const name of HEADERS_OF_INTEREST) {
-      headersOfInterest[name] = headers[name] ?? null;
-    }
-
-    const body = await res.text();
-    const snippet = body.slice(0, BODY_SNIPPET_CHARS);
-    const contentLength = body.length;
-
-    return {
-      url,
-      label,
-      status: res.status,
-      statusText: res.statusText,
-      elapsedMs,
-      contentLength,
-      headers,
-      headersOfInterest,
-      bodySnippet: snippet,
-      bodySnippetBytes: snippet.length,
-      error: null,
-      bodyClass: classifyBody(res.status, headers, body),
-    };
-  } catch (err) {
-    const elapsedMs = Date.now() - start;
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      url,
-      label,
-      status: null,
-      statusText: null,
-      elapsedMs,
-      contentLength: null,
-      headers: {},
-      headersOfInterest: {},
-      bodySnippet: "",
-      bodySnippetBytes: 0,
-      error: message,
-      bodyClass: "error",
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function classifyBody(
-  status: number,
-  headers: Record<string, string>,
-  body: string,
-): BodyClass {
-  if (status >= 300 && status < 400) return "redirect";
-  if (status >= 400) {
-    // Cloudflare challenge pages are 403 with specific markers.
-    if (status === 403 && /cf-chl|challenge-platform|__cf_chl_/i.test(body)) {
-      return "js-challenge";
-    }
-    if (status === 451) return "bot-wall";
-    return "error";
-  }
-
-  const lower = body.toLowerCase();
-  if (
-    lower.includes("cf-chl") ||
-    lower.includes("challenge-platform") ||
-    lower.includes("__cf_chl_")
-  ) {
-    return "js-challenge";
-  }
-  if (
-    lower.includes("access denied") ||
-    lower.includes("pardon our interruption") ||
-    lower.includes("request blocked") ||
-    lower.includes("are you a robot") ||
-    /akamai/.test(headers["server"] ?? "") && status === 403
-  ) {
-    return "bot-wall";
-  }
-  // Client-side-rendered SPAs commonly ship a near-empty <div id="root"></div>
-  // shell under 2KB. That's a strong signal we need Playwright.
-  if (body.length < 2_048 && /<div[^>]+id=["'](root|app|__next)["']/i.test(body)) {
-    return "empty-shell";
-  }
-  if (body.length > 2_048 && /<html/i.test(body)) {
-    return "real-html";
-  }
-  return "unknown";
 }
 
 // ---- Reporting -------------------------------------------------------------
@@ -317,28 +145,7 @@ function printSummary(report: ProbeReport): void {
   for (const r of report.results) {
     lines.push(`--- ${r.label} ---`);
     lines.push(`URL:       ${r.url}`);
-    if (r.error) {
-      lines.push(`ERROR:     ${r.error}`);
-      lines.push(`Elapsed:   ${r.elapsedMs}ms`);
-      lines.push(`Class:     ${r.bodyClass}`);
-      lines.push("");
-      continue;
-    }
-    lines.push(`Status:    ${r.status} ${r.statusText ?? ""}`);
-    lines.push(`Elapsed:   ${r.elapsedMs}ms`);
-    lines.push(`Body size: ${r.contentLength} bytes`);
-    lines.push(`Class:     ${r.bodyClass}`);
-    lines.push("Headers of interest:");
-    for (const [k, v] of Object.entries(r.headersOfInterest)) {
-      if (v != null) lines.push(`  ${k}: ${v}`);
-    }
-    lines.push(`Body snippet (first ${r.bodySnippetBytes} chars):`);
-    lines.push(
-      r.bodySnippet
-        .split("\n")
-        .map((l) => `  | ${l}`)
-        .join("\n"),
-    );
+    lines.push(...formatFetchBlockLines(r, "  "));
     lines.push("");
   }
   process.stdout.write(lines.join("\n") + "\n");
@@ -348,42 +155,29 @@ function printSummary(report: ProbeReport): void {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-
-  const targets: Array<{ url: string; label: string }> =
-    args.onlyUrls.length > 0
-      ? args.onlyUrls.map((u, i) => ({ url: u, label: `custom-${i + 1}` }))
-      : buildDefaultUrls(args);
-
-  for (const u of args.extraUrls) {
-    targets.push({ url: u, label: `extra-${targets.length + 1}` });
-  }
+  const targets = buildProbeUrlList(args, buildDefaultUrls(args));
 
   process.stdout.write(
     `Probing ${targets.length} URL(s). Remember: this must run from ` +
       `production-egress, not a laptop. See docs/design/hudl-phase-0-egress.md.\n`,
   );
 
+  const headers = lightUaHeaders();
   const results: ProbeResult[] = [];
   for (const t of targets) {
-    const r = await probeOne(t.url, t.label);
-    results.push(r);
+    const r = await fetchOnce(t.url, "single", { headers });
+    results.push({ ...r, url: t.url, label: t.label });
   }
 
   const report: ProbeReport = {
-    ranAt: new Date().toISOString(),
-    nodeVersion: process.version,
-    platform: `${process.platform} ${process.arch}`,
-    userAgent: USER_AGENT,
-    note:
-      "Phase 0 reconnaissance only. Captured headers + first " +
-      `${BODY_SNIPPET_CHARS} chars of each response body. No video download, no ` +
-      "DB writes, no secrets used.",
+    ...buildReportHeader(
+      "Phase 0 reconnaissance only. Captured headers + first 500 chars of " +
+        "each response body. No video download, no DB writes, no secrets used.",
+    ),
     results,
   };
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const outPath = join("/tmp", `hudl-fan-probe-${stamp}.json`);
-  writeFileSync(outPath, JSON.stringify(report, null, 2), "utf8");
+  const outPath = writeJsonReport("hudl-fan-probe", report);
 
   printSummary(report);
   process.stdout.write(`\nJSON report written to: ${outPath}\n`);

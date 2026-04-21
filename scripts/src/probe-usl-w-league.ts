@@ -35,80 +35,30 @@
  *   pnpm --filter @workspace/scripts run probe-usl-w-league -- --extra-url https://uslwleague.com/standings
  */
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  buildProbeUrlList,
+  buildReportHeader,
+  fetchOnce,
+  formatFetchBlockLines,
+  naiveHeaders,
+  parseCommonProbeArgs,
+  uaShodHeaders,
+  writeJsonReport,
+  type BaseProbeReportHeader,
+  type FetchMode,
+  type SingleFetchResult,
+} from "./lib/spa-probe.js";
 
-// ---- Config ----------------------------------------------------------------
-
-// Headers we specifically inspect for CDN / bot-wall fingerprinting. All
-// other response headers are still captured in the JSON report.
-const HEADERS_OF_INTEREST = [
-  "server",
-  "via",
-  "cf-ray",
-  "cf-cache-status",
-  "cf-mitigated",
-  "x-akamai-transformed",
-  "x-akamai-request-id",
-  "x-cache",
-  "x-amz-cf-id",
-  "content-type",
-  "content-length",
-  "set-cookie",
-  "x-content-type-options",
-  "x-frame-options",
-  "strict-transport-security",
-  "retry-after",
-  "location",
-];
-
-// Per-request budget. If the bot-wall hangs us, don't wait forever.
-const REQUEST_TIMEOUT_MS = 15_000;
-
-// Body snippet size captured for eyeballing.
-const BODY_SNIPPET_CHARS = 500;
-
-// Realistic browser-ish UA — matches the Chrome 124 / macOS UA used by
-// probe-hudl-fan.ts. Not trying to evade fingerprinting, just avoiding
-// being flagged as a trivially-identifiable bot.
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+// ---- Probe-specific constants ---------------------------------------------
 
 // Modular11 is the platform behind USL Academy League (see
 // scraper/extractors/usl_academy.py). If USL W League uses the same stack
 // the extractor is a clean clone — that's the hard-go lane.
 const MODULAR11_RE = /modular11\.com/gi;
 
-// Cloudflare challenge markers — both inside the body and in headers.
-const CF_CHALLENGE_RE = /cf-chl|challenge-platform|__cf_chl_|cf_chl_opt/i;
-
-// Akamai / generic WAF block page markers.
-const WAF_BLOCK_RE =
-  /access denied|pardon our interruption|request blocked|are you a robot|reference #[0-9a-f]+/i;
-
-// SPA empty-shell markers — near-empty body with a root div that hydrates
-// client-side. If UA-shod fetch returns one of these, the site is renderable
-// only under a full browser → soft-go.
-const SPA_SHELL_RE = /<div[^>]+id=["'](root|app|__next|__nuxt|svelte)["']/i;
-const APP_ROOT_RE = /<app-root[\s>]/i;
-
 // ---- Types -----------------------------------------------------------------
 
-type FetchMode = "naive" | "ua-shod";
-
-interface SingleFetchResult {
-  mode: FetchMode;
-  status: number | null;
-  statusText: string | null;
-  elapsedMs: number;
-  contentLength: number | null;
-  headers: Record<string, string>;
-  headersOfInterest: Record<string, string | null>;
-  bodySnippet: string;
-  bodySnippetBytes: number;
-  error: string | null;
-  bodyClass: BodyClass;
+interface UslFetchResult extends SingleFetchResult {
   /** Count of `modular11.com` substring occurrences in the response body. */
   modular11Matches: number;
   /**
@@ -121,8 +71,8 @@ interface SingleFetchResult {
 interface UrlProbeResult {
   url: string;
   label: string;
-  naive: SingleFetchResult;
-  uaShod: SingleFetchResult;
+  naive: UslFetchResult;
+  uaShod: UslFetchResult;
   /**
    * Whether UA-shod fetch produced a different status than naive — if true,
    * the site is doing UA filtering and the hard-go lane is open.
@@ -130,23 +80,9 @@ interface UrlProbeResult {
   uaUnblocks: boolean;
 }
 
-type BodyClass =
-  | "real-html"
-  | "js-challenge"
-  | "bot-wall"
-  | "empty-shell"
-  | "redirect"
-  | "error"
-  | "unknown";
-
 type Decision = "hard-go" | "soft-go" | "no-go" | "inconclusive";
 
-interface ProbeReport {
-  ranAt: string;
-  nodeVersion: string;
-  platform: string;
-  userAgent: string;
-  note: string;
+interface ProbeReport extends BaseProbeReportHeader {
   results: UrlProbeResult[];
   decision: Decision;
   decisionRationale: string;
@@ -154,29 +90,6 @@ interface ProbeReport {
 }
 
 // ---- Arg parsing -----------------------------------------------------------
-
-interface CliArgs {
-  extraUrls: string[];
-  onlyUrls: string[]; // if set, ignore the default patterns
-}
-
-function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = {
-    extraUrls: [],
-    onlyUrls: [],
-  };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--url" && i + 1 < argv.length) {
-      args.onlyUrls.push(argv[++i]!);
-    } else if (a === "--extra-url" && i + 1 < argv.length) {
-      args.extraUrls.push(argv[++i]!);
-    } else if (a === "--help" || a === "-h") {
-      printUsageAndExit(0);
-    }
-  }
-  return args;
-}
 
 function printUsageAndExit(code: number): never {
   const msg = [
@@ -220,104 +133,10 @@ function buildDefaultUrls(): Array<{ url: string; label: string }> {
   ];
 }
 
-// ---- Fetch + classification -----------------------------------------------
+// ---- Modular11 scan + per-fetch wrapper -----------------------------------
 
-async function fetchOnce(
-  url: string,
-  mode: FetchMode,
-): Promise<SingleFetchResult> {
-  const start = Date.now();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  // Naive = minimal headers, no UA. Browsers still send some default headers,
-  // but Node's fetch lets us be deliberately spare. UA-shod adds Chrome UA +
-  // the Accept / Accept-Language pair a real browser sends.
-  const requestHeaders: Record<string, string> =
-    mode === "ua-shod"
-      ? {
-          "User-Agent": USER_AGENT,
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Upgrade-Insecure-Requests": "1",
-          "Sec-Fetch-Dest": "document",
-          "Sec-Fetch-Mode": "navigate",
-          "Sec-Fetch-Site": "none",
-          "Sec-Fetch-User": "?1",
-        }
-      : {};
-
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      redirect: "manual",
-      headers: requestHeaders,
-      signal: controller.signal,
-    });
-
-    const elapsedMs = Date.now() - start;
-
-    const headers: Record<string, string> = {};
-    res.headers.forEach((v, k) => {
-      headers[k.toLowerCase()] = v;
-    });
-
-    const headersOfInterest: Record<string, string | null> = {};
-    for (const name of HEADERS_OF_INTEREST) {
-      headersOfInterest[name] = headers[name] ?? null;
-    }
-
-    const body = await res.text();
-    const snippet = body.slice(0, BODY_SNIPPET_CHARS);
-    const contentLength = body.length;
-    const { count, contexts } = scanModular11(body);
-
-    return {
-      mode,
-      status: res.status,
-      statusText: res.statusText,
-      elapsedMs,
-      contentLength,
-      headers,
-      headersOfInterest,
-      bodySnippet: snippet,
-      bodySnippetBytes: snippet.length,
-      error: null,
-      bodyClass: classifyBody(res.status, headers, body),
-      modular11Matches: count,
-      modular11Contexts: contexts,
-    };
-  } catch (err) {
-    const elapsedMs = Date.now() - start;
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      mode,
-      status: null,
-      statusText: null,
-      elapsedMs,
-      contentLength: null,
-      headers: {},
-      headersOfInterest: {},
-      bodySnippet: "",
-      bodySnippetBytes: 0,
-      error: message,
-      bodyClass: "error",
-      modular11Matches: 0,
-      modular11Contexts: [],
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function scanModular11(body: string): {
-  count: number;
-  contexts: string[];
-} {
+function scanModular11(body: string): { count: number; contexts: string[] } {
   if (!body) return { count: 0, contexts: [] };
-  // Reset lastIndex in case the global regex was reused.
   MODULAR11_RE.lastIndex = 0;
   const contexts: string[] = [];
   let match: RegExpExecArray | null;
@@ -327,62 +146,20 @@ function scanModular11(body: string): {
     if (contexts.length < 5) {
       const start = Math.max(0, match.index - 80);
       const end = Math.min(body.length, match.index + match[0].length + 80);
-      contexts.push(
-        body
-          .slice(start, end)
-          .replace(/\s+/g, " ")
-          .trim(),
-      );
+      contexts.push(body.slice(start, end).replace(/\s+/g, " ").trim());
     }
   }
   return { count, contexts };
 }
 
-function classifyBody(
-  status: number,
-  headers: Record<string, string>,
-  body: string,
-): BodyClass {
-  if (status >= 300 && status < 400) return "redirect";
-
-  // Headers-first: a Cloudflare challenge 403 has cf-mitigated: challenge
-  // or cf-ray + challenge markers. Akamai 403s carry server: AkamaiGHost
-  // or x-akamai-* headers.
-  const cfRay = headers["cf-ray"];
-  const cfMitigated = headers["cf-mitigated"];
-  const server = headers["server"] ?? "";
-  const akamaiHeader = Object.keys(headers).some((h) =>
-    h.startsWith("x-akamai"),
-  );
-
-  if (status >= 400) {
-    if (
-      status === 403 &&
-      (CF_CHALLENGE_RE.test(body) ||
-        cfMitigated === "challenge" ||
-        (cfRay && CF_CHALLENGE_RE.test(body)))
-    ) {
-      return "js-challenge";
-    }
-    if (status === 403 && akamaiHeader) return "bot-wall";
-    if (status === 403 && /akamaighost/i.test(server)) return "bot-wall";
-    if (status === 403 && WAF_BLOCK_RE.test(body)) return "bot-wall";
-    if (status === 451) return "bot-wall";
-    return "error";
-  }
-
-  if (CF_CHALLENGE_RE.test(body)) return "js-challenge";
-  if (WAF_BLOCK_RE.test(body)) return "bot-wall";
-
-  // Client-side-rendered SPAs commonly ship a near-empty root shell under
-  // 5KB. That's a strong signal a full browser is required.
-  if (body.length < 5_120 && (SPA_SHELL_RE.test(body) || APP_ROOT_RE.test(body))) {
-    return "empty-shell";
-  }
-  if (body.length > 2_048 && /<html/i.test(body)) {
-    return "real-html";
-  }
-  return "unknown";
+async function fetchAndScan(url: string, mode: FetchMode): Promise<UslFetchResult> {
+  const headers = mode === "ua-shod" ? uaShodHeaders() : naiveHeaders();
+  const r = await fetchOnce(url, mode, { headers, keepFullBody: true });
+  const { count, contexts } = scanModular11(r.body ?? "");
+  // Strip the full body from the result so it doesn't bloat the JSON report;
+  // we only kept it long enough to scan for Modular11 references.
+  const { body: _omit, ...rest } = r;
+  return { ...rest, modular11Matches: count, modular11Contexts: contexts };
 }
 
 // ---- Decision engine -------------------------------------------------------
@@ -402,11 +179,8 @@ function classifyBody(
  *   6. Else inconclusive (all errors, all 404s, etc.) — report as no-go with
  *      the specific reason in the rationale.
  */
-function decide(results: UrlProbeResult[]): {
-  decision: Decision;
-  rationale: string;
-} {
-  const allFetches = results.flatMap((r) => [r.naive, r.uaShod]);
+function decide(results: UrlProbeResult[]): { decision: Decision; rationale: string } {
+  const allFetches: UslFetchResult[] = results.flatMap((r) => [r.naive, r.uaShod]);
 
   // Rule 1: Modular11 hints anywhere → hard-go.
   const modular11Fetches = allFetches.filter((f) => f.modular11Matches > 0);
@@ -430,7 +204,6 @@ function decide(results: UrlProbeResult[]): {
   );
   if (realHtmlFetches.length > 0) {
     const hit = realHtmlFetches[0]!;
-    // Sub-rule 2a: naive=403, ua-shod=200 on any URL → UA filtering.
     const uaUnblocks = results.some((r) => r.uaUnblocks);
     if (uaUnblocks) {
       const unblocker = results.find((r) => r.uaUnblocks)!;
@@ -511,7 +284,7 @@ function decide(results: UrlProbeResult[]): {
     };
   }
 
-  // Rule 6: Nothing reachable, nothing clear → no-go / inconclusive.
+  // Rule 6: Nothing reachable → no-go.
   const allErrors = allFetches.every(
     (f) => f.error != null || (f.status ?? 999) >= 500,
   );
@@ -520,8 +293,8 @@ function decide(results: UrlProbeResult[]): {
       decision: "no-go",
       rationale:
         `Every fetch errored or returned 5xx. Site is unreachable from this egress, ` +
-        `or the probe's timeout (${REQUEST_TIMEOUT_MS}ms) is too tight. Re-run from ` +
-        `Replit production egress before filing as a hard block.`,
+        `or the probe's timeout is too tight. Re-run from Replit production egress ` +
+        `before filing as a hard block.`,
     };
   }
 
@@ -551,33 +324,10 @@ function printSummary(report: ProbeReport): void {
     lines.push(`UA unblocks? ${r.uaUnblocks ? "YES" : "no"}`);
     for (const f of [r.naive, r.uaShod]) {
       lines.push(`  [${f.mode}]`);
-      if (f.error) {
-        lines.push(`    ERROR:   ${f.error}`);
-        lines.push(`    Elapsed: ${f.elapsedMs}ms`);
-        lines.push(`    Class:   ${f.bodyClass}`);
-        continue;
-      }
-      lines.push(`    Status:  ${f.status} ${f.statusText ?? ""}`);
-      lines.push(`    Elapsed: ${f.elapsedMs}ms`);
-      lines.push(`    Size:    ${f.contentLength} bytes`);
-      lines.push(`    Class:   ${f.bodyClass}`);
+      lines.push(...formatFetchBlockLines(f, "    "));
       if (f.modular11Matches > 0) {
         lines.push(`    Mod11:   ${f.modular11Matches} match(es)`);
       }
-      const sig = Object.entries(f.headersOfInterest).filter(
-        ([, v]) => v != null,
-      );
-      if (sig.length > 0) {
-        lines.push(`    Headers:`);
-        for (const [k, v] of sig) lines.push(`      ${k}: ${v}`);
-      }
-      lines.push(`    Snippet (first ${f.bodySnippetBytes} chars):`);
-      lines.push(
-        f.bodySnippet
-          .split("\n")
-          .map((l) => `      | ${l}`)
-          .join("\n"),
-      );
     }
     lines.push("");
   }
@@ -587,16 +337,8 @@ function printSummary(report: ProbeReport): void {
 // ---- Main ------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-
-  const targets: Array<{ url: string; label: string }> =
-    args.onlyUrls.length > 0
-      ? args.onlyUrls.map((u, i) => ({ url: u, label: `custom-${i + 1}` }))
-      : buildDefaultUrls();
-
-  for (const u of args.extraUrls) {
-    targets.push({ url: u, label: `extra-${targets.length + 1}` });
-  }
+  const args = parseCommonProbeArgs(process.argv.slice(2), printUsageAndExit);
+  const targets = buildProbeUrlList(args, buildDefaultUrls());
 
   process.stdout.write(
     `Probing ${targets.length} URL(s). For each URL the script runs BOTH a ` +
@@ -607,10 +349,10 @@ async function main(): Promise<void> {
   const results: UrlProbeResult[] = [];
   for (const t of targets) {
     // Naive first, UA-shod second. Sequential — we care about the before /
-    // after for each URL, and a 100ms gap between requests keeps us from
-    // triggering any burst-rate limiter.
-    const naive = await fetchOnce(t.url, "naive");
-    const uaShod = await fetchOnce(t.url, "ua-shod");
+    // after for each URL, and the implicit ~100ms gap between requests keeps
+    // us from triggering any burst-rate limiter.
+    const naive = await fetchAndScan(t.url, "naive");
+    const uaShod = await fetchAndScan(t.url, "ua-shod");
     const uaUnblocks =
       naive.status !== uaShod.status &&
       (naive.status ?? 0) >= 400 &&
@@ -620,30 +362,24 @@ async function main(): Promise<void> {
   }
 
   const { decision, rationale } = decide(results);
-
   const modular11HintsAnywhere = results.some(
     (r) => r.naive.modular11Matches > 0 || r.uaShod.modular11Matches > 0,
   );
 
   const report: ProbeReport = {
-    ranAt: new Date().toISOString(),
-    nodeVersion: process.version,
-    platform: `${process.platform} ${process.arch}`,
-    userAgent: USER_AGENT,
-    note:
-      "Phase 0 reconnaissance only. Captured headers + first " +
-      `${BODY_SNIPPET_CHARS} chars of each response body, for both naive and ` +
-      "UA-shod fetches. Tri-state decision: hard-go | soft-go | no-go. No DB " +
-      "writes, no new deps, no browser automation.",
+    ...buildReportHeader(
+      "Phase 0 reconnaissance only. Captured headers + first 500 chars of " +
+        "each response body, for both naive and UA-shod fetches. Tri-state " +
+        "decision: hard-go | soft-go | no-go. No DB writes, no new deps, no " +
+        "browser automation.",
+    ),
     results,
     decision,
     decisionRationale: rationale,
     modular11HintsAnywhere,
   };
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const outPath = join("/tmp", `usl-w-league-probe-${stamp}.json`);
-  writeFileSync(outPath, JSON.stringify(report, null, 2), "utf8");
+  const outPath = writeJsonReport("usl-w-league-probe", report);
 
   printSummary(report);
   process.stdout.write(`\nJSON report written to: ${outPath}\n`);
