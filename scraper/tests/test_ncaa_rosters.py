@@ -24,6 +24,7 @@ from extractors.ncaa_rosters import (  # noqa: E402
     ColumnIndex,
     current_academic_year,
     scrape_college_rosters,
+    _fetch_colleges,
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "ncaa"
@@ -313,6 +314,137 @@ class TestDryRunNoWrites:
         assert result["rows_updated"] == 0
         # Verify no cursor execute calls were made for upserts
         mock_conn.cursor.return_value.execute.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# skip_unresolved — don't fetch rosters for schools with no URL for the
+# requested gender.
+# ---------------------------------------------------------------------------
+
+
+class TestSkipUnresolvedColleges:
+    """Regression guard: a ``colleges`` row with NULL ``soccer_program_url``
+    means the PR-2 resolver probed every SIDEARM candidate path and found
+    none responding — i.e. the school doesn't field that sport. The runner
+    must NEVER issue an HTTP fetch for those rows; doing so burns ~6s per
+    school on static-fetch + Playwright fallback before SKIPping with
+    "no players parsed", which both wastes time and inflates error counts
+    into looking like parser bugs.
+
+    Schools hit by this in production: Minnesota, Oregon, USC (all women's
+    only; seeded as mens+womens in ``seed_colleges.py`` because they're
+    Big Ten members). See PR description for full list.
+    """
+
+    def test_fetch_colleges_sql_includes_not_null_clause(self):
+        """Default query must filter out rows with NULL soccer_program_url."""
+        fake_cursor = mock.MagicMock()
+        fake_cursor.description = [
+            ("id",), ("name",), ("slug",), ("division",), ("conference",),
+            ("state",), ("city",), ("website",), ("soccer_program_url",),
+            ("gender_program",), ("last_scraped_at",),
+        ]
+        fake_cursor.fetchall.return_value = []
+        fake_conn = mock.MagicMock()
+        fake_conn.cursor.return_value.__enter__.return_value = fake_cursor
+
+        _fetch_colleges(fake_conn, division="D1", gender="mens")
+
+        # Inspect the SQL that was executed
+        sql = fake_cursor.execute.call_args[0][0]
+        assert "soccer_program_url IS NOT NULL" in sql
+        # Keep the other filters intact
+        assert "division = %s" in sql
+        assert "gender_program = %s" in sql
+
+    def test_fetch_colleges_opt_out_drops_the_clause(self):
+        """Passing skip_unresolved=False must omit the IS NOT NULL filter
+        so debug / audit callers still see every seeded row.
+        """
+        fake_cursor = mock.MagicMock()
+        fake_cursor.description = [
+            ("id",), ("name",), ("slug",), ("division",), ("conference",),
+            ("state",), ("city",), ("website",), ("soccer_program_url",),
+            ("gender_program",), ("last_scraped_at",),
+        ]
+        fake_cursor.fetchall.return_value = []
+        fake_conn = mock.MagicMock()
+        fake_conn.cursor.return_value.__enter__.return_value = fake_cursor
+
+        _fetch_colleges(fake_conn, division="D1", gender="mens",
+                        skip_unresolved=False)
+
+        sql = fake_cursor.execute.call_args[0][0]
+        assert "soccer_program_url IS NOT NULL" not in sql
+
+    @mock.patch("extractors.ncaa_rosters._get_connection")
+    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_rosters._fetch_colleges")
+    @mock.patch("extractors.ncaa_rosters.time.sleep")
+    def test_fetch_never_called_for_unresolved_college(
+        self, mock_sleep, mock_fetch_colleges, mock_fetch_retry, mock_get_conn,
+    ):
+        """End-to-end: if ``_fetch_colleges`` returns only rows with real
+        URLs (which is what skip_unresolved=True guarantees), no HTTP
+        fetch ever targets the ``website`` base of a NULL-URL school.
+
+        The critical assertion: ``fetch_with_retry`` is NEVER called with
+        any URL under the 'no-mens-program' school's hostname. This is
+        the regression-guard contract for the skip-missing-gender fix.
+        """
+        # Simulate the post-filter list: only the resolved school is
+        # present. Minnesota (no men's program) is absent because its
+        # soccer_program_url is NULL → filtered out by _fetch_colleges.
+        mock_conn = mock.MagicMock()
+        mock_get_conn.return_value = mock_conn
+        mock_fetch_colleges.return_value = [
+            {
+                "id": 1,
+                "name": "Georgetown University",
+                "slug": "georgetown-d1-m",
+                "division": "D1",
+                "conference": "Big East",
+                "state": "DC",
+                "city": "Washington",
+                "website": "https://guhoyas.com",
+                "soccer_program_url": "https://guhoyas.com/sports/mens-soccer/roster",
+                "gender_program": "mens",
+                "last_scraped_at": None,
+            },
+        ]
+        # Return a trivial 'no players' HTML so the parser path executes
+        # but produces 0 — the call-tracking assertion is what matters.
+        mock_fetch_retry.return_value = "<html><body></body></html>"
+
+        scrape_college_rosters(division="D1", gender="mens", dry_run=True)
+
+        # Verify _fetch_colleges was called with skip_unresolved=True
+        mock_fetch_colleges.assert_called_once()
+        call_kwargs = mock_fetch_colleges.call_args.kwargs
+        assert call_kwargs.get("skip_unresolved") is True, (
+            "scrape_college_rosters must default to skip_unresolved=True"
+        )
+
+        # Collect every URL that fetch_with_retry was asked to fetch.
+        fetched_urls = [
+            call.args[1] if len(call.args) >= 2 else call.kwargs.get("url")
+            for call in mock_fetch_retry.call_args_list
+        ]
+        # The KEY assertion: no fetch ever targeted a school that wasn't
+        # in the post-filter list. Minnesota's base host must not appear.
+        minnesota_hosts = ("gophersports.com",)
+        oregon_hosts = ("goducks.com",)
+        usc_hosts = ("usctrojans.com",)
+        for url in fetched_urls:
+            if url is None:
+                continue
+            for host in minnesota_hosts + oregon_hosts + usc_hosts:
+                assert host not in url, (
+                    f"fetch_with_retry was called for {host!r} "
+                    f"(URL: {url!r}) — this host has no men's soccer "
+                    f"program and should have been filtered out at "
+                    f"enumeration time by skip_unresolved=True"
+                )
 
 
 # ---------------------------------------------------------------------------
