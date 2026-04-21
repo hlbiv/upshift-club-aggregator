@@ -55,7 +55,7 @@ export const clubRosterSnapshots = pgTable(
     position: text("position"),
     // --- Enrichment columns (Phase 1 scraper migration) ---
     // These fields enable Player to materialize shadow_players from
-    // Data's roster API instead of running its own 40+ scrapers.
+    // Data's roster API instead of running its own ~27 scrapers.
     gradYear: integer("grad_year"),
     hometown: text("hometown"),
     state: text("state"),
