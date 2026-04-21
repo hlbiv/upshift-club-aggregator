@@ -458,6 +458,74 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
     });
   });
 
+  it("clicking Resolve issues PATCH and refreshes the list", async () => {
+    let listCalls = 0;
+    let patchCalls = 0;
+    let lastPatchedUrl = "";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/roster-quality-flags/") && url.endsWith("/resolve")) {
+        patchCalls += 1;
+        lastPatchedUrl = url;
+        // PATCH returns 204 No Content.
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("nav-leaked-names")) {
+        listCalls += 1;
+        const showResolved = listCalls > 1;
+        return jsonResponse({
+          rows: showResolved
+            ? []
+            : [
+                {
+                  id: 77,
+                  snapshotId: 7700,
+                  clubId: 11,
+                  clubNameCanonical: "Resolve Me FC",
+                  leakedStrings: ["HOME"],
+                  snapshotRosterSize: 18,
+                  flaggedAt: "2026-04-12T10:00:00Z",
+                  resolvedAt: null,
+                  resolvedByEmail: null,
+                },
+              ],
+          total: showResolved ? 0 : 1,
+          page: 1,
+          pageSize: 20,
+        });
+      }
+      return new Response("not mocked", { status: 404 });
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock as unknown as typeof fetch,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /nav-leaked names/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Resolve Me FC")).toBeInTheDocument();
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: /resolve flag 77/i }),
+    );
+
+    await waitFor(() => {
+      expect(patchCalls).toBe(1);
+    });
+    expect(lastPatchedUrl).toContain("/roster-quality-flags/77/resolve");
+
+    // After successful PATCH, the list invalidates and the row disappears.
+    await waitFor(() => {
+      expect(screen.getByText(/no flagged snapshots/i)).toBeInTheDocument();
+    });
+  });
+
   it("renders resolved status with resolver email when resolvedAt is set", async () => {
     const fetchMock = makeFetchMock({
       "nav-leaked-names": () =>

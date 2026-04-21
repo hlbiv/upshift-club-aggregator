@@ -87,6 +87,7 @@ import {
   StaleScrapesResponse,
   NavLeakedNamesRequest,
   NavLeakedNamesResponse,
+  ResolveRosterQualityFlagRequest,
 } from "@hlbiv/api-zod/admin";
 
 // ---------------------------------------------------------------------------
@@ -218,6 +219,10 @@ export function makeDataQualityRouter(deps: DataQualityDeps): IRouter {
   router.get(
     "/nav-leaked-names",
     makeNavLeakedNamesHandler(prodNavLeakedNamesDeps),
+  );
+  router.patch(
+    "/roster-quality-flags/:id/resolve",
+    makeResolveRosterQualityFlagHandler(prodResolveRosterQualityFlagDeps),
   );
   return router;
 }
@@ -408,6 +413,121 @@ export const prodNavLeakedNamesDeps: NavLeakedNamesDeps = {
     }));
 
     return { rows, total };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Resolve roster_quality_flags — DI surface + handler factory + prod wiring.
+// ---------------------------------------------------------------------------
+
+export interface ResolveRosterQualityFlagDeps {
+  resolveFlag: (args: {
+    id: number;
+    resolvedBy: number | null;
+    notes?: string;
+  }) => Promise<{ found: boolean }>;
+}
+
+/**
+ * PATCH /api/v1/admin/data-quality/roster-quality-flags/:id/resolve
+ *
+ * Marks a `roster_quality_flags` row as resolved by stamping
+ * `resolved_at = NOW()` and `resolved_by = <admin user id>`. The
+ * underlying `club_roster_snapshots` row is NOT mutated — resolving
+ * means "operator has triaged this leak", not "the data is fixed".
+ *
+ * Auth: API-key callers get `resolved_by = NULL` (no admin user
+ * identity). Session callers get their admin user id stamped — same
+ * pattern used by the dedup PATCH endpoints.
+ *
+ * Idempotent: re-resolving an already-resolved flag is a no-op
+ * (returns 204), since the WHERE clause filters on
+ * `resolved_at IS NULL`.
+ *
+ * Status codes:
+ *   204 No Content — flag found (resolved or already-resolved)
+ *   400 Bad Request — invalid id or invalid body
+ *   404 Not Found  — no `nav_leaked_name` flag with that id
+ */
+export function makeResolveRosterQualityFlagHandler(
+  deps: ResolveRosterQualityFlagDeps,
+): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      // Body is optional; when provided, validate the shape.
+      const parsed = ResolveRosterQualityFlagRequest.safeParse(
+        req.body && Object.keys(req.body as object).length > 0
+          ? req.body
+          : undefined,
+      );
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid body" });
+        return;
+      }
+
+      const adminUserId =
+        req.adminAuth?.kind === "session" ? req.adminAuth.userId : null;
+
+      const { found } = await deps.resolveFlag({
+        id,
+        resolvedBy: adminUserId,
+        notes: parsed.data?.notes,
+      });
+
+      if (!found) {
+        res.status(404).json({ error: "RosterQualityFlag not found" });
+        return;
+      }
+
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+/**
+ * Production DB-backed dep. UPDATE … RETURNING surfaces whether the
+ * row exists; we treat "row exists but is already resolved" as success
+ * (idempotent) by checking existence with a separate SELECT when the
+ * UPDATE matches zero rows.
+ */
+export const prodResolveRosterQualityFlagDeps: ResolveRosterQualityFlagDeps = {
+  resolveFlag: async ({ id, resolvedBy }) => {
+    const updated = await defaultDb.execute<{ id: number }>(sql`
+      UPDATE ${rosterQualityFlags}
+      SET resolved_at = NOW(),
+          resolved_by = ${resolvedBy}
+      WHERE id = ${id}
+        AND flag_type = 'nav_leaked_name'
+        AND resolved_at IS NULL
+      RETURNING id
+    `);
+    const updatedList = Array.from(
+      updated as unknown as Array<{ id: number }>,
+    );
+    if (updatedList.length > 0) {
+      return { found: true };
+    }
+    // Either the id doesn't exist or it's already resolved — distinguish
+    // so the API returns 404 only for non-existent flags.
+    const existing = await defaultDb.execute<{ id: number }>(sql`
+      SELECT id
+      FROM ${rosterQualityFlags}
+      WHERE id = ${id}
+        AND flag_type = 'nav_leaked_name'
+      LIMIT 1
+    `);
+    const existingList = Array.from(
+      existing as unknown as Array<{ id: number }>,
+    );
+    return { found: existingList.length > 0 };
   },
 };
 

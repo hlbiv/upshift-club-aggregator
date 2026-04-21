@@ -136,6 +136,41 @@ with no upstream change is a no-op and reports zero updates.
 
 ---
 
+## Nav-leaked names detector (`roster_quality_flags`)
+
+The roster scrapers occasionally write a navigation-menu string ("Home",
+"Contact", "Sitemap", …) into the `player_name` column when the source
+site's menu HTML appears inside the same selector as the roster table.
+Phase 1 (read-only API + dashboard panel, PR #175) shipped the
+`roster_quality_flags` table and the
+`/api/v1/admin/data-quality/nav-leaked-names` GET endpoint. Phase 2 (this
+change) adds:
+
+- `scraper/nav_leaked_names_detector.py` — groups
+  `club_roster_snapshots` rows by `(club_name_raw, season, age_group,
+  gender)`, case-folds each `player_name` against a 39-token
+  navigation-menu list, and upserts one
+  `roster_quality_flags` row of type `nav_leaked_name` per offending
+  group. Match is exact-on-full-string (no substring), so a real player
+  named "Tom Sitemap" does not trip a flag. The flag's `metadata`
+  jsonb stores `{leaked_strings: string[], snapshot_roster_size: number}`.
+- `python3 run.py --source nav-leaked-names-detect [--dry-run] [--limit N]`
+  CLI entry point; idempotent — the
+  `roster_quality_flags_snapshot_type_uq` unique constraint plus the
+  `WHERE metadata IS DISTINCT FROM EXCLUDED.metadata` clause means a
+  re-run on unchanged data writes nothing.
+- Nightly cron — `nightly-nav-leaked-names-detect` at `35 3 * * *`,
+  five minutes after the canonical-school linker. (Add this block to
+  `.replit` `[[deployment.scheduledJobs]]` manually — the agent cannot
+  edit `.replit`.)
+- `PATCH /api/v1/admin/data-quality/roster-quality-flags/:id/resolve`
+  — operator triage endpoint. Stamps `resolved_at = NOW()` and
+  `resolved_by = <admin user id>` (NULL for API-key callers). Idempotent
+  on re-resolve; 404 only when the id is unknown. The dashboard panel
+  surfaces a per-row Resolve button that issues this PATCH and
+  invalidates the nav-leaked-names query so the row disappears (or
+  flips to the Resolved badge when "Include resolved flags" is on).
+
 ## HS canonical-schools seed (NCES CCD)
 
 The HS-roster scraper (MaxPreps) feeds `hs_rosters`, which uses the

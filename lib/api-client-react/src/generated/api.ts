@@ -60,6 +60,7 @@ import type {
   ListScraperScheduleRunsParams,
   NavLeakedNamesResponse,
   OverlapResponse,
+  ResolveRosterQualityFlagRequest,
   RunNowRequest,
   RunNowResponse,
   SchedulerJob,
@@ -2751,6 +2752,98 @@ export function useGetNavLeakedNames<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on the row. The underlying `club_roster_snapshots` row is NOT mutated — resolving a flag means "operator has triaged this leak", not "the data is fixed".
+API-key callers get `resolved_by = NULL` (no admin user identity); session callers get their admin user id stamped — same pattern as the dedup PATCH endpoints.
+Idempotent: re-resolving an already-resolved flag returns 204. Returns 404 only if no `nav_leaked_name` flag exists with that id.
+
+ * @summary Mark a roster_quality_flags row as resolved
+ */
+export const getResolveRosterQualityFlagUrl = (id: number) => {
+  return `/api/v1/admin/data-quality/roster-quality-flags/${id}/resolve`;
+};
+
+export const resolveRosterQualityFlag = async (
+  id: number,
+  resolveRosterQualityFlagRequest?: ResolveRosterQualityFlagRequest,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getResolveRosterQualityFlagUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resolveRosterQualityFlagRequest),
+  });
+};
+
+export const getResolveRosterQualityFlagMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveRosterQualityFlag>>,
+    TError,
+    { id: number; data: BodyType<ResolveRosterQualityFlagRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resolveRosterQualityFlag>>,
+  TError,
+  { id: number; data: BodyType<ResolveRosterQualityFlagRequest> },
+  TContext
+> => {
+  const mutationKey = ["resolveRosterQualityFlag"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resolveRosterQualityFlag>>,
+    { id: number; data: BodyType<ResolveRosterQualityFlagRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return resolveRosterQualityFlag(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResolveRosterQualityFlagMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resolveRosterQualityFlag>>
+>;
+export type ResolveRosterQualityFlagMutationBody =
+  BodyType<ResolveRosterQualityFlagRequest>;
+export type ResolveRosterQualityFlagMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Mark a roster_quality_flags row as resolved
+ */
+export const useResolveRosterQualityFlag = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveRosterQualityFlag>>,
+    TError,
+    { id: number; data: BodyType<ResolveRosterQualityFlagRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resolveRosterQualityFlag>>,
+  TError,
+  { id: number; data: BodyType<ResolveRosterQualityFlagRequest> },
+  TContext
+> => {
+  return useMutation(getResolveRosterQualityFlagMutationOptions(options));
+};
 
 /**
  * Paginated list of `scrape_health` rows whose `last_scraped_at` is older than `threshold_days` days or NULL. `entityName` is a best-effort human label joined from `canonical_clubs` / `leagues_master` / `colleges` / `coaches` per `entity_type`; when the join fails (deleted entity, unjoinable type) it is null.

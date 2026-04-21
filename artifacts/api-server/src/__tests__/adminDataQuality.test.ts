@@ -14,9 +14,11 @@ import type { Request, Response } from "express";
 import {
   makeGaPremierOrphanHandler,
   makeNavLeakedNamesHandler,
+  makeResolveRosterQualityFlagHandler,
   type DataQualityDeps,
   type NavLeakedNamesDeps,
   type NavLeakedNamesRawRow,
+  type ResolveRosterQualityFlagDeps,
 } from "../routes/admin/data-quality";
 
 type Failure = { name: string; issue: string };
@@ -603,6 +605,147 @@ async function run() {
       res.statusCode === 400,
       "nav-leaked-validation",
       `expected 400 for page_size > 100, got ${res.statusCode}`,
+    );
+  }
+
+  // -----------------------------------------------------------------------
+  // Resolve roster_quality_flags PATCH endpoint scenarios.
+  // -----------------------------------------------------------------------
+
+  // --- 1. 204 on success; admin user id passed through; notes round-trip ---
+  {
+    const calls: Array<{
+      id: number;
+      resolvedBy: number | null;
+      notes?: string;
+    }> = [];
+    const deps: ResolveRosterQualityFlagDeps = {
+      resolveFlag: async (args) => {
+        calls.push(args);
+        return { found: true };
+      },
+    };
+    const handler = makeResolveRosterQualityFlagHandler(deps);
+    const req = makeReq({ body: { notes: "stale schedule page" } });
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: "17",
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 204,
+      "resolve-success",
+      `expected 204, got ${res.statusCode}`,
+    );
+    assert(
+      calls.length === 1 && calls[0]?.id === 17,
+      "resolve-success",
+      `expected one call with id=17, got ${JSON.stringify(calls)}`,
+    );
+    assert(
+      calls[0]?.resolvedBy === 42,
+      "resolve-success",
+      `expected resolvedBy=42 (session adminAuth), got ${calls[0]?.resolvedBy}`,
+    );
+    assert(
+      calls[0]?.notes === "stale schedule page",
+      "resolve-success",
+      `expected notes round-trip, got ${calls[0]?.notes}`,
+    );
+  }
+
+  // --- 2. 404 when flag id does not exist ---
+  {
+    const deps: ResolveRosterQualityFlagDeps = {
+      resolveFlag: async () => ({ found: false }),
+    };
+    const handler = makeResolveRosterQualityFlagHandler(deps);
+    const req = makeReq();
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: "99999",
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 404,
+      "resolve-404",
+      `expected 404 for missing flag, got ${res.statusCode}`,
+    );
+  }
+
+  // --- 3. 400 on invalid id (non-numeric / zero / negative) ---
+  for (const badId of ["abc", "0", "-3"]) {
+    const deps: ResolveRosterQualityFlagDeps = {
+      resolveFlag: async () => ({ found: true }),
+    };
+    const handler = makeResolveRosterQualityFlagHandler(deps);
+    const req = makeReq();
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: badId,
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "resolve-400-id",
+      `expected 400 for id=${badId}, got ${res.statusCode}`,
+    );
+  }
+
+  // --- 4. 400 on invalid body (notes too long) ---
+  {
+    const deps: ResolveRosterQualityFlagDeps = {
+      resolveFlag: async () => ({ found: true }),
+    };
+    const handler = makeResolveRosterQualityFlagHandler(deps);
+    const req = makeReq({ body: { notes: "x".repeat(1001) } });
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: "1",
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "resolve-400-body",
+      `expected 400 for notes>1000 chars, got ${res.statusCode}`,
+    );
+  }
+
+  // --- 5. API-key caller (no session) → resolvedBy=null passthrough ---
+  {
+    const calls: Array<{
+      id: number;
+      resolvedBy: number | null;
+    }> = [];
+    const deps: ResolveRosterQualityFlagDeps = {
+      resolveFlag: async (args) => {
+        calls.push({ id: args.id, resolvedBy: args.resolvedBy });
+        return { found: true };
+      },
+    };
+    const handler = makeResolveRosterQualityFlagHandler(deps);
+    const req = {
+      params: { id: "5" },
+      query: {},
+      body: {},
+      adminAuth: { kind: "apiKey" as const },
+    } as unknown as Request;
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 204,
+      "resolve-apikey",
+      `expected 204 for API-key caller, got ${res.statusCode}`,
+    );
+    assert(
+      calls[0]?.resolvedBy === null,
+      "resolve-apikey",
+      `expected resolvedBy=null for API-key caller, got ${calls[0]?.resolvedBy}`,
     );
   }
 

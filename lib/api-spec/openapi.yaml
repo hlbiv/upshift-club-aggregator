@@ -1102,6 +1102,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/data-quality/roster-quality-flags/{id}/resolve:
+    patch:
+      operationId: resolveRosterQualityFlag
+      tags: [admin]
+      summary: Mark a roster_quality_flags row as resolved
+      description: >
+        Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>`
+        on the row. The underlying `club_roster_snapshots` row is NOT
+        mutated — resolving a flag means "operator has triaged this
+        leak", not "the data is fixed".
+
+        API-key callers get `resolved_by = NULL` (no admin user identity);
+        session callers get their admin user id stamped — same pattern as
+        the dedup PATCH endpoints.
+
+        Idempotent: re-resolving an already-resolved flag returns 204.
+        Returns 404 only if no `nav_leaked_name` flag exists with that id.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveRosterQualityFlagRequest"
+      responses:
+        "204":
+          description: Flag resolved (or already resolved)
+        "400":
+          description: Invalid id or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No nav_leaked_name flag with that id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/data-quality/stale-scrapes:
     get:
       operationId: getStaleScrapes
@@ -2489,6 +2538,18 @@ components:
         - total
         - page
         - pageSize
+
+    ResolveRosterQualityFlagRequest:
+      type: object
+      description: >
+        Optional body for PATCH
+        /v1/admin/data-quality/roster-quality-flags/{id}/resolve. When
+        present, `notes` is opaque free text persisted on the row for
+        operator triage history.
+      properties:
+        notes:
+          type: string
+          maxLength: 1000
 
     StaleScrapesRow:
       type: object

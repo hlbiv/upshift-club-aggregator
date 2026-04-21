@@ -48,6 +48,7 @@ import type {
   ListScraperScheduleRunsParams,
   NavLeakedNamesResponse,
   OverlapResponse,
+  ResolveRosterQualityFlagRequest,
   RunNowRequest,
   RunNowResponse,
   SchedulerJob,
@@ -790,6 +791,30 @@ export const getNavLeakedNames = async (
   return customFetch<NavLeakedNamesResponse>(getGetNavLeakedNamesUrl(params), {
     ...options,
     method: "GET",
+  });
+};
+
+/**
+ * Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on the row. The underlying `club_roster_snapshots` row is NOT mutated — resolving a flag means "operator has triaged this leak", not "the data is fixed".
+API-key callers get `resolved_by = NULL` (no admin user identity); session callers get their admin user id stamped — same pattern as the dedup PATCH endpoints.
+Idempotent: re-resolving an already-resolved flag returns 204. Returns 404 only if no `nav_leaked_name` flag exists with that id.
+
+ * @summary Mark a roster_quality_flags row as resolved
+ */
+export const getResolveRosterQualityFlagUrl = (id: number) => {
+  return `/api/v1/admin/data-quality/roster-quality-flags/${id}/resolve`;
+};
+
+export const resolveRosterQualityFlag = async (
+  id: number,
+  resolveRosterQualityFlagRequest?: ResolveRosterQualityFlagRequest,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getResolveRosterQualityFlagUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resolveRosterQualityFlagRequest),
   });
 };
 

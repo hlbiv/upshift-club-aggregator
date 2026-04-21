@@ -309,6 +309,23 @@ export const NavLeakedNamesResponse = z.object({
 export type NavLeakedNamesResponse = z.infer<typeof NavLeakedNamesResponse>;
 
 /**
+ * Request body for PATCH /v1/admin/data-quality/roster-quality-flags/:id/resolve.
+ *
+ * Body is optional — operators can resolve a flag with no notes. When
+ * provided, `notes` is opaque free text persisted on the row for
+ * operator triage history. The 1k cap matches the equivalent clamp in
+ * the dedup PATCH endpoints to prevent unbounded jsonb growth.
+ */
+export const ResolveRosterQualityFlagRequest = z
+  .object({
+    notes: z.string().max(1000).optional(),
+  })
+  .optional();
+export type ResolveRosterQualityFlagRequest = z.infer<
+  typeof ResolveRosterQualityFlagRequest
+>;
+
+/**
  * Growth dashboard — "records added since X" counts across the five
  * headline ingest tables. Timestamps used per table:
  *   canonical_clubs → last_scraped_at      (no first_seen column today)

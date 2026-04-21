@@ -551,6 +551,15 @@ export interface NavLeakedNamesResponse {
 }
 
 /**
+ * Optional body for PATCH /v1/admin/data-quality/roster-quality-flags/{id}/resolve. When present, `notes` is opaque free text persisted on the row for operator triage history.
+
+ */
+export interface ResolveRosterQualityFlagRequest {
+  /** @maxLength 1000 */
+  notes?: string;
+}
+
+/**
  * One scrape_health row whose last_scraped_at is older than `thresholdDays` or NULL. `entityName` is a best-effort join label.
 
  */

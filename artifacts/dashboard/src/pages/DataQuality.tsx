@@ -1,9 +1,12 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
+  getGetNavLeakedNamesQueryKey,
   useGaPremierOrphanCleanup,
   useGetEmptyStaffPages,
   useGetNavLeakedNames,
   useGetStaleScrapes,
+  useResolveRosterQualityFlag,
   type EmptyStaffPagesResponse,
   type GaPremierOrphanCleanupResponse,
   type NavLeakedNamesResponse,
@@ -670,6 +673,20 @@ function NavLeakedNamesTable({
   data: NavLeakedNamesResponse;
   onPage: (p: number) => void;
 }) {
+  const queryClient = useQueryClient();
+  const resolve = useResolveRosterQualityFlag({
+    mutation: {
+      onSuccess: () => {
+        // Refetch every nav-leaked-names page (any params) so the row
+        // either disappears (default view) or flips to the Resolved
+        // badge (when "Include resolved flags" is on).
+        queryClient.invalidateQueries({
+          queryKey: getGetNavLeakedNamesQueryKey().slice(0, 1),
+        });
+      },
+    },
+  });
+
   return (
     <>
       <p className="mb-2 text-sm text-neutral-500">
@@ -684,6 +701,7 @@ function NavLeakedNamesTable({
               <TableHead>Roster size</TableHead>
               <TableHead>Flagged at</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -724,6 +742,27 @@ function NavLeakedNamesTable({
                     resolvedAt={row.resolvedAt}
                     resolvedByEmail={row.resolvedByEmail}
                   />
+                </TableCell>
+                <TableCell>
+                  {row.resolvedAt === null ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        resolve.mutate({ id: row.id, data: {} })
+                      }
+                      disabled={
+                        resolve.isPending && resolve.variables?.id === row.id
+                      }
+                      className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs font-medium text-neutral-800 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={`Resolve flag ${row.id}`}
+                    >
+                      {resolve.isPending && resolve.variables?.id === row.id
+                        ? "Resolving…"
+                        : "Resolve"}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-neutral-400">—</span>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
