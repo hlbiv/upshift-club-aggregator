@@ -1054,7 +1054,7 @@ export const GetNavLeakedNamesResponse = zod.object({
 /**
  * Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on the row. The underlying `club_roster_snapshots` row is NOT mutated — resolving a flag means "operator has triaged this leak", not "the data is fixed".
 API-key callers get `resolved_by = NULL` (no admin user identity); session callers get their admin user id stamped — same pattern as the dedup PATCH endpoints.
-Idempotent: re-resolving an already-resolved flag returns 204. Returns 404 only if no `nav_leaked_name` flag exists with that id.
+Returns 400 if the flag is already resolved, and 404 if no `nav_leaked_name` flag exists with that id.
 
  * @summary Mark a roster_quality_flags row as resolved
  */
@@ -1062,16 +1062,6 @@ Idempotent: re-resolving an already-resolved flag returns 204. Returns 404 only 
 export const ResolveRosterQualityFlagParams = zod.object({
   id: zod.coerce.number().min(1),
 });
-
-export const resolveRosterQualityFlagBodyNotesMax = 1000;
-
-export const ResolveRosterQualityFlagBody = zod
-  .object({
-    notes: zod.string().max(resolveRosterQualityFlagBodyNotesMax).optional(),
-  })
-  .describe(
-    "Optional body for PATCH \/v1\/admin\/data-quality\/roster-quality-flags\/{id}\/resolve. When present, `notes` is opaque free text persisted on the row for operator triage history.\n",
-  );
 
 /**
  * Paginated list of `scrape_health` rows whose `last_scraped_at` is older than `threshold_days` days or NULL. `entityName` is a best-effort human label joined from `canonical_clubs` / `leagues_master` / `colleges` / `coaches` per `entity_type`; when the join fails (deleted entity, unjoinable type) it is null.

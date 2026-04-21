@@ -747,9 +747,7 @@ function NavLeakedNamesTable({
                   {row.resolvedAt === null ? (
                     <button
                       type="button"
-                      onClick={() =>
-                        resolve.mutate({ id: row.id, data: {} })
-                      }
+                      onClick={() => resolve.mutate({ id: row.id })}
                       disabled={
                         resolve.isPending && resolve.variables?.id === row.id
                       }

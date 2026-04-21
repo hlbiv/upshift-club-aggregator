@@ -612,21 +612,17 @@ async function run() {
   // Resolve roster_quality_flags PATCH endpoint scenarios.
   // -----------------------------------------------------------------------
 
-  // --- 1. 204 on success; admin user id passed through; notes round-trip ---
+  // --- 1. 204 on first resolve; admin user id passed through ---
   {
-    const calls: Array<{
-      id: number;
-      resolvedBy: number | null;
-      notes?: string;
-    }> = [];
+    const calls: Array<{ id: number; resolvedBy: number | null }> = [];
     const deps: ResolveRosterQualityFlagDeps = {
       resolveFlag: async (args) => {
-        calls.push(args);
-        return { found: true };
+        calls.push({ id: args.id, resolvedBy: args.resolvedBy });
+        return { outcome: "resolved" };
       },
     };
     const handler = makeResolveRosterQualityFlagHandler(deps);
-    const req = makeReq({ body: { notes: "stale schedule page" } });
+    const req = makeReq();
     (req as unknown as { params: Record<string, string> }).params = {
       id: "17",
     };
@@ -639,26 +635,16 @@ async function run() {
       `expected 204, got ${res.statusCode}`,
     );
     assert(
-      calls.length === 1 && calls[0]?.id === 17,
+      calls.length === 1 && calls[0]?.id === 17 && calls[0]?.resolvedBy === 42,
       "resolve-success",
-      `expected one call with id=17, got ${JSON.stringify(calls)}`,
-    );
-    assert(
-      calls[0]?.resolvedBy === 42,
-      "resolve-success",
-      `expected resolvedBy=42 (session adminAuth), got ${calls[0]?.resolvedBy}`,
-    );
-    assert(
-      calls[0]?.notes === "stale schedule page",
-      "resolve-success",
-      `expected notes round-trip, got ${calls[0]?.notes}`,
+      `expected one call with id=17 resolvedBy=42, got ${JSON.stringify(calls)}`,
     );
   }
 
   // --- 2. 404 when flag id does not exist ---
   {
     const deps: ResolveRosterQualityFlagDeps = {
-      resolveFlag: async () => ({ found: false }),
+      resolveFlag: async () => ({ outcome: "not_found" }),
     };
     const handler = makeResolveRosterQualityFlagHandler(deps);
     const req = makeReq();
@@ -678,7 +664,7 @@ async function run() {
   // --- 3. 400 on invalid id (non-numeric / zero / negative) ---
   for (const badId of ["abc", "0", "-3"]) {
     const deps: ResolveRosterQualityFlagDeps = {
-      resolveFlag: async () => ({ found: true }),
+      resolveFlag: async () => ({ outcome: "resolved" }),
     };
     const handler = makeResolveRosterQualityFlagHandler(deps);
     const req = makeReq();
@@ -695,13 +681,13 @@ async function run() {
     );
   }
 
-  // --- 4. 400 on invalid body (notes too long) ---
+  // --- 4. 400 when flag is already resolved ---
   {
     const deps: ResolveRosterQualityFlagDeps = {
-      resolveFlag: async () => ({ found: true }),
+      resolveFlag: async () => ({ outcome: "already_resolved" }),
     };
     const handler = makeResolveRosterQualityFlagHandler(deps);
-    const req = makeReq({ body: { notes: "x".repeat(1001) } });
+    const req = makeReq();
     (req as unknown as { params: Record<string, string> }).params = {
       id: "1",
     };
@@ -710,21 +696,18 @@ async function run() {
 
     assert(
       res.statusCode === 400,
-      "resolve-400-body",
-      `expected 400 for notes>1000 chars, got ${res.statusCode}`,
+      "resolve-400-already",
+      `expected 400 for already_resolved, got ${res.statusCode}`,
     );
   }
 
   // --- 5. API-key caller (no session) → resolvedBy=null passthrough ---
   {
-    const calls: Array<{
-      id: number;
-      resolvedBy: number | null;
-    }> = [];
+    const calls: Array<{ id: number; resolvedBy: number | null }> = [];
     const deps: ResolveRosterQualityFlagDeps = {
       resolveFlag: async (args) => {
         calls.push({ id: args.id, resolvedBy: args.resolvedBy });
-        return { found: true };
+        return { outcome: "resolved" };
       },
     };
     const handler = makeResolveRosterQualityFlagHandler(deps);

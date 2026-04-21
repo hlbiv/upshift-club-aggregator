@@ -1117,8 +1117,8 @@ paths:
         session callers get their admin user id stamped — same pattern as
         the dedup PATCH endpoints.
 
-        Idempotent: re-resolving an already-resolved flag returns 204.
-        Returns 404 only if no `nav_leaked_name` flag exists with that id.
+        Returns 400 if the flag is already resolved, and 404 if no
+        `nav_leaked_name` flag exists with that id.
       security:
         - sessionAuth: []
         - apiKey: []
@@ -1129,17 +1129,11 @@ paths:
           schema:
             type: integer
             minimum: 1
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ResolveRosterQualityFlagRequest"
       responses:
         "204":
-          description: Flag resolved (or already resolved)
+          description: Flag resolved
         "400":
-          description: Invalid id or invalid body
+          description: Invalid id or flag already resolved
           content:
             application/json:
               schema:
@@ -2538,18 +2532,6 @@ components:
         - total
         - page
         - pageSize
-
-    ResolveRosterQualityFlagRequest:
-      type: object
-      description: >
-        Optional body for PATCH
-        /v1/admin/data-quality/roster-quality-flags/{id}/resolve. When
-        present, `notes` is opaque free text persisted on the row for
-        operator triage history.
-      properties:
-        notes:
-          type: string
-          maxLength: 1000
 
     StaleScrapesRow:
       type: object

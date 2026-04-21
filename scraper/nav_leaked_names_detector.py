@@ -1,38 +1,13 @@
-"""
-nav_leaked_names_detector.py — Phase 2 batch job that scans
-`club_roster_snapshots` for snapshot-groups whose `player_name` column
-contains navigation-menu strings (e.g. "Home", "Contact") rather than
-real player names, and writes one `roster_quality_flags` row per
-offending group.
+"""Detect nav-menu strings (e.g. "Home", "Contact") leaking into
+`club_roster_snapshots.player_name` and upsert one
+`roster_quality_flags` row of type `nav_leaked_name` per offending
+snapshot-group: (club_name_raw, season, age_group, gender).
 
-A snapshot-group is the natural roster shard:
-  (club_name_raw, season, age_group, gender)
+Match is case-insensitive on the FULL normalized player_name (not
+substring). Idempotent via the (snapshot_id, flag_type) unique
+constraint.
 
-Each row in `club_roster_snapshots` is one player inside one such group.
-For every group we collect the set of `player_name` values whose
-case-folded form exactly matches one of the nav words below, and if
-that set is non-empty we upsert a `roster_quality_flags` row of type
-`nav_leaked_name`. Idempotency is guaranteed by
-`roster_quality_flags_snapshot_type_uq` (snapshot_id, flag_type) — a
-re-run refreshes `metadata` rather than duplicating rows.
-
-Phase 2 scope (deliberate):
-
-* List-only exact-match detection. Element-scoped detection (HTML
-  `<nav>` / `<header>` / `<footer>`) would need either a raw-HTML
-  column on `club_roster_snapshots` or an inline hook in the snapshot
-  writer — both deferred to Phase 3.
-* Match is case-insensitive on the FULL normalized player_name —
-  not substring. A hypothetical player named "Tom Sitemap" must NOT
-  trip a flag.
-* No-flag groups are skipped (no row written).
-* The flag references one representative snapshot_id from the group
-  (the smallest by `id`), since the (snapshot_id, flag_type) uniqueness
-  is per-row, not per-group, and the panel's "leaked strings + roster
-  size" payload is the operator-actionable artifact.
-
-CLI:
-    python3 run.py --source nav-leaked-names-detect [--dry-run] [--limit N]
+CLI: python3 run.py --source nav-leaked-names-detect [--dry-run] [--limit N]
 """
 
 from __future__ import annotations
