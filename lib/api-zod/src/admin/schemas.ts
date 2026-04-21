@@ -308,6 +308,74 @@ export const NavLeakedNamesResponse = z.object({
 });
 export type NavLeakedNamesResponse = z.infer<typeof NavLeakedNamesResponse>;
 
+// ---------------------------------------------------------------------------
+// coach_quality_flags — canary table for coach-pollution remediation.
+// ---------------------------------------------------------------------------
+
+/**
+ * CHECK-list values mirrored from lib/db/src/schema/coach-quality-flags.ts.
+ * Adding a new flag_type is a 3-place change: the Postgres CHECK, the
+ * schema file comment, and this enum.
+ */
+export const CoachQualityFlagType = z.enum([
+  "looks_like_name_reject",
+  "role_label_as_name",
+  "corrupt_email",
+  "nav_leaked",
+]);
+export type CoachQualityFlagType = z.infer<typeof CoachQualityFlagType>;
+
+/**
+ * Request for GET /v1/admin/data-quality/coach-quality-flags.
+ *
+ * `resolved` is optional tri-state: true → resolved only, false → active
+ * only, omitted → both. This differs from the nav-leaked-names panel's
+ * boolean-with-default — the coach canary is read more often in forensic
+ * "show everything ever flagged" mode during the active purge.
+ */
+export const CoachQualityFlagsRequest = z.object({
+  flagType: CoachQualityFlagType.optional(),
+  resolved: z.boolean().optional(),
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(100).default(20),
+});
+export type CoachQualityFlagsRequest = z.infer<typeof CoachQualityFlagsRequest>;
+
+/**
+ * One row of the coach-quality-flags panel — a `coach_quality_flags` row
+ * joined to its `coach_discoveries` parent (for `coachName` / `coachEmail`
+ * / `clubNameRaw`) and the discovery's `canonical_clubs` resolution (for
+ * `clubDisplayName` when `club_id` is set). `metadata` is the raw jsonb
+ * payload (shape varies by `flagType` — see the schema-file docstring for
+ * the per-flag-type contract); callers can narrow on `flagType` to read
+ * typed fields safely.
+ */
+export const CoachQualityFlag = z.object({
+  id: z.number().int(),
+  discoveryId: z.number().int(),
+  flagType: CoachQualityFlagType,
+  metadata: z.record(z.unknown()).nullable(),
+  flaggedAt: z.string().datetime(),
+  resolvedAt: z.string().datetime().nullable(),
+  resolvedByEmail: z.string().nullable(),
+  resolutionNote: z.string().nullable(),
+  coachName: z.string(),
+  coachEmail: z.string().nullable(),
+  clubNameRaw: z.string().nullable(),
+  clubId: z.number().int().nullable(),
+  clubDisplayName: z.string().nullable(),
+});
+export type CoachQualityFlag = z.infer<typeof CoachQualityFlag>;
+
+/** Paginated envelope for the coach-quality-flags panel. */
+export const CoachQualityFlagsResponse = z.object({
+  items: z.array(CoachQualityFlag),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export type CoachQualityFlagsResponse = z.infer<typeof CoachQualityFlagsResponse>;
+
 
 /**
  * Growth dashboard — "records added since X" counts across the five

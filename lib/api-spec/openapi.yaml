@@ -1145,6 +1145,119 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/data-quality/coach-quality-flags:
+    get:
+      operationId: getCoachQualityFlags
+      tags: [admin]
+      summary: coach_quality_flags canary rows, joined with coach + club context
+      description: >
+        Paginated list of `coach_quality_flags` rows, joined to the parent
+        `coach_discoveries` (surfacing `coach_name`, `coach_email`,
+        `club_name_raw`), the snapshot's `canonical_clubs` resolution (for
+        a `club_display_name` when the discovery's `club_id` is set), and
+        `admin_users` (for `resolved_by_email`). Callers never see raw
+        jsonb — any typed metadata extraction happens at the API boundary
+        on a per-flag-type basis (today the whole jsonb payload is returned
+        verbatim in `metadata` as a `record<unknown>`; a future PR can
+        promote per-flag fields into typed columns once the pollution
+        investigation has settled on a stable contract).
+
+        Phase 3 scope: the table is populated by PR 1 (shared guard +
+        scraper wiring) and PR 2 (purge script audit rows) of the 3-PR
+        coach-pollution remediation. This endpoint returns an empty list
+        at PR-3 merge time by design.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: flag_type
+          in: query
+          description: Optional filter by flag_type. Matches the CHECK list verbatim.
+          schema:
+            type: string
+            enum:
+              - looks_like_name_reject
+              - role_label_as_name
+              - corrupt_email
+              - nav_leaked
+        - name: resolved
+          in: query
+          description: >
+            If true, return only resolved flags; if false, return only
+            active (unresolved) flags; if omitted, return both.
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated list of coach-quality-flag rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachQualityFlagsResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/data-quality/coach-quality-flags/{id}/resolve:
+    patch:
+      operationId: resolveCoachQualityFlag
+      tags: [admin]
+      summary: Mark a coach_quality_flags row as resolved
+      description: >
+        Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>`
+        on the row. The underlying `coach_discoveries` row is NOT mutated
+        — resolving a flag means "operator has triaged this canary", not
+        "the data is fixed".
+
+        API-key callers get `resolved_by = NULL` (no admin user identity);
+        session callers get their admin user id stamped — same pattern as
+        the dedup PATCH endpoints and the roster-quality-flags resolve
+        endpoint.
+
+        Returns 400 if the flag is already resolved, and 404 if no
+        `coach_quality_flags` row exists with that id.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "204":
+          description: Flag resolved
+        "400":
+          description: Invalid id or flag already resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No coach_quality_flags row with that id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/data-quality/stale-scrapes:
     get:
       operationId: getStaleScrapes
@@ -2565,6 +2678,95 @@ components:
           type: integer
       required:
         - rows
+        - total
+        - page
+        - pageSize
+
+    CoachQualityFlag:
+      type: object
+      description: >
+        One `coach_quality_flags` row joined to its `coach_discoveries`
+        parent (surfacing `coachName`, `coachEmail`, `clubNameRaw`) plus
+        the discovery's `canonical_clubs` resolution (`clubDisplayName`,
+        nullable — depends on whether the discovery has a `club_id`). The
+        raw jsonb `metadata` payload is returned verbatim; the per-flag-
+        type contract lives in the schema-file docstring and will migrate
+        to typed columns once the pollution investigation settles on a
+        stable shape. `resolvedByEmail` is joined from `admin_users.email`
+        when the flag has been resolved.
+      properties:
+        id:
+          type: integer
+        discoveryId:
+          type: integer
+        flagType:
+          type: string
+          enum:
+            - looks_like_name_reject
+            - role_label_as_name
+            - corrupt_email
+            - nav_leaked
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+        flaggedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolvedByEmail:
+          type: string
+          nullable: true
+        resolutionNote:
+          type: string
+          nullable: true
+        coachName:
+          type: string
+        coachEmail:
+          type: string
+          nullable: true
+        clubNameRaw:
+          type: string
+          nullable: true
+        clubId:
+          type: integer
+          nullable: true
+        clubDisplayName:
+          type: string
+          nullable: true
+      required:
+        - id
+        - discoveryId
+        - flagType
+        - metadata
+        - flaggedAt
+        - resolvedAt
+        - resolvedByEmail
+        - resolutionNote
+        - coachName
+        - coachEmail
+        - clubNameRaw
+        - clubId
+        - clubDisplayName
+
+    CoachQualityFlagsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoachQualityFlag"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - items
         - total
         - page
         - pageSize

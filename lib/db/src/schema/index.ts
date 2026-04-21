@@ -257,6 +257,7 @@ export type InsertCoachDiscovery = typeof coachDiscoveries.$inferInsert;
 // ---------------------------------------------------------------------------
 
 export * from "./clubs-extended";
+export * from "./coach-quality-flags";
 export * from "./colleges";
 export * from "./coaches";
 export * from "./commitments";

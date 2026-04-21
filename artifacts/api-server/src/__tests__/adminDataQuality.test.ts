@@ -12,12 +12,17 @@
  */
 import type { Request, Response } from "express";
 import {
+  makeCoachQualityFlagsHandler,
   makeGaPremierOrphanHandler,
   makeNavLeakedNamesHandler,
+  makeResolveCoachQualityFlagHandler,
   makeResolveRosterQualityFlagHandler,
+  type CoachQualityFlagRawRow,
+  type CoachQualityFlagsDeps,
   type DataQualityDeps,
   type NavLeakedNamesDeps,
   type NavLeakedNamesRawRow,
+  type ResolveCoachQualityFlagDeps,
   type ResolveRosterQualityFlagDeps,
 } from "../routes/admin/data-quality";
 
@@ -728,6 +733,343 @@ async function run() {
     assert(
       calls[0]?.resolvedBy === null,
       "resolve-apikey",
+      `expected resolvedBy=null for API-key caller, got ${calls[0]?.resolvedBy}`,
+    );
+  }
+
+  // -----------------------------------------------------------------------
+  // coach_quality_flags GET — shape + query-param pass-through.
+  // -----------------------------------------------------------------------
+
+  // --- Happy path: rows round-trip with joined coach/club context ---
+  {
+    const calls: Array<{
+      flagType: string | undefined;
+      resolved: boolean | undefined;
+      page: number;
+      pageSize: number;
+    }> = [];
+    const fakeRows: CoachQualityFlagRawRow[] = [
+      {
+        id: 10,
+        discoveryId: 500,
+        flagType: "nav_leaked",
+        metadata: { leaked_strings: ["CONTACT"], raw_name: "CONTACT" },
+        flaggedAt: new Date("2026-04-10T12:00:00Z"),
+        resolvedAt: null,
+        resolvedByEmail: null,
+        resolutionNote: null,
+        coachName: "CONTACT",
+        coachEmail: "info@example.org",
+        clubNameRaw: "Example FC",
+        clubId: 77,
+        clubDisplayName: "Example FC",
+      },
+      {
+        id: 11,
+        discoveryId: 501,
+        flagType: "corrupt_email",
+        metadata: null,
+        flaggedAt: "2026-04-11T09:00:00.000Z",
+        resolvedAt: "2026-04-12T15:30:00.000Z",
+        resolvedByEmail: "ops@upshift.test",
+        resolutionNote: "purged via PR 2",
+        coachName: "Mon Apr 7 2026",
+        coachEmail: null,
+        clubNameRaw: null,
+        clubId: null,
+        clubDisplayName: null,
+      },
+    ];
+    const deps: CoachQualityFlagsDeps = {
+      listCoachQualityFlags: async (args) => {
+        calls.push(args);
+        return { rows: fakeRows, total: 2 };
+      },
+    };
+    const handler = makeCoachQualityFlagsHandler(deps);
+    const req = makeReq({
+      query: {
+        page: "1",
+        page_size: "20",
+        flag_type: "nav_leaked",
+        resolved: "false",
+      },
+    });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "coach-flags-happy",
+      `expected 200, got ${res.statusCode}`,
+    );
+    assert(
+      calls.length === 1 &&
+        calls[0]?.page === 1 &&
+        calls[0]?.pageSize === 20 &&
+        calls[0]?.flagType === "nav_leaked" &&
+        calls[0]?.resolved === false,
+      "coach-flags-happy",
+      `expected single call with page=1/pageSize=20/flagType=nav_leaked/resolved=false, got ${JSON.stringify(calls)}`,
+    );
+    const body = res.body as {
+      total?: number;
+      items?: Array<{
+        id: number;
+        discoveryId: number;
+        flagType: string;
+        metadata: Record<string, unknown> | null;
+        flaggedAt: string;
+        resolvedAt: string | null;
+        resolvedByEmail: string | null;
+        resolutionNote: string | null;
+        coachName: string;
+        coachEmail: string | null;
+        clubNameRaw: string | null;
+        clubId: number | null;
+        clubDisplayName: string | null;
+      }>;
+    };
+    assert(
+      body.total === 2,
+      "coach-flags-happy",
+      `total should be 2, got ${body.total}`,
+    );
+    const r0 = body.items?.[0];
+    assert(
+      r0?.id === 10 && r0?.discoveryId === 500,
+      "coach-flags-happy",
+      `row0 id/discoveryId should round-trip, got ${JSON.stringify(r0)}`,
+    );
+    assert(
+      r0?.flaggedAt === "2026-04-10T12:00:00.000Z",
+      "coach-flags-happy",
+      `row0 flaggedAt should ISO-normalize, got ${r0?.flaggedAt}`,
+    );
+    assert(
+      r0?.metadata &&
+        typeof r0.metadata === "object" &&
+        !Array.isArray(r0.metadata) &&
+        (r0.metadata as Record<string, unknown>).raw_name === "CONTACT",
+      "coach-flags-happy",
+      `row0 metadata should pass through as object, got ${JSON.stringify(r0?.metadata)}`,
+    );
+    assert(
+      r0?.coachName === "CONTACT" &&
+        r0?.clubId === 77 &&
+        r0?.clubDisplayName === "Example FC",
+      "coach-flags-happy",
+      `row0 joined coach/club fields should pass through, got ${JSON.stringify(r0)}`,
+    );
+    const r1 = body.items?.[1];
+    assert(
+      r1?.metadata === null,
+      "coach-flags-happy",
+      `row1 null metadata should survive as null, got ${JSON.stringify(r1?.metadata)}`,
+    );
+    assert(
+      r1?.resolvedAt === "2026-04-12T15:30:00.000Z" &&
+        r1?.resolvedByEmail === "ops@upshift.test" &&
+        r1?.resolutionNote === "purged via PR 2",
+      "coach-flags-happy",
+      `row1 resolved fields should pass through, got ${JSON.stringify(r1)}`,
+    );
+    assert(
+      r1?.clubId === null && r1?.clubDisplayName === null,
+      "coach-flags-happy",
+      `row1 unlinked discovery should preserve nulls`,
+    );
+  }
+
+  // --- Empty query → defaults (both resolved/unresolved; no flag-type filter) ---
+  {
+    const calls: Array<{
+      flagType: string | undefined;
+      resolved: boolean | undefined;
+      page: number;
+      pageSize: number;
+    }> = [];
+    const deps: CoachQualityFlagsDeps = {
+      listCoachQualityFlags: async (args) => {
+        calls.push(args);
+        return { rows: [], total: 0 };
+      },
+    };
+    const handler = makeCoachQualityFlagsHandler(deps);
+    const req = makeReq({ query: {} });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "coach-flags-defaults",
+      `expected 200, got ${res.statusCode}`,
+    );
+    assert(
+      calls[0]?.page === 1 &&
+        calls[0]?.pageSize === 20 &&
+        calls[0]?.flagType === undefined &&
+        calls[0]?.resolved === undefined,
+      "coach-flags-defaults",
+      `empty query should apply page=1/pageSize=20/flagType=undefined/resolved=undefined, got ${JSON.stringify(calls[0])}`,
+    );
+  }
+
+  // --- Invalid flag_type → 400 ---
+  {
+    const deps: CoachQualityFlagsDeps = {
+      listCoachQualityFlags: async () => ({ rows: [], total: 0 }),
+    };
+    const handler = makeCoachQualityFlagsHandler(deps);
+    const req = makeReq({ query: { flag_type: "not-a-real-flag" } });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "coach-flags-bad-flag-type",
+      `expected 400 for unknown flag_type, got ${res.statusCode}`,
+    );
+  }
+
+  // --- Invalid page_size (over cap) → 400 ---
+  {
+    const deps: CoachQualityFlagsDeps = {
+      listCoachQualityFlags: async () => ({ rows: [], total: 0 }),
+    };
+    const handler = makeCoachQualityFlagsHandler(deps);
+    const req = makeReq({ query: { page_size: "500" } });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "coach-flags-bad-page-size",
+      `expected 400 for page_size > 100, got ${res.statusCode}`,
+    );
+  }
+
+  // -----------------------------------------------------------------------
+  // coach_quality_flags PATCH — resolve outcomes.
+  // -----------------------------------------------------------------------
+
+  // --- 1. 204 on first resolve; admin user id passed through ---
+  {
+    const calls: Array<{ id: number; resolvedBy: number | null }> = [];
+    const deps: ResolveCoachQualityFlagDeps = {
+      resolveFlag: async (args) => {
+        calls.push({ id: args.id, resolvedBy: args.resolvedBy });
+        return { outcome: "resolved" };
+      },
+    };
+    const handler = makeResolveCoachQualityFlagHandler(deps);
+    const req = makeReq();
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: "33",
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 204,
+      "coach-resolve-success",
+      `expected 204, got ${res.statusCode}`,
+    );
+    assert(
+      calls.length === 1 && calls[0]?.id === 33 && calls[0]?.resolvedBy === 42,
+      "coach-resolve-success",
+      `expected id=33 resolvedBy=42, got ${JSON.stringify(calls)}`,
+    );
+  }
+
+  // --- 2. 404 when flag id does not exist ---
+  {
+    const deps: ResolveCoachQualityFlagDeps = {
+      resolveFlag: async () => ({ outcome: "not_found" }),
+    };
+    const handler = makeResolveCoachQualityFlagHandler(deps);
+    const req = makeReq();
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: "88888",
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 404,
+      "coach-resolve-404",
+      `expected 404, got ${res.statusCode}`,
+    );
+  }
+
+  // --- 3. 400 on invalid id (non-numeric / zero / negative) ---
+  for (const badId of ["abc", "0", "-3"]) {
+    const deps: ResolveCoachQualityFlagDeps = {
+      resolveFlag: async () => ({ outcome: "resolved" }),
+    };
+    const handler = makeResolveCoachQualityFlagHandler(deps);
+    const req = makeReq();
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: badId,
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "coach-resolve-400-id",
+      `expected 400 for id=${badId}, got ${res.statusCode}`,
+    );
+  }
+
+  // --- 4. 400 when flag is already resolved ---
+  {
+    const deps: ResolveCoachQualityFlagDeps = {
+      resolveFlag: async () => ({ outcome: "already_resolved" }),
+    };
+    const handler = makeResolveCoachQualityFlagHandler(deps);
+    const req = makeReq();
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: "1",
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "coach-resolve-400-already",
+      `expected 400 for already_resolved, got ${res.statusCode}`,
+    );
+  }
+
+  // --- 5. API-key caller → resolvedBy=null passthrough ---
+  {
+    const calls: Array<{ id: number; resolvedBy: number | null }> = [];
+    const deps: ResolveCoachQualityFlagDeps = {
+      resolveFlag: async (args) => {
+        calls.push({ id: args.id, resolvedBy: args.resolvedBy });
+        return { outcome: "resolved" };
+      },
+    };
+    const handler = makeResolveCoachQualityFlagHandler(deps);
+    const req = {
+      params: { id: "5" },
+      query: {},
+      body: {},
+      adminAuth: { kind: "apiKey" as const },
+    } as unknown as Request;
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 204,
+      "coach-resolve-apikey",
+      `expected 204 for API-key caller, got ${res.statusCode}`,
+    );
+    assert(
+      calls[0]?.resolvedBy === null,
+      "coach-resolve-apikey",
       `expected resolvedBy=null for API-key caller, got ${calls[0]?.resolvedBy}`,
     );
   }

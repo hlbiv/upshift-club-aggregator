@@ -550,6 +550,45 @@ export interface NavLeakedNamesResponse {
   pageSize: number;
 }
 
+export type CoachQualityFlagFlagType =
+  (typeof CoachQualityFlagFlagType)[keyof typeof CoachQualityFlagFlagType];
+
+export const CoachQualityFlagFlagType = {
+  looks_like_name_reject: "looks_like_name_reject",
+  role_label_as_name: "role_label_as_name",
+  corrupt_email: "corrupt_email",
+  nav_leaked: "nav_leaked",
+} as const;
+
+export type CoachQualityFlagMetadata = { [key: string]: unknown } | null;
+
+/**
+ * One `coach_quality_flags` row joined to its `coach_discoveries` parent (surfacing `coachName`, `coachEmail`, `clubNameRaw`) plus the discovery's `canonical_clubs` resolution (`clubDisplayName`, nullable — depends on whether the discovery has a `club_id`). The raw jsonb `metadata` payload is returned verbatim; the per-flag- type contract lives in the schema-file docstring and will migrate to typed columns once the pollution investigation settles on a stable shape. `resolvedByEmail` is joined from `admin_users.email` when the flag has been resolved.
+
+ */
+export interface CoachQualityFlag {
+  id: number;
+  discoveryId: number;
+  flagType: CoachQualityFlagFlagType;
+  metadata: CoachQualityFlagMetadata;
+  flaggedAt: string;
+  resolvedAt: string | null;
+  resolvedByEmail: string | null;
+  resolutionNote: string | null;
+  coachName: string;
+  coachEmail: string | null;
+  clubNameRaw: string | null;
+  clubId: number | null;
+  clubDisplayName: string | null;
+}
+
+export interface CoachQualityFlagsResponse {
+  items: CoachQualityFlag[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /**
  * One scrape_health row whose last_scraped_at is older than `thresholdDays` or NULL. `entityName` is a best-effort join label.
 
@@ -938,6 +977,37 @@ export type GetNavLeakedNamesParams = {
    */
   include_resolved?: boolean;
 };
+
+export type GetCoachQualityFlagsParams = {
+  /**
+   * Optional filter by flag_type. Matches the CHECK list verbatim.
+   */
+  flag_type?: GetCoachQualityFlagsFlagType;
+  /**
+ * If true, return only resolved flags; if false, return only active (unresolved) flags; if omitted, return both.
+
+ */
+  resolved?: boolean;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  page_size?: number;
+};
+
+export type GetCoachQualityFlagsFlagType =
+  (typeof GetCoachQualityFlagsFlagType)[keyof typeof GetCoachQualityFlagsFlagType];
+
+export const GetCoachQualityFlagsFlagType = {
+  looks_like_name_reject: "looks_like_name_reject",
+  role_label_as_name: "role_label_as_name",
+  corrupt_email: "corrupt_email",
+  nav_leaked: "nav_leaked",
+} as const;
 
 export type GetStaleScrapesParams = {
   /**

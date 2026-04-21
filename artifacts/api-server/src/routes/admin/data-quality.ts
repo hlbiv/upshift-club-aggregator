@@ -1,10 +1,13 @@
 /**
  * `/api/v1/admin/data-quality/*` — admin-surface data-quality operations.
  *
- *   POST /api/v1/admin/data-quality/ga-premier-orphans
- *   GET  /api/v1/admin/data-quality/empty-staff-pages
- *   GET  /api/v1/admin/data-quality/stale-scrapes
- *   GET  /api/v1/admin/data-quality/nav-leaked-names
+ *   POST  /api/v1/admin/data-quality/ga-premier-orphans
+ *   GET   /api/v1/admin/data-quality/empty-staff-pages
+ *   GET   /api/v1/admin/data-quality/stale-scrapes
+ *   GET   /api/v1/admin/data-quality/nav-leaked-names
+ *   PATCH /api/v1/admin/data-quality/roster-quality-flags/:id/resolve
+ *   GET   /api/v1/admin/data-quality/coach-quality-flags
+ *   PATCH /api/v1/admin/data-quality/coach-quality-flags/:id/resolve
  *
  * GA Premier orphan cleanup
  * -------------------------
@@ -71,6 +74,7 @@ import {
   clubRosterSnapshots,
   canonicalClubs,
   coachDiscoveries,
+  coachQualityFlags,
   scrapeHealth,
   leaguesMaster,
   colleges,
@@ -87,6 +91,8 @@ import {
   StaleScrapesResponse,
   NavLeakedNamesRequest,
   NavLeakedNamesResponse,
+  CoachQualityFlagsRequest,
+  CoachQualityFlagsResponse,
 } from "@hlbiv/api-zod/admin";
 
 // ---------------------------------------------------------------------------
@@ -222,6 +228,14 @@ export function makeDataQualityRouter(deps: DataQualityDeps): IRouter {
   router.patch(
     "/roster-quality-flags/:id/resolve",
     makeResolveRosterQualityFlagHandler(prodResolveRosterQualityFlagDeps),
+  );
+  router.get(
+    "/coach-quality-flags",
+    makeCoachQualityFlagsHandler(prodCoachQualityFlagsDeps),
+  );
+  router.patch(
+    "/coach-quality-flags/:id/resolve",
+    makeResolveCoachQualityFlagHandler(prodResolveCoachQualityFlagDeps),
   );
   return router;
 }
@@ -490,6 +504,346 @@ export const prodResolveRosterQualityFlagDeps: ResolveRosterQualityFlagDeps = {
     const existing = await defaultDb.execute<{ id: number }>(sql`
       SELECT id
       FROM ${rosterQualityFlags}
+      WHERE id = ${id}
+      LIMIT 1
+    `);
+    return {
+      outcome:
+        Array.from(existing as unknown as Array<{ id: number }>).length > 0
+          ? "already_resolved"
+          : "not_found",
+    };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// coach_quality_flags — DI surface + handler factory + prod wiring.
+//
+// Patterned 1:1 on the nav-leaked-names implementation above. The
+// `coach_quality_flags` table is the canary / audit trail for the 3-PR
+// coach-pollution remediation: PR 1 (shared guard) flags suspicious writes
+// as scrapers run; PR 2 (purge script) writes an audit row before deleting
+// any `coach_discoveries` entry. This panel is the operator's forensic
+// surface — "show everything the canary caught, grouped by flag type /
+// resolved state".
+//
+// Unlike nav-leaked-names we do NOT narrow metadata into typed columns at
+// the API boundary yet — the per-flag-type jsonb shape is still being
+// settled by the pollution investigation, and forcing it through typed
+// fields now would lock us into a premature contract. The raw jsonb ships
+// verbatim and the UI can narrow on `flagType` to read fields safely.
+// ---------------------------------------------------------------------------
+
+export interface CoachQualityFlagRawRow {
+  id: number;
+  discoveryId: number;
+  flagType: string;
+  metadata: unknown;
+  flaggedAt: Date | string;
+  resolvedAt: Date | string | null;
+  resolvedByEmail: string | null;
+  resolutionNote: string | null;
+  coachName: string;
+  coachEmail: string | null;
+  clubNameRaw: string | null;
+  clubId: number | null;
+  clubDisplayName: string | null;
+}
+
+export interface CoachQualityFlagsDeps {
+  listCoachQualityFlags: (args: {
+    flagType: string | undefined;
+    resolved: boolean | undefined;
+    page: number;
+    pageSize: number;
+  }) => Promise<{ rows: CoachQualityFlagRawRow[]; total: number }>;
+}
+
+/**
+ * Pass metadata through as a plain object or null. node-pg returns jsonb as
+ * a parsed JS value; `Array.isArray` / primitive results are not valid
+ * metadata contracts here, so we coerce non-object payloads to null rather
+ * than throwing (the detector could, in theory, write bad rows — one bad
+ * row must not take out the whole panel).
+ */
+function normalizeCoachQualityMetadata(
+  raw: unknown,
+): Record<string, unknown> | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== "object") return null;
+  if (Array.isArray(raw)) return null;
+  return raw as Record<string, unknown>;
+}
+
+/**
+ * Narrow an arbitrary string to one of the four CHECK-list values we
+ * advertise in the response schema. If a row ever slips through with a
+ * flagType outside the CHECK list (CHECK migration lag, manual SQL poke),
+ * fall back to `'nav_leaked'` rather than crashing the whole panel — the
+ * DB-level CHECK constraint is the canonical guard; this is defense in
+ * depth at the API boundary so one corrupt row cannot take out the UI.
+ */
+function coerceCoachQualityFlagType(
+  raw: string,
+): "looks_like_name_reject" | "role_label_as_name" | "corrupt_email" | "nav_leaked" {
+  switch (raw) {
+    case "looks_like_name_reject":
+    case "role_label_as_name":
+    case "corrupt_email":
+    case "nav_leaked":
+      return raw;
+    default:
+      return "nav_leaked";
+  }
+}
+
+export function makeCoachQualityFlagsHandler(
+  deps: CoachQualityFlagsDeps,
+): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const parsed = CoachQualityFlagsRequest.safeParse({
+        flagType:
+          typeof req.query.flag_type === "string"
+            ? req.query.flag_type
+            : typeof req.query.flagType === "string"
+              ? req.query.flagType
+              : undefined,
+        resolved:
+          toBooleanOrUndefined(req.query.resolved) ??
+          toBooleanOrUndefined(req.query.is_resolved),
+        page: toNumberOrUndefined(req.query.page),
+        pageSize:
+          toNumberOrUndefined(req.query.page_size) ??
+          toNumberOrUndefined(req.query.pageSize) ??
+          toNumberOrUndefined(req.query.limit),
+      });
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid query params" });
+        return;
+      }
+      const { flagType, resolved, page, pageSize } = parsed.data;
+
+      const { rows, total } = await deps.listCoachQualityFlags({
+        flagType,
+        resolved,
+        page,
+        pageSize,
+      });
+
+      const items = rows.map((r) => ({
+        id: r.id,
+        discoveryId: r.discoveryId,
+        flagType: coerceCoachQualityFlagType(r.flagType),
+        metadata: normalizeCoachQualityMetadata(r.metadata),
+        flaggedAt: toIsoRequired(r.flaggedAt),
+        resolvedAt: toIsoOrNull(r.resolvedAt),
+        resolvedByEmail: r.resolvedByEmail,
+        resolutionNote: r.resolutionNote,
+        coachName: r.coachName,
+        coachEmail: r.coachEmail,
+        clubNameRaw: r.clubNameRaw,
+        clubId: r.clubId,
+        clubDisplayName: r.clubDisplayName,
+      }));
+
+      res.json(
+        CoachQualityFlagsResponse.parse({
+          items,
+          total,
+          page,
+          pageSize,
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+/**
+ * Production DB-backed dep. COUNT(*) OVER () window so we don't make a
+ * second round-trip for pagination total. Orders active flags oldest-first
+ * so the stalest offenders bubble up; resolved rows sort after unresolved
+ * when the caller asks for both.
+ */
+export const prodCoachQualityFlagsDeps: CoachQualityFlagsDeps = {
+  listCoachQualityFlags: async ({ flagType, resolved, page, pageSize }) => {
+    const offset = (page - 1) * pageSize;
+
+    // Tri-state resolved filter: undefined → both, true → resolved only,
+    // false → active only. Flag-type filter is optional; a nullish branch
+    // matches every row.
+    const flagTypePredicate = flagType
+      ? sql`cqf.flag_type = ${flagType}`
+      : sql`TRUE`;
+    const resolvedPredicate =
+      resolved === undefined
+        ? sql`TRUE`
+        : resolved
+          ? sql`cqf.resolved_at IS NOT NULL`
+          : sql`cqf.resolved_at IS NULL`;
+
+    const result = await defaultDb.execute<{
+      id: number;
+      discovery_id: number;
+      flag_type: string;
+      metadata: unknown;
+      flagged_at: Date | string;
+      resolved_at: Date | string | null;
+      resolved_by_email: string | null;
+      resolution_note: string | null;
+      coach_name: string;
+      coach_email: string | null;
+      club_name_raw: string | null;
+      club_id: number | null;
+      club_display_name: string | null;
+      total: string;
+    }>(sql`
+      SELECT
+        cqf.id,
+        cqf.discovery_id,
+        cqf.flag_type,
+        cqf.metadata,
+        cqf.flagged_at,
+        cqf.resolved_at,
+        au.email AS resolved_by_email,
+        cqf.resolution_note,
+        cd.name AS coach_name,
+        cd.email AS coach_email,
+        cd.club_id,
+        cc.club_name_canonical AS club_display_name,
+        /* The joined "raw" club name is the discovery's club_id-associated
+           canonical row if linked; otherwise NULL. coach_discoveries has
+           no club_name_raw column, so we surface the canonical name there
+           too and let the UI differentiate via clubId presence. */
+        cc.club_name_canonical AS club_name_raw,
+        COUNT(*) OVER () AS total
+      FROM ${coachQualityFlags} cqf
+      JOIN ${coachDiscoveries} cd ON cd.id = cqf.discovery_id
+      LEFT JOIN ${canonicalClubs} cc ON cc.id = cd.club_id
+      LEFT JOIN ${adminUsers} au ON au.id = cqf.resolved_by
+      WHERE ${flagTypePredicate}
+        AND ${resolvedPredicate}
+      ORDER BY
+        (cqf.resolved_at IS NOT NULL) ASC,
+        cqf.flagged_at ASC,
+        cqf.id ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `);
+
+    const list = Array.from(
+      result as unknown as Array<{
+        id: number;
+        discovery_id: number;
+        flag_type: string;
+        metadata: unknown;
+        flagged_at: Date | string;
+        resolved_at: Date | string | null;
+        resolved_by_email: string | null;
+        resolution_note: string | null;
+        coach_name: string;
+        coach_email: string | null;
+        club_name_raw: string | null;
+        club_id: number | null;
+        club_display_name: string | null;
+        total: string;
+      }>,
+    );
+
+    const total = Number(list[0]?.total ?? 0);
+    const rows: CoachQualityFlagRawRow[] = list.map((r) => ({
+      id: r.id,
+      discoveryId: r.discovery_id,
+      flagType: r.flag_type,
+      metadata: r.metadata,
+      flaggedAt: r.flagged_at,
+      resolvedAt: r.resolved_at,
+      resolvedByEmail: r.resolved_by_email,
+      resolutionNote: r.resolution_note,
+      coachName: r.coach_name,
+      coachEmail: r.coach_email,
+      clubNameRaw: r.club_name_raw,
+      clubId: r.club_id,
+      clubDisplayName: r.club_display_name,
+    }));
+
+    return { rows, total };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Resolve coach_quality_flags — DI surface + handler factory + prod wiring.
+// Mirrors the roster_quality_flags resolve endpoint one-for-one.
+// ---------------------------------------------------------------------------
+
+export interface ResolveCoachQualityFlagDeps {
+  resolveFlag: (args: {
+    id: number;
+    resolvedBy: number | null;
+  }) => Promise<{ outcome: ResolveOutcome }>;
+}
+
+/**
+ * PATCH /api/v1/admin/data-quality/coach-quality-flags/:id/resolve
+ * 204 on first resolve, 400 if already resolved, 404 if id unknown.
+ */
+export function makeResolveCoachQualityFlagHandler(
+  deps: ResolveCoachQualityFlagDeps,
+): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const adminUserId =
+        req.adminAuth?.kind === "session" ? req.adminAuth.userId : null;
+
+      const { outcome } = await deps.resolveFlag({
+        id,
+        resolvedBy: adminUserId,
+      });
+
+      if (outcome === "not_found") {
+        res.status(404).json({ error: "CoachQualityFlag not found" });
+        return;
+      }
+      if (outcome === "already_resolved") {
+        res.status(400).json({ error: "Flag is already resolved" });
+        return;
+      }
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+/**
+ * Production wiring for the coach-quality-flag resolve endpoint. Scoped to
+ * `coach_quality_flags` as a whole — any row with the matching id is
+ * resolved regardless of `flag_type`, so new flag types added to the CHECK
+ * list resolve correctly without a code change.
+ */
+export const prodResolveCoachQualityFlagDeps: ResolveCoachQualityFlagDeps = {
+  resolveFlag: async ({ id, resolvedBy }) => {
+    const updated = await defaultDb.execute<{ id: number }>(sql`
+      UPDATE ${coachQualityFlags}
+      SET resolved_at = NOW(),
+          resolved_by = ${resolvedBy}
+      WHERE id = ${id}
+        AND resolved_at IS NULL
+      RETURNING id
+    `);
+    if (Array.from(updated as unknown as Array<{ id: number }>).length > 0) {
+      return { outcome: "resolved" };
+    }
+    const existing = await defaultDb.execute<{ id: number }>(sql`
+      SELECT id
+      FROM ${coachQualityFlags}
       WHERE id = ${id}
       LIMIT 1
     `);

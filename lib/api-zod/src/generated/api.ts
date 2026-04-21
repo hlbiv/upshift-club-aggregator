@@ -1064,6 +1064,88 @@ export const ResolveRosterQualityFlagParams = zod.object({
 });
 
 /**
+ * Paginated list of `coach_quality_flags` rows, joined to the parent `coach_discoveries` (surfacing `coach_name`, `coach_email`, `club_name_raw`), the snapshot's `canonical_clubs` resolution (for a `club_display_name` when the discovery's `club_id` is set), and `admin_users` (for `resolved_by_email`). Callers never see raw jsonb — any typed metadata extraction happens at the API boundary on a per-flag-type basis (today the whole jsonb payload is returned verbatim in `metadata` as a `record<unknown>`; a future PR can promote per-flag fields into typed columns once the pollution investigation has settled on a stable contract).
+Phase 3 scope: the table is populated by PR 1 (shared guard + scraper wiring) and PR 2 (purge script audit rows) of the 3-PR coach-pollution remediation. This endpoint returns an empty list at PR-3 merge time by design.
+
+ * @summary coach_quality_flags canary rows, joined with coach + club context
+ */
+export const getCoachQualityFlagsQueryPageDefault = 1;
+
+export const getCoachQualityFlagsQueryPageSizeDefault = 20;
+export const getCoachQualityFlagsQueryPageSizeMax = 100;
+
+export const GetCoachQualityFlagsQueryParams = zod.object({
+  flag_type: zod
+    .enum([
+      "looks_like_name_reject",
+      "role_label_as_name",
+      "corrupt_email",
+      "nav_leaked",
+    ])
+    .optional()
+    .describe("Optional filter by flag_type. Matches the CHECK list verbatim."),
+  resolved: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "If true, return only resolved flags; if false, return only active (unresolved) flags; if omitted, return both.\n",
+    ),
+  page: zod.coerce
+    .number()
+    .min(1)
+    .default(getCoachQualityFlagsQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .min(1)
+    .max(getCoachQualityFlagsQueryPageSizeMax)
+    .default(getCoachQualityFlagsQueryPageSizeDefault),
+});
+
+export const GetCoachQualityFlagsResponse = zod.object({
+  items: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        discoveryId: zod.number(),
+        flagType: zod.enum([
+          "looks_like_name_reject",
+          "role_label_as_name",
+          "corrupt_email",
+          "nav_leaked",
+        ]),
+        metadata: zod.record(zod.string(), zod.unknown()).nullable(),
+        flaggedAt: zod.coerce.date(),
+        resolvedAt: zod.coerce.date().nullable(),
+        resolvedByEmail: zod.string().nullable(),
+        resolutionNote: zod.string().nullable(),
+        coachName: zod.string(),
+        coachEmail: zod.string().nullable(),
+        clubNameRaw: zod.string().nullable(),
+        clubId: zod.number().nullable(),
+        clubDisplayName: zod.string().nullable(),
+      })
+      .describe(
+        "One `coach_quality_flags` row joined to its `coach_discoveries` parent (surfacing `coachName`, `coachEmail`, `clubNameRaw`) plus the discovery's `canonical_clubs` resolution (`clubDisplayName`, nullable — depends on whether the discovery has a `club_id`). The raw jsonb `metadata` payload is returned verbatim; the per-flag- type contract lives in the schema-file docstring and will migrate to typed columns once the pollution investigation settles on a stable shape. `resolvedByEmail` is joined from `admin_users.email` when the flag has been resolved.\n",
+      ),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
+ * Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on the row. The underlying `coach_discoveries` row is NOT mutated — resolving a flag means "operator has triaged this canary", not "the data is fixed".
+API-key callers get `resolved_by = NULL` (no admin user identity); session callers get their admin user id stamped — same pattern as the dedup PATCH endpoints and the roster-quality-flags resolve endpoint.
+Returns 400 if the flag is already resolved, and 404 if no `coach_quality_flags` row exists with that id.
+
+ * @summary Mark a coach_quality_flags row as resolved
+ */
+
+export const ResolveCoachQualityFlagParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+/**
  * Paginated list of `scrape_health` rows whose `last_scraped_at` is older than `threshold_days` days or NULL. `entityName` is a best-effort human label joined from `canonical_clubs` / `leagues_master` / `colleges` / `coaches` per `entity_type`; when the join fails (deleted entity, unjoinable type) it is null.
 
  * @summary scrape_health entities whose last_scraped_at exceeds a threshold
