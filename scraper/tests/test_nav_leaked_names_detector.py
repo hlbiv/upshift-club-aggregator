@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 # Make the scraper/ package root importable.
@@ -48,6 +49,21 @@ class FakeCursor:
             "SELECT id, club_name_raw, season, age_group, gender, player_name "
             "FROM club_roster_snapshots"
         ):
+            windowed = "WHERE scraped_at" in sql_norm
+            if windowed:
+                # Params shape matches detector._fetch_snapshot_rows:
+                # (window_days_str,). Simulate `scraped_at >= NOW() -
+                # interval` against each snapshot's `scraped_at` key.
+                assert params is not None and len(params) == 1
+                window_days = int(params[0])
+                cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+                matched = [
+                    r
+                    for r in self._conn.snapshots
+                    if _scraped_at(r) >= cutoff
+                ]
+            else:
+                matched = list(self._conn.snapshots)
             self._last_result = [
                 (
                     r["id"],
@@ -57,7 +73,7 @@ class FakeCursor:
                     r["gender"],
                     r["player_name"],
                 )
-                for r in self._conn.snapshots
+                for r in matched
             ]
             return
 
@@ -119,6 +135,7 @@ def _row(
     age: str,
     gender: str,
     player: str,
+    scraped_at: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     return {
         "id": snap_id,
@@ -127,7 +144,15 @@ def _row(
         "age_group": age,
         "gender": gender,
         "player_name": player,
+        # Default = NOW() so existing tests (which don't pass
+        # scraped_at) all fall inside the incremental window.
+        "scraped_at": scraped_at if scraped_at is not None else datetime.now(timezone.utc),
     }
+
+
+def _scraped_at(row: Dict[str, Any]) -> datetime:
+    """Read back the timestamp injected by `_row`."""
+    return row["scraped_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +253,57 @@ def test_idempotent_second_run_no_duplicate_no_update() -> None:
     assert stats2.flags_inserted == 0
     assert stats2.flags_updated == 0
     assert conn.flags_by_snapshot[30]["metadata"] == snapshot_after_first["metadata"]
+
+
+def test_incremental_window_skips_old_snapshots() -> None:
+    """Default window (7d) excludes rows whose scraped_at is outside it."""
+    now = datetime.now(timezone.utc)
+    recent1 = now - timedelta(hours=6)
+    recent2 = now - timedelta(days=3)
+    ancient = now - timedelta(days=90)
+
+    snapshots = [
+        _row(100, "A", "2024-25", "U15", "Boys", "Pete Recent", scraped_at=recent1),
+        _row(101, "A", "2024-25", "U15", "Boys", "Home", scraped_at=recent2),
+        # Old row — outside the default 7d window; detector should not see it.
+        _row(200, "B", "2024-25", "U15", "Boys", "Home", scraped_at=ancient),
+    ]
+    conn = FakeConn(snapshots)
+    stats = detector.detect_all(conn, dry_run=False)
+
+    # Only the two recent rows are scanned; the ancient row is filtered
+    # out by the scraped_at window.
+    assert stats.rows_scanned == 2
+    # Only the recent leaked group gets flagged. The flag points at the
+    # smallest snapshot_id in the group (100) — see detect_all's
+    # representative_snapshot_id = min(...).
+    assert stats.snapshot_groups_flagged == 1
+    assert 100 in conn.flags_by_snapshot
+    assert 200 not in conn.flags_by_snapshot
+
+
+def test_full_scan_flag_ignores_window() -> None:
+    """--full-scan (full_scan=True) bypasses the window filter entirely."""
+    now = datetime.now(timezone.utc)
+    recent1 = now - timedelta(hours=6)
+    recent2 = now - timedelta(days=3)
+    ancient = now - timedelta(days=90)
+
+    snapshots = [
+        _row(300, "A", "2024-25", "U15", "Boys", "Pete Recent", scraped_at=recent1),
+        _row(301, "A", "2024-25", "U15", "Boys", "Home", scraped_at=recent2),
+        _row(400, "B", "2024-25", "U15", "Boys", "Home", scraped_at=ancient),
+    ]
+    conn = FakeConn(snapshots)
+    stats = detector.detect_all(conn, dry_run=False, full_scan=True)
+
+    # Every row is scanned, including the ancient one.
+    assert stats.rows_scanned == 3
+    # Both leaked groups get flagged. Representative snapshot_ids are
+    # the smallest in each group (300 and 400).
+    assert stats.snapshot_groups_flagged == 2
+    assert 300 in conn.flags_by_snapshot
+    assert 400 in conn.flags_by_snapshot
 
 
 def test_re_run_after_leak_change_updates_metadata() -> None:

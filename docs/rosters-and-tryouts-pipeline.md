@@ -154,11 +154,18 @@ change) adds:
   group. Match is exact-on-full-string (no substring), so a real player
   named "Tom Sitemap" does not trip a flag. The flag's `metadata`
   jsonb stores `{leaked_strings: string[], snapshot_roster_size: number}`.
-- `python3 run.py --source nav-leaked-names-detect [--dry-run] [--limit N]`
+- `python3 run.py --source nav-leaked-names-detect [--dry-run] [--limit N] [--full-scan]`
   CLI entry point; idempotent — the
   `roster_quality_flags_snapshot_type_uq` unique constraint plus the
   `WHERE metadata IS DISTINCT FROM EXCLUDED.metadata` clause means a
   re-run on unchanged data writes nothing.
+- Incremental scan window — by default the detector restricts the
+  scan to `club_roster_snapshots` rows whose `scraped_at` is within
+  the last 7 days, which keeps the nightly run bounded as the
+  snapshots table grows. 7 days covers the slowest weekly scraper
+  cadence plus headroom for ~6 consecutive missed nightly runs.
+  Pass `--full-scan` to ignore the window (one-off re-scans after a
+  nav-word-list expansion or historical-bug investigation).
 - Nightly cron — `nightly-nav-leaked-names-detect` at `35 3 * * *`,
   five minutes after the canonical-school linker. Wired in `.replit`
   under `[[deployment.scheduledJobs]]`.

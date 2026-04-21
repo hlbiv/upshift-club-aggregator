@@ -429,7 +429,11 @@ def _handle_link_canonical_schools(args: argparse.Namespace) -> None:
 
 def _handle_nav_leaked_names_detect(args: argparse.Namespace) -> None:
     from nav_leaked_names_detector import run_cli as _run_detector
-    rc = _run_detector(dry_run=args.dry_run, limit=args.limit)
+    rc = _run_detector(
+        dry_run=args.dry_run,
+        limit=args.limit,
+        full_scan=getattr(args, "full_scan", False),
+    )
     sys.exit(rc)
 
 
@@ -1449,7 +1453,7 @@ SOURCE_HELP: dict[str, str] = {
     "duda-360player-clubs": "probe Duda CMS + 360Player club sites; writes Event JSON-LD into tryouts",
     "link-canonical-clubs": "resolves event_teams.canonical_club_id / matches.home_club_id / etc.",
     "link-canonical-schools": "resolves hs_rosters.school_id via state-scoped 4-pass resolver against canonical_schools + school_aliases",
-    "nav-leaked-names-detect": "scans club_roster_snapshots for nav-menu strings ('Home', 'Contact', etc.) leaking into player_name and writes roster_quality_flags rows of type 'nav_leaked_name'",
+    "nav-leaked-names-detect": "scans club_roster_snapshots for nav-menu strings ('Home', 'Contact', etc.) leaking into player_name and writes roster_quality_flags rows of type 'nav_leaked_name'. Defaults to a 7-day scraped_at incremental window; pass --full-scan to re-scan every row.",
     "maxpreps-rosters": "populates hs_rosters from MaxPreps HS soccer roster pages (framework; default --limit 20; expect 403s without proxy creds)",
     "odp-rosters": "scrapes state-association Olympic Development Program rosters (top-5 states; 49 follow-ups)",
     "replay-html": "replay archived HTML from raw_html_archive through extractors (requires --run-id; defaults to dry-run, --no-dry-run to commit)",
@@ -1787,6 +1791,12 @@ def main() -> None:
                              "→ current + 2023-24 + 2022-23 + 2021-22). Default 0.")
     parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune"],
                         help="Run a derived-data rollup over existing DB rows.")
+    parser.add_argument("--full-scan", action="store_true", dest="full_scan",
+                        help="For --source nav-leaked-names-detect: skip the default "
+                             "7-day scraped_at window and scan every club_roster_snapshots "
+                             "row. Use for one-off re-scans after a nav-word-list "
+                             "expansion or historical-bug investigation. Ignored by "
+                             "other sources.")
     args = parser.parse_args()
 
     # ------------------------------------------------------------------
