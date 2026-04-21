@@ -14,7 +14,7 @@ import {
   validateCoachRow,
   validateUrlRow,
   validateRosterRow,
-} from "../import-manual-ncaa-data.ts";
+} from "../import-manual-ncaa-data.js";
 
 const failures: string[] = [];
 
