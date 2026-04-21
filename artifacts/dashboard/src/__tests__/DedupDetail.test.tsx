@@ -2,8 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DedupDetailPage from "../pages/DedupDetail";
 
+/**
+ * DedupDetailPage migrated from `adminFetch()` to the Orval-generated
+ * `useGetClubDuplicate` / `useMergeClubDuplicate` / `useRejectClubDuplicate`
+ * hooks. See ScraperHealth.test.tsx for the canonical QueryClient wrapper.
+ */
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -65,13 +71,21 @@ function RouteProbe() {
 }
 
 function renderDetailAt(id: string) {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
   return render(
-    <MemoryRouter initialEntries={[`/dedup/${id}`]}>
-      <Routes>
-        <Route path="/dedup/:id" element={<DedupDetailPage />} />
-        <Route path="/dedup" element={<RouteProbe />} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[`/dedup/${id}`]}>
+        <Routes>
+          <Route path="/dedup/:id" element={<DedupDetailPage />} />
+          <Route path="/dedup" element={<RouteProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
