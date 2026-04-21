@@ -43,7 +43,20 @@ import { ADMIN_SESSION_COOKIE } from "../../middlewares/requireAdmin";
 const UNAUTHORIZED_BODY = { error: "unauthorized" };
 
 function cookieSecure(): boolean {
-  return process.env.NODE_ENV === "production";
+  // Always Secure: required when SameSite=None (browsers reject SameSite=None
+  // without Secure). Replit's preview proxy is always HTTPS, so this is safe
+  // in dev too. The only place this would break is plain http://localhost
+  // testing — which we don't do here.
+  return true;
+}
+
+function cookieSameSite(): "none" | "lax" {
+  // The dashboard runs inside Replit's workspace iframe, which is a
+  // cross-site context relative to the API origin in many browser
+  // configurations. SameSite=Lax cookies are dropped on cross-site
+  // sub-requests, which silently breaks login. SameSite=None lets the
+  // session cookie ride along on the iframe's fetch calls.
+  return "none";
 }
 
 function isAdminRole(r: string | null | undefined): r is "admin" | "super_admin" {
@@ -124,7 +137,7 @@ export function makeLoginHandler(deps: LoginDeps): RequestHandler {
       res.cookie(ADMIN_SESSION_COOKIE, token, {
         httpOnly: true,
         secure: cookieSecure(),
-        sameSite: "lax",
+        sameSite: cookieSameSite(),
         path: "/",
         expires: expiresAt,
         // Mirror with maxAge so browsers that ignore `expires` still honor
@@ -192,7 +205,7 @@ export function makeLogoutHandler(deps: LogoutDeps): RequestHandler {
       res.clearCookie(ADMIN_SESSION_COOKIE, {
         httpOnly: true,
         secure: cookieSecure(),
-        sameSite: "lax",
+        sameSite: cookieSameSite(),
         path: "/",
       });
       res.json(AdminLogoutResponse.parse({ ok: true }));
