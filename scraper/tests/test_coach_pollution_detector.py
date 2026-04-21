@@ -59,6 +59,18 @@ class FakeCursor:
     def execute(self, sql: str, params: Optional[Tuple[Any, ...]] = None) -> None:
         sql_norm = " ".join(sql.split())
 
+        # Reproduce psycopg2 client-side-cursor semantics: every
+        # `execute()` discards the previously-buffered result set. This
+        # matters when production code mixes a paging SELECT
+        # (fetchmany-over-a-shared-cursor) with writes on the same
+        # cursor — the INSERT silently wipes the SELECT's remaining
+        # rows. The detector regression guard
+        # `test_commit_mode_scans_all_rows_across_multiple_pages`
+        # depends on this simulation being faithful.
+        self._last_result = []
+        self._last_singleton = None
+        self._fetchmany_cursor = 0
+
         # 1. Table-existence probe.
         if sql_norm.startswith("SELECT to_regclass"):
             assert params is not None and len(params) == 1
@@ -437,3 +449,40 @@ def test_sample_flags_caps_at_10() -> None:
         assert isinstance(disc_id, int)
         assert raw_name == "Head Coach"
         assert reason == "in_blocklist"
+
+
+# ---------------------------------------------------------------------------
+# Multi-page commit — regression guard for the cursor-clobber bug.
+# ---------------------------------------------------------------------------
+
+def test_commit_mode_scans_all_rows_across_multiple_pages(monkeypatch) -> None:
+    """Regression guard. Previously the detector used a single cursor
+    for both the SELECT iteration and the `_upsert_flag` INSERT. Each
+    INSERT's `execute()` on that shared cursor wiped the SELECT's
+    buffered rows, so the fetchmany(PAGE_SIZE) loop terminated after
+    the first page — production saw 1,000 of 2,647 rows scanned.
+
+    The fix opens a dedicated write cursor so the read cursor's buffer
+    survives each INSERT. This test lowers `PAGE_SIZE` to 3 and feeds
+    10 polluted rows; the whole-scan contract must hold across
+    multiple pages AND with writes happening between pages.
+    """
+    monkeypatch.setattr(detector, "PAGE_SIZE", 3)
+
+    # 10 rows → 4 pages at PAGE_SIZE=3. Every row is a reject so each
+    # iteration triggers _upsert_flag.
+    discoveries = [_disc(i, "Head Coach", f"c{i}@x.com") for i in range(1, 11)]
+    conn = FakeConn(discoveries)
+
+    stats = detector.detect_all(conn, commit=True)
+
+    assert stats.discoveries_scanned == 10, (
+        "Expected all 10 rows scanned across 4 pages; got "
+        f"{stats.discoveries_scanned}. Likely regression: write path is "
+        "clobbering the read cursor's buffered result set."
+    )
+    assert stats.discoveries_flagged == 10
+    assert stats.flags_inserted == 10
+    assert stats.flags_skipped_existing == 0
+    assert set(conn.flags_by_discovery.keys()) == set(range(1, 11))
+    assert conn.commits == 1

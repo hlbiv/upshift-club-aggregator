@@ -171,9 +171,13 @@ def _iter_discoveries(
     order. Optionally restricted to rows whose `first_seen_at` is within
     the last `window_days` days, and/or capped at `limit` rows total.
 
-    Uses a server-side cursor so we don't materialize the entire table
-    in memory — `coach_discoveries` is ~several-thousand rows today but
-    the detector should scale to whatever the table grows into.
+    Pages the result set with `fetchmany(PAGE_SIZE)` so we never hold
+    more than a single page in Python memory at once. The caller MUST
+    NOT run other `execute()` calls on this cursor during iteration —
+    psycopg2's default client-side cursor discards the SELECT's buffered
+    rows on the next `execute()`, which would silently truncate the scan
+    after the first page. `detect_all` uses a separate write cursor for
+    `_upsert_flag` for exactly this reason.
     """
     if window_days is not None:
         where = "WHERE first_seen_at >= NOW() - (%s || ' days')::interval"
@@ -263,12 +267,12 @@ def detect_all(
     """
     stats = DetectorStats()
 
-    with conn.cursor() as cur:
+    with conn.cursor() as read_cur:
         # No-op on missing table. This lets the PR merge before Replit
         # runs `pnpm --filter @workspace/db run push` to apply PR #188's
         # schema; the detector simply reports "table missing" and exits
         # cleanly so a scheduled invocation doesn't error-page.
-        if not _table_exists(cur, "coach_quality_flags"):
+        if not _table_exists(read_cur, "coach_quality_flags"):
             log.warning(
                 "coach_quality_flags table does not exist — "
                 "run `pnpm --filter @workspace/db run push` on Replit. "
@@ -276,38 +280,46 @@ def detect_all(
             )
             return stats
 
-        for discovery_id, name, email in _iter_discoveries(
-            cur, window_days=window_days, limit=limit
-        ):
-            stats.discoveries_scanned += 1
+        # IMPORTANT: the SELECT in `_iter_discoveries` pages with
+        # `fetchmany(PAGE_SIZE)`. Running an `execute()` on the same
+        # cursor mid-iteration wipes its buffered result set and the
+        # scan silently truncates after the first page (observed: 1,000
+        # rows processed instead of 2,647 in the initial Replit run).
+        # So writes go through a second cursor — the read cursor stays
+        # dedicated to paging the SELECT.
+        with conn.cursor() as write_cur:
+            for discovery_id, name, email in _iter_discoveries(
+                read_cur, window_days=window_days, limit=limit
+            ):
+                stats.discoveries_scanned += 1
 
-            reason = _classify_reject(name)
-            if reason is None:
-                continue
+                reason = _classify_reject(name)
+                if reason is None:
+                    continue
 
-            stats.discoveries_flagged += 1
-            stats.record_reject(reason)
+                stats.discoveries_flagged += 1
+                stats.record_reject(reason)
 
-            raw_name = name if isinstance(name, str) else ("" if name is None else str(name))
-            raw_email = email if (isinstance(email, str) or email is None) else str(email)
+                raw_name = name if isinstance(name, str) else ("" if name is None else str(name))
+                raw_email = email if (isinstance(email, str) or email is None) else str(email)
 
-            if len(stats.sample_flags) < 10:
-                stats.sample_flags.append((discovery_id, raw_name, reason))
+                if len(stats.sample_flags) < 10:
+                    stats.sample_flags.append((discovery_id, raw_name, reason))
 
-            if not commit:
-                continue
+                if not commit:
+                    continue
 
-            inserted = _upsert_flag(
-                cur,
-                discovery_id=discovery_id,
-                reject_reason=reason,
-                raw_name=raw_name,
-                raw_email=raw_email,
-            )
-            if inserted:
-                stats.flags_inserted += 1
-            else:
-                stats.flags_skipped_existing += 1
+                inserted = _upsert_flag(
+                    write_cur,
+                    discovery_id=discovery_id,
+                    reject_reason=reason,
+                    raw_name=raw_name,
+                    raw_email=raw_email,
+                )
+                if inserted:
+                    stats.flags_inserted += 1
+                else:
+                    stats.flags_skipped_existing += 1
 
         if commit:
             conn.commit()
