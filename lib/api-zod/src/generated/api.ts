@@ -954,6 +954,101 @@ export const GaPremierOrphanCleanupResponse = zod.object({
 });
 
 /**
+ * Paginated list of `canonical_clubs` rows whose `staff_page_url` is populated but have zero distinct `coach_discoveries` rows in the last `window_days` days. Good candidates for a re-scrape or a broken-extractor fix.
+
+ * @summary Clubs with a staff_page_url set but no recent coach discoveries
+ */
+export const getEmptyStaffPagesQueryWindowDaysDefault = 30;
+export const getEmptyStaffPagesQueryWindowDaysMax = 365;
+
+export const getEmptyStaffPagesQueryPageDefault = 1;
+
+export const getEmptyStaffPagesQueryPageSizeDefault = 20;
+export const getEmptyStaffPagesQueryPageSizeMax = 100;
+
+export const GetEmptyStaffPagesQueryParams = zod.object({
+  window_days: zod.coerce
+    .number()
+    .min(1)
+    .max(getEmptyStaffPagesQueryWindowDaysMax)
+    .default(getEmptyStaffPagesQueryWindowDaysDefault),
+  page: zod.coerce.number().min(1).default(getEmptyStaffPagesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .min(1)
+    .max(getEmptyStaffPagesQueryPageSizeMax)
+    .default(getEmptyStaffPagesQueryPageSizeDefault),
+});
+
+export const GetEmptyStaffPagesResponse = zod.object({
+  rows: zod.array(
+    zod
+      .object({
+        clubId: zod.number(),
+        clubNameCanonical: zod.string(),
+        staffPageUrl: zod.string(),
+        lastScrapedAt: zod.coerce.date().nullable(),
+        coachCountWindow: zod.number(),
+      })
+      .describe(
+        "One canonical_clubs row with `staff_page_url` set and zero distinct coach discoveries recorded inside `windowDays`.\n",
+      ),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+  windowDays: zod.number(),
+});
+
+/**
+ * Paginated list of `scrape_health` rows whose `last_scraped_at` is older than `threshold_days` days or NULL. `entityName` is a best-effort human label joined from `canonical_clubs` / `leagues_master` / `colleges` / `coaches` per `entity_type`; when the join fails (deleted entity, unjoinable type) it is null.
+
+ * @summary scrape_health entities whose last_scraped_at exceeds a threshold
+ */
+export const getStaleScrapesQueryThresholdDaysDefault = 14;
+export const getStaleScrapesQueryThresholdDaysMax = 365;
+
+export const getStaleScrapesQueryPageDefault = 1;
+
+export const getStaleScrapesQueryPageSizeDefault = 20;
+export const getStaleScrapesQueryPageSizeMax = 100;
+
+export const GetStaleScrapesQueryParams = zod.object({
+  threshold_days: zod.coerce
+    .number()
+    .min(1)
+    .max(getStaleScrapesQueryThresholdDaysMax)
+    .default(getStaleScrapesQueryThresholdDaysDefault),
+  page: zod.coerce.number().min(1).default(getStaleScrapesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .min(1)
+    .max(getStaleScrapesQueryPageSizeMax)
+    .default(getStaleScrapesQueryPageSizeDefault),
+});
+
+export const GetStaleScrapesResponse = zod.object({
+  rows: zod.array(
+    zod
+      .object({
+        entityType: zod.string(),
+        entityId: zod.number(),
+        entityName: zod.string().nullable(),
+        lastScrapedAt: zod.coerce.date().nullable(),
+        lastStatus: zod.string().nullable(),
+        consecutiveFailures: zod.number(),
+      })
+      .describe(
+        "One scrape_health row whose last_scraped_at is older than `thresholdDays` or NULL. `entityName` is a best-effort join label.\n",
+      ),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+  thresholdDays: zod.number(),
+});
+
+/**
  * Per-table `count(*) WHERE <timestamp_col> > since`. Timestamp column differs per table — `canonical_clubs.last_scraped_at`, `coaches.first_seen_at`, `events.last_scraped_at`, `club_roster_snapshots.snapshot_date`, `matches.scraped_at`.
 
  * @summary Records-added-since-X delta across five headline ingest tables

@@ -1000,6 +1000,103 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/data-quality/empty-staff-pages:
+    get:
+      operationId: getEmptyStaffPages
+      tags: [admin]
+      summary: Clubs with a staff_page_url set but no recent coach discoveries
+      description: >
+        Paginated list of `canonical_clubs` rows whose `staff_page_url` is
+        populated but have zero distinct `coach_discoveries` rows in the
+        last `window_days` days. Good candidates for a re-scrape or a
+        broken-extractor fix.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: window_days
+          in: query
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 365
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated list of empty-staff-pages rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyStaffPagesResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/data-quality/stale-scrapes:
+    get:
+      operationId: getStaleScrapes
+      tags: [admin]
+      summary: scrape_health entities whose last_scraped_at exceeds a threshold
+      description: >
+        Paginated list of `scrape_health` rows whose `last_scraped_at` is
+        older than `threshold_days` days or NULL. `entityName` is a
+        best-effort human label joined from `canonical_clubs` /
+        `leagues_master` / `colleges` / `coaches` per `entity_type`; when
+        the join fails (deleted entity, unjoinable type) it is null.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: threshold_days
+          in: query
+          schema:
+            type: integer
+            default: 14
+            minimum: 1
+            maximum: 365
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated list of stale-scrape rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaleScrapesResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/growth/scraped-counts:
     get:
       operationId: getGrowthScrapedCounts
@@ -2222,6 +2319,105 @@ components:
         - flagged
         - deleted
         - sampleNames
+
+    EmptyStaffPagesRow:
+      type: object
+      description: >
+        One canonical_clubs row with `staff_page_url` set and zero distinct
+        coach discoveries recorded inside `windowDays`.
+      properties:
+        clubId:
+          type: integer
+        clubNameCanonical:
+          type: string
+        staffPageUrl:
+          type: string
+        lastScrapedAt:
+          type: string
+          format: date-time
+          nullable: true
+        coachCountWindow:
+          type: integer
+      required:
+        - clubId
+        - clubNameCanonical
+        - staffPageUrl
+        - lastScrapedAt
+        - coachCountWindow
+
+    EmptyStaffPagesResponse:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmptyStaffPagesRow"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        windowDays:
+          type: integer
+      required:
+        - rows
+        - total
+        - page
+        - pageSize
+        - windowDays
+
+    StaleScrapesRow:
+      type: object
+      description: >
+        One scrape_health row whose last_scraped_at is older than
+        `thresholdDays` or NULL. `entityName` is a best-effort join label.
+      properties:
+        entityType:
+          type: string
+        entityId:
+          type: integer
+        entityName:
+          type: string
+          nullable: true
+        lastScrapedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastStatus:
+          type: string
+          nullable: true
+        consecutiveFailures:
+          type: integer
+      required:
+        - entityType
+        - entityId
+        - entityName
+        - lastScrapedAt
+        - lastStatus
+        - consecutiveFailures
+
+    StaleScrapesResponse:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/StaleScrapesRow"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        thresholdDays:
+          type: integer
+      required:
+        - rows
+        - total
+        - page
+        - pageSize
+        - thresholdDays
 
     ScrapedCountsDelta:
       type: object

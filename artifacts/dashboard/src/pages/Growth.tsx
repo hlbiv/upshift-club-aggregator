@@ -1,10 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from "react";
-import type {
-  CoverageTrendPoint,
-  CoverageTrendResponse,
-  ScrapedCountsDelta,
-} from "@hlbiv/api-zod/admin";
-import { adminFetch } from "../lib/api";
+import { lazy, Suspense, useMemo, useState } from "react";
+import {
+  useGetGrowthCoverageTrend,
+  useGetGrowthScrapedCounts,
+  type CoverageTrendResponse,
+  type ScrapedCountsDelta,
+} from "@workspace/api-client-react";
+import type { CoverageTrendPoint } from "@hlbiv/api-zod/admin";
 import AdminNav from "../components/AdminNav";
 
 // Recharts is ~400KB minified — lazy-load so it doesn't inflate the
@@ -22,75 +23,33 @@ const LazyCoverageChart = lazy(() => import("../components/CoverageChart"));
  * snapshots / matches added) + a daily successes-vs-failures line chart
  * underneath. Window selector chooses the rolling horizon (7 / 30 / 90d).
  *
- * Both requests re-fire on window change. No debounce — selector is three
- * hard-coded choices. Empty state triggers when the chart has zero points.
+ * Both requests re-fire on window change via Orval-generated React Query
+ * hooks (`useGetGrowthScrapedCounts` / `useGetGrowthCoverageTrend`). No
+ * debounce — selector is three hard-coded choices. Empty state triggers
+ * when the chart has zero points.
  */
 
 type Window = 7 | 30 | 90;
 
-type FetchState<T> =
+type CountsCell =
   | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "ok"; data: T };
+  | { kind: "error" }
+  | { kind: "ok"; n: number };
 
 export default function GrowthPage() {
   const [days, setDays] = useState<Window>(30);
-  const [counts, setCounts] = useState<FetchState<ScrapedCountsDelta>>({
-    kind: "loading",
-  });
-  const [trend, setTrend] = useState<FetchState<CoverageTrendResponse>>({
-    kind: "loading",
-  });
 
-  useEffect(() => {
-    let cancelled = false;
-    setCounts({ kind: "loading" });
-    setTrend({ kind: "loading" });
+  // `since` is memoized off the chosen window so React Query's queryKey
+  // (which includes params) stays stable across re-renders until `days`
+  // changes. Recomputing on every render would invalidate the cache on
+  // every mouse twitch.
+  const since = useMemo(
+    () => new Date(Date.now() - days * 86400000).toISOString(),
+    [days],
+  );
 
-    const since = new Date(Date.now() - days * 86400000).toISOString();
-
-    adminFetch(
-      `/api/v1/admin/growth/scraped-counts?since=${encodeURIComponent(since)}`,
-    )
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          setCounts({ kind: "error", message: `HTTP ${res.status}` });
-          return;
-        }
-        const data = (await res.json()) as ScrapedCountsDelta;
-        setCounts({ kind: "ok", data });
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setCounts({
-          kind: "error",
-          message: e instanceof Error ? e.message : "Network error",
-        });
-      });
-
-    adminFetch(`/api/v1/admin/growth/coverage-trend?days=${days}`)
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          setTrend({ kind: "error", message: `HTTP ${res.status}` });
-          return;
-        }
-        const data = (await res.json()) as CoverageTrendResponse;
-        setTrend({ kind: "ok", data });
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setTrend({
-          kind: "error",
-          message: e instanceof Error ? e.message : "Network error",
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [days]);
+  const countsQuery = useGetGrowthScrapedCounts({ since });
+  const trendQuery = useGetGrowthCoverageTrend({ days });
 
   const caption = `last ${days}d`;
 
@@ -117,27 +76,35 @@ export default function GrowthPage() {
         <StatCard
           label="Clubs added"
           caption={caption}
-          value={countsValue(counts, (d) => d.clubsAdded)}
+          value={countsCell(countsQuery.data, countsQuery, (d) => d.clubsAdded)}
         />
         <StatCard
           label="Coaches added"
           caption={caption}
-          value={countsValue(counts, (d) => d.coachesAdded)}
+          value={countsCell(countsQuery.data, countsQuery, (d) => d.coachesAdded)}
         />
         <StatCard
           label="Events added"
           caption={caption}
-          value={countsValue(counts, (d) => d.eventsAdded)}
+          value={countsCell(countsQuery.data, countsQuery, (d) => d.eventsAdded)}
         />
         <StatCard
           label="Roster snapshots added"
           caption={caption}
-          value={countsValue(counts, (d) => d.rosterSnapshotsAdded)}
+          value={countsCell(
+            countsQuery.data,
+            countsQuery,
+            (d) => d.rosterSnapshotsAdded,
+          )}
         />
         <StatCard
           label="Matches added"
           caption={caption}
-          value={countsValue(counts, (d) => d.matchesAdded)}
+          value={countsCell(
+            countsQuery.data,
+            countsQuery,
+            (d) => d.matchesAdded,
+          )}
         />
       </section>
 
@@ -148,7 +115,12 @@ export default function GrowthPage() {
         >
           Daily scrape runs
         </h2>
-        <TrendChart state={trend} days={days} />
+        <TrendChart
+          data={trendQuery.data}
+          isLoading={trendQuery.isLoading}
+          error={trendQuery.error}
+          days={days}
+        />
       </section>
     </main>
   );
@@ -198,7 +170,7 @@ function StatCard({
 }: {
   label: string;
   caption: string;
-  value: { kind: "loading" } | { kind: "error" } | { kind: "ok"; n: number };
+  value: CountsCell;
 }) {
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4">
@@ -221,21 +193,23 @@ function StatCard({
 }
 
 function TrendChart({
-  state,
+  data,
+  isLoading,
+  error,
   days,
 }: {
-  state: FetchState<CoverageTrendResponse>;
+  data: CoverageTrendResponse | undefined;
+  isLoading: boolean;
+  error: unknown;
   days: Window;
 }) {
-  if (state.kind === "loading") return <ChartPlaceholder label="Loading…" />;
-  if (state.kind === "error")
-    return <ChartPlaceholder label={`Failed to load: ${state.message}`} />;
+  if (isLoading) return <ChartPlaceholder label="Loading…" />;
+  if (error)
+    return <ChartPlaceholder label={`Failed to load: ${formatError(error)}`} />;
 
-  const points = state.data.points;
+  const points = data?.points ?? [];
   if (points.length === 0) {
-    return (
-      <ChartPlaceholder label={`No runs in the last ${days} days.`} />
-    );
+    return <ChartPlaceholder label={`No runs in the last ${days} days.`} />;
   }
 
   return (
@@ -247,13 +221,17 @@ function TrendChart({
 
 // --- helpers --------------------------------------------------------------
 
-function countsValue(
-  state: FetchState<ScrapedCountsDelta>,
+function countsCell(
+  data: ScrapedCountsDelta | undefined,
+  status: { isLoading: boolean; isError: boolean },
   pick: (d: ScrapedCountsDelta) => number,
-): { kind: "loading" } | { kind: "error" } | { kind: "ok"; n: number } {
-  if (state.kind === "loading") return { kind: "loading" };
-  if (state.kind === "error") return { kind: "error" };
-  return { kind: "ok", n: pick(state.data) };
+): CountsCell {
+  if (data) return { kind: "ok", n: pick(data) };
+  if (status.isError) return { kind: "error" };
+  if (status.isLoading) return { kind: "loading" };
+  // Fallback: no data, not loading, not errored — treat as loading so the
+  // card shows "…" rather than "—".
+  return { kind: "loading" };
 }
 
 function ChartPlaceholder({ label }: { label: string }) {
@@ -266,4 +244,14 @@ function ChartPlaceholder({ label }: { label: string }) {
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function formatError(err: unknown): string {
+  if (!err) return "Network error";
+  if (err instanceof Error) {
+    const status = (err as unknown as { status?: unknown }).status;
+    if (typeof status === "number") return `HTTP ${status}`;
+    return err.message;
+  }
+  return String(err);
 }
