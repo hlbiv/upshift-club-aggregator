@@ -66,11 +66,14 @@ const _authEnabled =
   process.env.NODE_ENV !== "development";
 
 if (_authEnabled) {
-  // Exempt /api/healthz (liveness) and /api/docs/* (OpenAPI UI) from auth.
-  // Docs are deliberately public so a browser can load the page without a
-  // key; "Try it out" calls from the UI hit authed routes and correctly
-  // 401 without a key.
-  app.use(/^\/api(?!\/healthz|\/docs)/, apiKeyAuth);
+  // Exempt /api/healthz (liveness), /api/docs/* (OpenAPI UI), and
+  // /api/v1/admin/* (admin surface uses session-cookie auth via
+  // requireAdmin — see the comment block below the router mounts) from
+  // M2M auth. Docs are deliberately public so a browser can load the page
+  // without a key; "Try it out" calls from the UI hit authed routes and
+  // correctly 401 without a key. Admin login can't require a pre-existing
+  // key (chicken-and-egg: it IS the auth entry point).
+  app.use(/^\/api(?!\/healthz|\/docs|\/v1\/admin)/, apiKeyAuth);
   // eslint-disable-next-line no-console
   console.log("[api-key-auth] enabled");
 } else {
