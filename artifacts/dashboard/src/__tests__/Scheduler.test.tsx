@@ -7,10 +7,11 @@ import SchedulerPage from "../pages/Scheduler";
 
 /**
  * SchedulerPage was migrated from `adminFetch()` to the Orval-generated
- * `useListScraperScheduleRuns` / `useRunScraperScheduleNow` hooks. Those
- * hooks still bottom out at `globalThis.fetch` via the `customFetch`
- * mutator, so stubbing `fetch` per-test still works — we just need a
- * per-test `QueryClient` wrapper (retries disabled).
+ * `useListScraperScheduleRuns` / `useRunScraperScheduleNow` /
+ * `useGetSchedulerJob` hooks. Those hooks still bottom out at
+ * `globalThis.fetch` via the `customFetch` mutator, so stubbing `fetch`
+ * per-test still works — we just need a per-test `QueryClient` wrapper
+ * (retries disabled).
  */
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -268,5 +269,143 @@ describe("SchedulerPage", () => {
       expect(screen.getByText("#42")).toBeInTheDocument();
     });
     expect(nightlyRunsCallCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("clicking a run row opens the detail dialog and renders data from GET /scheduler-jobs/:id (not the list row)", async () => {
+    // List row carries a placeholder stdout tail; the detail endpoint returns
+    // different stdout/stderr tails. The dialog must show the detail payload.
+    const listRow = {
+      id: 42,
+      jobKey: "nightly_tier1",
+      args: null,
+      status: "success",
+      requestedBy: 1,
+      requestedAt: "2026-04-18T12:00:00.000Z",
+      startedAt: "2026-04-18T12:00:01.000Z",
+      completedAt: "2026-04-18T12:02:00.000Z",
+      exitCode: 0,
+      stdoutTail: "LIST_STDOUT_NOT_SHOWN",
+      stderrTail: null,
+    };
+    const detailPayload = {
+      ...listRow,
+      stdoutTail: "DETAIL_STDOUT_OK",
+      stderrTail: "DETAIL_STDERR_OK",
+    };
+
+    let detailCallCount = 0;
+    installFetch((url) => {
+      if (url.includes("/scraper-schedules/nightly_tier1/runs")) {
+        return jsonResponse({ jobs: [listRow], total: 1 });
+      }
+      if (url.includes("/scraper-schedules/")) {
+        return jsonResponse(emptyRunsFor());
+      }
+      if (url.match(/\/scheduler-jobs\/42(\?|$)/)) {
+        detailCallCount += 1;
+        return jsonResponse(detailPayload);
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(<SchedulerPage />);
+
+    // Wait for the list row to appear.
+    await waitFor(() => {
+      expect(screen.getByText("#42")).toBeInTheDocument();
+    });
+
+    // Click the row — row-click sets selectedJobId which enables the detail
+    // query. The dialog opens and fires GET /scheduler-jobs/42.
+    await user.click(screen.getByText("#42"));
+
+    // Dialog populated from the detail fetch (DETAIL_*, never LIST_*).
+    await waitFor(() => {
+      expect(screen.getByText("DETAIL_STDOUT_OK")).toBeInTheDocument();
+    });
+    expect(screen.getByText("DETAIL_STDERR_OK")).toBeInTheDocument();
+    expect(screen.queryByText("LIST_STDOUT_NOT_SHOWN")).toBeNull();
+    expect(detailCallCount).toBe(1);
+  });
+
+  it("detail dialog shows a loading indicator while the detail fetch is in flight", async () => {
+    let resolveDetail: ((r: Response) => void) | null = null;
+    installFetch((url) => {
+      if (url.includes("/scraper-schedules/nightly_tier1/runs")) {
+        return jsonResponse(sampleRunsFor("nightly_tier1"));
+      }
+      if (url.includes("/scraper-schedules/")) {
+        return jsonResponse(emptyRunsFor());
+      }
+      if (url.match(/\/scheduler-jobs\/42(\?|$)/)) {
+        return new Promise<Response>((resolve) => {
+          resolveDetail = resolve;
+        });
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(<SchedulerPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("#42")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("#42"));
+
+    // Loading indicator visible inside the dialog body.
+    await waitFor(() => {
+      expect(screen.getByText(/loading job detail/i)).toBeInTheDocument();
+    });
+
+    // Now resolve the detail fetch and verify the loading state clears.
+    resolveDetail!(
+      jsonResponse({
+        id: 42,
+        jobKey: "nightly_tier1",
+        args: null,
+        status: "success",
+        requestedBy: 1,
+        requestedAt: "2026-04-18T12:00:00.000Z",
+        startedAt: "2026-04-18T12:00:01.000Z",
+        completedAt: "2026-04-18T12:02:00.000Z",
+        exitCode: 0,
+        stdoutTail: "done",
+        stderrTail: null,
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByText("done")).toBeInTheDocument();
+    });
+  });
+
+  it("detail dialog shows an inline error message when the detail fetch fails", async () => {
+    installFetch((url) => {
+      if (url.includes("/scraper-schedules/nightly_tier1/runs")) {
+        return jsonResponse(sampleRunsFor("nightly_tier1"));
+      }
+      if (url.includes("/scraper-schedules/")) {
+        return jsonResponse(emptyRunsFor());
+      }
+      if (url.match(/\/scheduler-jobs\/42(\?|$)/)) {
+        return jsonResponse({ error: "not found" }, 404);
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(<SchedulerPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("#42")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("#42"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/failed to load job detail/i),
+      ).toBeInTheDocument();
+    });
   });
 });

@@ -50,6 +50,7 @@ CLI::
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -57,7 +58,7 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from bs4 import BeautifulSoup, Tag
@@ -291,13 +292,133 @@ def _cell_text(td: Tag) -> str:
 
 
 # ---------------------------------------------------------------------------
-# HTML parsing — three strategies, matching the TS scrapers
+# Sidearm Vue-embedded JSON helpers (Strategy 5)
+# ---------------------------------------------------------------------------
+
+# Regex locates the start of ``data: () => ({ ... roster: {`` where the
+# final ``{`` marks the first character of the JSON object we want to
+# extract. Captures the position of that brace in group 1.
+#
+# The `[^}]*` before ``roster:`` is intentional — other keys may appear
+# on the same factory (e.g. ``loading: true``, ``sport: "MSOC"``) but
+# none of them contain a ``}`` themselves because they are scalars. If
+# a site ever inserts a nested object before ``roster:``, the regex
+# will still work as long as that nested object doesn't contain the
+# string ``roster:`` (which would be an ambiguous match regardless).
+_SIDEARM_VUE_ROSTER_RE = re.compile(
+    r"data:\s*\(\s*\)\s*=>\s*\(\s*\{[^}]*roster:\s*(\{)",
+    re.DOTALL,
+)
+
+
+def _find_balanced_json_end(src: str, start: int) -> Optional[int]:
+    """Given ``src`` and the index of an opening ``{``, return the index
+    just past the matching closing ``}`` (i.e. the end-exclusive slice
+    bound).
+
+    Uses a simple state machine that understands JSON string literals
+    (including escapes) so that braces inside strings don't confuse the
+    depth counter. Returns ``None`` if no balanced closer is found.
+    """
+    depth = 0
+    in_str = False
+    escape = False
+    i = start
+    n = len(src)
+    while i < n:
+        c = src[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+        i += 1
+    return None
+
+
+def _parse_sidearm_vue_embedded_json(html: str) -> List[RosterPlayer]:
+    """Extract players from the Sidearm Vue data factory JSON blob.
+
+    Returns ``[]`` if the page isn't this shape, or if the embedded JSON
+    can't be parsed (malformed, truncated, etc.) — callers fall through
+    to their existing zero-player SKIP path. Never raises.
+    """
+    match = _SIDEARM_VUE_ROSTER_RE.search(html)
+    if not match:
+        return []
+    start = match.start(1)
+    end = _find_balanced_json_end(html, start)
+    if end is None:
+        return []
+    blob = html[start:end]
+    try:
+        roster_obj: Any = json.loads(blob)
+    except (ValueError, TypeError):
+        return []
+    raw_players = roster_obj.get("players") if isinstance(roster_obj, dict) else None
+    if not isinstance(raw_players, list):
+        return []
+
+    parsed: List[RosterPlayer] = []
+    for rp in raw_players:
+        if not isinstance(rp, dict):
+            continue
+        first = (rp.get("first_name") or "").strip()
+        last = (rp.get("last_name") or "").strip()
+        name = f"{first} {last}".strip()
+        if not name or len(name) < 2:
+            continue
+
+        jersey_raw = rp.get("jersey_number_2") or rp.get("jersey_number")
+        # Jersey fields are typed inconsistently (str on some sites, int
+        # on others). Normalize to stripped string; None for blanks.
+        if jersey_raw is None or jersey_raw == "":
+            jersey: Optional[str] = None
+        else:
+            jersey = str(jersey_raw).strip() or None
+
+        position_raw = rp.get("position_short") or rp.get("position_long")
+        position = position_raw.strip() if isinstance(position_raw, str) and position_raw.strip() else None
+
+        year_raw = rp.get("academic_year_short") or rp.get("academic_year_long")
+        year = normalize_year(year_raw) if isinstance(year_raw, str) else None
+
+        hometown_raw = rp.get("hometown")
+        hometown = hometown_raw.strip().rstrip(".") if isinstance(hometown_raw, str) and hometown_raw.strip() else None
+
+        prev_raw = rp.get("previous_school") or rp.get("highschool") or rp.get("high_school")
+        prev_club = prev_raw.strip() if isinstance(prev_raw, str) and prev_raw.strip() else None
+
+        parsed.append(RosterPlayer(
+            player_name=name,
+            position=position,
+            year=year,
+            hometown=hometown,
+            prev_club=prev_club,
+            jersey_number=jersey,
+        ))
+    return parsed
+
+
+# ---------------------------------------------------------------------------
+# HTML parsing — five strategies, matching the TS scrapers
 # ---------------------------------------------------------------------------
 
 def parse_roster_html(html: str) -> List[RosterPlayer]:
     """Extract player rows from an NCAA roster page.
 
-    Four strategies are tried in order; first non-empty result wins.
+    Five strategies are tried in order; first non-empty result wins.
 
     1. **Sidearm roster elements** — ``li.sidearm-roster-player`` or
        ``div.sidearm-roster-player`` with semantic CSS classes for each field.
@@ -309,6 +430,18 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
        ``roster-player-card-profile-field`` label/value rows. Used by
        ~20 D1 programs (Stanford, Penn State, USC, etc.) whose sites
        aren't SIDEARM.
+    5. **Sidearm Vue-embedded JSON** — a classic-SIDEARM variant where
+       the roster template is a Vue ``v-for`` and the full player list
+       is shipped inline inside the Vue instance's ``data: () => ({
+       roster: {...} })`` factory. Non-DOM strategy — delegates to
+       ``_parse_sidearm_vue_embedded_json`` which extracts + parses the
+       JSON blob directly.
+    6. **WMT Digital / WordPress** — ``.roster__list_item`` figure/figcaption
+       cards. Paired with a ``.roster__table`` on desktop (caught by Strategy 2
+       first) but a standalone fallback when the table is absent. Observed on
+       ramblinwreck.com (Georgia Tech) — the only WMT/WordPress athletics site
+       in the current NCAA soccer directory. Fallback kept cheap so it doesn't
+       cost anything when the page is a different platform.
     """
     soup = BeautifulSoup(html, "html.parser")
     players: List[RosterPlayer] = []
@@ -535,6 +668,141 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
 
     if players:
         return players
+
+    # --- Strategy 5: Sidearm Vue-embedded roster JSON ---
+    # A cluster of classic-SIDEARM programs (e.g. gomason.com) ship a Vue
+    # roster template whose player list is never rendered server-side, but
+    # the full roster JSON is embedded inline inside the Vue instance's
+    # ``data: () => ({ roster: {...} })`` initializer — a sibling script
+    # to the ``<template v-for="player in computedPlayers">`` block.
+    # The <li> shells DO appear in the HTML (strategy 1 picks them up
+    # when SSR hydration is complete), but the underlying requests fetch
+    # only sees the un-hydrated Vue template with zero player elements.
+    # This shape has both the static-0 and Playwright-0 outcome observed
+    # in the operational cluster.
+    #
+    # Markup signature (classic SIDEARM / Vue mount):
+    #   <script>
+    #     ... new Vue({
+    #       el: '#vue-rosters',
+    #       data: () => ({
+    #         roster: {"id":...,"players":[{"rp_id":..., "first_name":...,
+    #                  "last_name":..., "jersey_number":..., "position_short":...,
+    #                  "academic_year_short":..., "hometown":...,
+    #                  "highschool":..., "previous_school":..., ...}, ...]}
+    #       }),
+    #       ...
+    #     })
+    #   </script>
+    #
+    # The JSON lives inside JS source (not a ``<script type="application/json">``
+    # tag), so we locate the ``data: () => ({ ... roster: {`` prelude via
+    # regex and then walk the brace depth to find the balanced end of the
+    # roster object.
+    players = _parse_sidearm_vue_embedded_json(html)
+    if players:
+        return players
+
+    # --- Strategy 6: WMT Digital / WordPress roster cards ---
+    # Ramblinwreck.com (Georgia Tech) and other WMT Digital themes ship a
+    # roster template with two sibling containers:
+    #
+    #   <section class="wrapper roster">
+    #     <ul class="roster__list">
+    #       <li class="roster__list_item">   <!-- or div.roster__list_item -->
+    #         <figure>
+    #           <a href="/sports/.../roster/season/YYYY-YY/firstname-lastname/">
+    #             <div class="thumb" title="First Last">...
+    #               <div class="icon"><span>#12</span></div>
+    #             </div>
+    #           </a>
+    #           <figcaption>
+    #             <span>INF</span>
+    #             <a href="...">First Last</a>
+    #             <ul>
+    #               <li>6-2</li>          <!-- height -->
+    #               <li>174 lbs.</li>     <!-- weight -->
+    #               <li>Freshman</li>     <!-- class year -->
+    #               <li>Business Administration</li>  <!-- major -->
+    #             </ul>
+    #           </figcaption>
+    #         </figure>
+    #       </li>
+    #     </ul>
+    #     <section class="roster__table"><table>...</table></section>  <!-- Strategy 2 -->
+    #   </section>
+    #
+    # Strategy 2 normally wins because the sibling ``<table class="roster__table">``
+    # has a proper ``<th>Name</th>`` header row. Strategy 6 is the belt-and-
+    # suspenders fallback for WMT variants that ship only the card list (e.g.
+    # mobile-first themes or sports pages that suppress the table). It also
+    # keeps the scraper resilient to ramblinwreck.com DOM churn — if the
+    # WordPress theme drops the table, cards still work.
+    #
+    # Hometown and prev_club are not in the card — only the table exposes them,
+    # so when the fallback runs the row is jersey+name+position+year only. That
+    # still satisfies the roster_diffs contract (``player_name`` is required;
+    # all others are optional) and keeps future-season head-count tracking
+    # working even in degraded mode.
+    for card in soup.select(
+        "li.roster__list_item, div.roster__list_item, .roster__list_item"
+    ):
+        figcaption = card.select_one("figcaption")
+        if not figcaption:
+            continue
+
+        # Player name: first <a> inside the figcaption (not the figure's image
+        # link — that one has no visible text, just an <img>). Fall back to
+        # figure anchor title attribute if text-only anchor missing.
+        name: Optional[str] = None
+        for anchor in figcaption.find_all("a"):
+            txt = anchor.get_text().strip()
+            if txt and len(txt) >= 2:
+                name = txt
+                break
+        if not name:
+            # Some themes put the name only as the image `title=` attribute
+            thumb = card.select_one(".thumb[title]")
+            if thumb:
+                name = thumb.get("title", "").strip() or None
+        if not name or len(name) < 2:
+            continue
+
+        # Position: first <span> child of figcaption that isn't nested inside
+        # the social-wrapper. WMT Digital ships it as a bare <span> sibling
+        # of the name anchor.
+        position: Optional[str] = None
+        for span in figcaption.find_all("span", recursive=False):
+            txt = span.get_text().strip()
+            if txt:
+                position = txt
+                break
+
+        # Jersey number: lives in .icon > span on the figure (with leading #)
+        jersey: Optional[str] = None
+        icon_span = card.select_one(".icon span")
+        if icon_span:
+            jersey_raw = icon_span.get_text().strip()
+            jersey = jersey_raw.lstrip("#").strip() or None
+
+        # Class year: scan each <li> inside figcaption and try normalize_year.
+        # The list is an unlabeled mix of height/weight/year/major; year wins
+        # on the first match.
+        year_val: Optional[str] = None
+        for li in figcaption.select("ul li"):
+            normalized = normalize_year(li.get_text().strip())
+            if normalized:
+                year_val = normalized
+                break
+
+        players.append(RosterPlayer(
+            player_name=name,
+            position=position,
+            year=year_val,
+            hometown=None,  # not present in card; table has it
+            prev_club=None,  # not present in card; table has it
+            jersey_number=jersey,
+        ))
 
     return players
 
@@ -990,8 +1258,35 @@ def _fetch_colleges(
     conn,
     division: Optional[str] = None,
     gender: Optional[str] = None,
+    skip_unresolved: bool = True,
 ) -> List[Dict]:
-    """Query the colleges table. Returns list of dicts."""
+    """Query the colleges table. Returns list of dicts.
+
+    Parameters
+    ----------
+    skip_unresolved : bool (default True)
+        When True (default), exclude rows with
+        ``soccer_program_url IS NULL``. Each ``colleges`` row is
+        gender-scoped via ``gender_program`` (mens/womens/both), and
+        the ``soccer_program_url`` column on that row is the roster
+        URL for that specific gender's program. A NULL value means
+        the ``ncaa-resolve-urls`` job (PR-2 resolver) probed every
+        candidate SIDEARM path and found none responding — i.e., the
+        school does not field that sport. Fetching a roster for
+        those rows wastes ~6s per school in network + Playwright
+        fallback and then SKIPs with "no players parsed", producing
+        misleading error counts. The seed data itself over-lists
+        men's programs for Big Ten newcomers (Minnesota, Oregon,
+        USC) and a handful of others (Richmond, Pepperdine); this
+        filter is the single chokepoint that suppresses those
+        wasteful attempts.
+
+        Set to False only for debugging / audit scenarios where you
+        want to see every seeded row regardless of resolver state.
+        Scrapers should always run with the default (True) after the
+        ``ncaa-resolve-urls`` job has populated URLs for real
+        programs.
+    """
     clauses = []
     params: List = []
 
@@ -1001,6 +1296,8 @@ def _fetch_colleges(
     if gender:
         clauses.append("gender_program = %s")
         params.append(gender)
+    if skip_unresolved:
+        clauses.append("soccer_program_url IS NOT NULL")
 
     where = ""
     if clauses:
@@ -1091,6 +1388,7 @@ def scrape_college_rosters(
     limit: Optional[int] = None,
     dry_run: bool = False,
     backfill_seasons: int = 0,
+    skip_unresolved: bool = True,
 ) -> Dict:
     """Scrape NCAA rosters and write to college_roster_history.
 
@@ -1106,6 +1404,11 @@ def scrape_college_rosters(
         URL pattern. Writes land in ``college_roster_history`` keyed on
         ``(college_id, player_name, academic_year)`` — same natural key
         as current-season rows, so re-runs are idempotent.
+    skip_unresolved : bool (default True)
+        Skip colleges with ``soccer_program_url IS NULL`` — the
+        ``ncaa-resolve-urls`` resolver leaves that NULL when every
+        SIDEARM candidate path 404'd, which means the school doesn't
+        field the sport. See ``_fetch_colleges`` for detail.
 
     Returns
     -------
@@ -1127,7 +1430,12 @@ def scrape_college_rosters(
         logger.error("DATABASE_URL not set or connection failed; aborting (use --dry-run for no-DB mode)")
         return {"scraped": 0, "rows_inserted": 0, "rows_updated": 0, "errors": 1}
 
-    colleges = _fetch_colleges(conn, division=division, gender=gender)
+    colleges = _fetch_colleges(
+        conn,
+        division=division,
+        gender=gender,
+        skip_unresolved=skip_unresolved,
+    )
     if limit:
         colleges = colleges[:limit]
 

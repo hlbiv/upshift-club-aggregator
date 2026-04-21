@@ -4,11 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
 
-// Admin dashboard React Query client. First consumer is ScraperHealthPage,
-// which reads from the Orval-generated `useListScrapeRuns` /
-// `useListScrapeHealth` hooks (lib/api-client-react). Other admin pages
-// still use the hand-rolled `adminFetch()` helper — they'll migrate one
-// at a time. See Workstream A notes in CLAUDE.md.
+// Admin dashboard React Query client. All admin pages read from the
+// Orval-generated hooks in `@workspace/api-client-react`.
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

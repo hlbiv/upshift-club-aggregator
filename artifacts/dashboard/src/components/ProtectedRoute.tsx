@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Navigate } from "react-router-dom";
-import { adminFetch } from "../lib/api";
+import { getAdminMeQueryKey, useAdminMe } from "@workspace/api-client-react";
 
 /**
  * Gate that calls GET /api/v1/admin/me on mount.
@@ -8,37 +8,22 @@ import { adminFetch } from "../lib/api";
  *   - 401 / network error → redirect to /login
  *   - while the check is in flight → render a small loading shell
  *
- * No caching / context: each mount re-checks. Session lifetime is owned by
- * the cookie (httpOnly, set by the login endpoint). Future phases can
- * introduce a context provider if multiple components need the admin
- * identity at the same time.
+ * Routes through the Orval-generated `useAdminMe` hook so the admin session
+ * cookie (httpOnly, set by the login endpoint) travels via customFetch's
+ * `credentials: 'include'` default for relative URLs. `retry: false` keeps
+ * the auth check fast — a 401 should redirect immediately, not after three
+ * backoff-spaced retries.
  */
-type AuthState = "loading" | "authed" | "unauthed";
-
 interface ProtectedRouteProps {
   children: ReactNode;
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const [state, setState] = useState<AuthState>("loading");
+  const { isSuccess, isError, isPending } = useAdminMe({
+    query: { queryKey: getAdminMeQueryKey(), retry: false },
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    adminFetch("/api/v1/admin/me", { method: "GET" })
-      .then((res) => {
-        if (cancelled) return;
-        setState(res.ok ? "authed" : "unauthed");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setState("unauthed");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (state === "loading") {
+  if (isPending) {
     return (
       <div
         role="status"
@@ -53,9 +38,13 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  if (state === "unauthed") {
+  if (isError) {
     return <Navigate to="/login" replace />;
   }
 
-  return <>{children}</>;
+  if (isSuccess) {
+    return <>{children}</>;
+  }
+
+  return null;
 }
