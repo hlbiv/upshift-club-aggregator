@@ -59,6 +59,34 @@ function cookieSameSite(): "none" | "lax" {
   return "none";
 }
 
+function buildSessionCookie(token: string, expires: Date): string {
+  const parts = [
+    `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    "Path=/",
+    `Expires=${expires.toUTCString()}`,
+    `Max-Age=${Math.floor(ADMIN_SESSION_TTL_MS / 1000)}`,
+    "HttpOnly",
+    "SameSite=None",
+    "Secure",
+    "Partitioned",
+  ];
+  return parts.join("; ");
+}
+
+function buildClearSessionCookie(): string {
+  const parts = [
+    `${ADMIN_SESSION_COOKIE}=`,
+    "Path=/",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+    "Max-Age=0",
+    "HttpOnly",
+    "SameSite=None",
+    "Secure",
+    "Partitioned",
+  ];
+  return parts.join("; ");
+}
+
 function isAdminRole(r: string | null | undefined): r is "admin" | "super_admin" {
   return r === "admin" || r === "super_admin";
 }
@@ -134,16 +162,15 @@ export function makeLoginHandler(deps: LoginDeps): RequestHandler {
 
       await deps.bumpLastLogin(user.id);
 
-      res.cookie(ADMIN_SESSION_COOKIE, token, {
-        httpOnly: true,
-        secure: cookieSecure(),
-        sameSite: cookieSameSite(),
-        path: "/",
-        expires: expiresAt,
-        // Mirror with maxAge so browsers that ignore `expires` still honor
-        // the TTL. Some older clients prefer one over the other.
-        maxAge: ADMIN_SESSION_TTL_MS,
-      });
+      // Build Set-Cookie manually so we can include the `Partitioned`
+      // attribute (CHIPS — required for cookies served to a third-party
+      // iframe under Chrome's third-party-cookie deprecation, which is the
+      // exact context Replit's workspace preview iframe puts us in).
+      // Express's `res.cookie()` doesn't yet emit Partitioned in 5.2.x.
+      res.setHeader(
+        "Set-Cookie",
+        buildSessionCookie(token, expiresAt),
+      );
 
       res.json(
         AdminLoginResponse.parse({
@@ -202,12 +229,7 @@ export function makeLogoutHandler(deps: LogoutDeps): RequestHandler {
       if (typeof raw === "string" && raw.length > 0) {
         await deps.deleteSession(hashSessionToken(raw));
       }
-      res.clearCookie(ADMIN_SESSION_COOKIE, {
-        httpOnly: true,
-        secure: cookieSecure(),
-        sameSite: cookieSameSite(),
-        path: "/",
-      });
+      res.setHeader("Set-Cookie", buildClearSessionCookie());
       res.json(AdminLogoutResponse.parse({ ok: true }));
     } catch (err) {
       next(err);

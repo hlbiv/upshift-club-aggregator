@@ -1,0 +1,43 @@
+**Rosters: excellent.** 16,342 rows across 4 seasons. That's the big win.
+
+```
+2025-26 → 153 colleges / 3,814 rows
+2024-25 → 143 colleges / 4,315 rows   ← most players "new" since this was the first historical pass
+2023-24 → 144 colleges / 4,134 rows
+2022-23 → 147 colleges / 4,079 rows
+```
+
+**Coach capture: broken. 2 tenures / 1 directory.** That's a 0.17% hit rate across ~1,200 page fetches — clearly a bug, not low coverage.
+
+## What went wrong
+
+`extract_head_coach_from_html` — the inline extractor I hooked into the bulk loop in PR-7 — was designed against the UCLA test fixture where the roster page happens to include a `.sidearm-staff-member` block inline. In practice, **most D1 roster pages don't include staff inline** — they link out to a separate `/sports/mens-soccer/coaches` or `/sports/mens-soccer/staff-directory` page.
+
+The 1 coach we got is probably UCLA or a similar program whose roster page actually does ship staff inline. The other ~149 D1 programs keep staff on a sibling URL.
+
+## Fix path (small, follow-up PR)
+
+Same pattern as PR-2's `ncaa-resolve-urls`: add a new step that probes `/coaches` / `/staff-directory` URLs per program and scrapes staff from the dedicated page. Reuse the HEAD-probe resolver from PR-3.
+
+**Proposed shape — PR-9 "ncaa-coaches":**
+1. New source key `--source ncaa-coaches` (maybe combined with `--all --division --gender --backfill-seasons N` to mirror the roster flow)
+2. For each program, probe candidate staff URLs:
+   - `/sports/<sport>/coaches`
+   - `/sports/<sport>/staff-directory`
+   - `/sports/<sport>/coaches/<YYYY>` for backfill
+3. Parse the staff page; extract all coaches (not just head) — same multi-strategy pattern as `parse_roster_html`
+4. Write each coach's `(college_id, name, title, academic_year)` tenure row + update `college_coaches`
+
+Expected recovery: ~150 colleges × 1 head coach = ~150 current-directory rows immediately. Multi-season backfill adds ~600+ tenure rows.
+
+**Size:** ~1-2 hours (probe logic + 2-3 staff-page parsers + writer reuse + tests).
+
+## Your options
+
+1. **Ship PR-9 now** — close the coach gap
+2. **Defer and ship the rosters as the MVP** — 16k rows is already enough to unblock `routes/schools.ts` for the roster/player views; coach directory can come later
+3. **Dig into `extract_head_coach_from_html`'s inline selectors first** — see if there's a quick +20% hit rate before building the separate-URL approach
+
+My lean: **ship PR-9.** The separate-staff-URL pattern is the structurally right answer (matches how SIDEARM actually organizes the data). The inline extractor is never going to be more than 20-30% coverage because it's fighting the CMS's architecture.
+
+Want me to start?
