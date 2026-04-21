@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  useGetSchedulerJob,
   useListScraperScheduleRuns,
   useRunScraperScheduleNow,
   type SchedulerJob,
@@ -28,10 +29,7 @@ import AdminNav from "../components/AdminNav";
  *
  *   GET  /api/v1/admin/scraper-schedules/:jobKey/runs?limit=10
  *   POST /api/v1/admin/scraper-schedules/:jobKey/run   (super_admin only)
- *   GET  /api/v1/admin/scheduler-jobs/:id              (available; not
- *                                                       currently needed —
- *                                                       detail dialog reuses
- *                                                       the list row's data.)
+ *   GET  /api/v1/admin/scheduler-jobs/:id
  *
  * Three hardcoded job-key cards match the API's allow-list in
  * artifacts/api-server/src/routes/admin/scheduler.ts (ALLOWED_JOB_KEYS).
@@ -43,11 +41,14 @@ import AdminNav from "../components/AdminNav";
  * anywhere on the card header).
  *
  * Implementation note: driven off Orval-generated React Query hooks
- * (`useListScraperScheduleRuns` / `useRunScraperScheduleNow`). Three
- * `useListScraperScheduleRuns` invocations — one per allow-listed jobKey —
- * fire in parallel on mount. The query hook expects a jobKey literal, so
- * we unroll the three calls at the component root rather than looping
- * JOBS.map.
+ * (`useListScraperScheduleRuns` / `useRunScraperScheduleNow` /
+ * `useGetSchedulerJob`). Three `useListScraperScheduleRuns` invocations —
+ * one per allow-listed jobKey — fire in parallel on mount. The query hook
+ * expects a jobKey literal, so we unroll the three calls at the component
+ * root rather than looping JOBS.map. Clicking a run row opens a dialog
+ * backed by `useGetSchedulerJob` so the detail view always reflects the
+ * row's current server state (stdout/stderr tails may arrive after the
+ * row first appears pending in the list).
  */
 
 type JobKey = "nightly_tier1" | "weekly_state" | "hourly_linker";
@@ -81,7 +82,12 @@ export default function SchedulerPage() {
     Partial<Record<JobKey, RunNowError>>
   >({});
   const [toast, setToast] = useState<string | null>(null);
-  const [detailJob, setDetailJob] = useState<SchedulerJob | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+
+  // The generated hook gates its own query on `!!id`, so passing 0 when
+  // nothing is selected disables the fetch. Real scheduler-job ids are
+  // always >= 1.
+  const detailQuery = useGetSchedulerJob(selectedJobId ?? 0);
 
   // One `useListScraperScheduleRuns` per allow-listed jobKey. Radix makes
   // us unroll these because hooks can't be called inside `.map()`.
@@ -222,7 +228,7 @@ export default function SchedulerPage() {
                 isLoading={q.isLoading}
                 error={q.error}
                 jobs={q.data?.jobs}
-                onRowClick={(jobRow) => setDetailJob(jobRow)}
+                onRowClick={(jobRow) => setSelectedJobId(jobRow.id)}
               />
             </section>
           );
@@ -262,37 +268,62 @@ export default function SchedulerPage() {
       </AlertDialog>
 
       <Dialog
-        open={detailJob !== null}
+        open={selectedJobId !== null}
         onOpenChange={(open) => {
-          if (!open) setDetailJob(null);
+          if (!open) setSelectedJobId(null);
         }}
       >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>
-              Job #{detailJob?.id} —{" "}
-              <code className="font-mono">{detailJob?.jobKey}</code>
+              Job #{selectedJobId ?? ""}
+              {detailQuery.data ? (
+                <>
+                  {" "}
+                  —{" "}
+                  <code className="font-mono">{detailQuery.data.jobKey}</code>
+                </>
+              ) : null}
             </DialogTitle>
             <DialogDescription>
-              Status: {detailJob?.status} · exit {detailJob?.exitCode ?? "—"}
+              {detailQuery.data
+                ? `Status: ${detailQuery.data.status} · exit ${
+                    detailQuery.data.exitCode ?? "—"
+                  }`
+                : "\u00A0"}
             </DialogDescription>
           </DialogHeader>
-          {detailJob && (
+          {detailQuery.isLoading ? (
+            <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
+              Loading job detail…
+            </div>
+          ) : detailQuery.error ? (
+            <div
+              role="alert"
+              className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+            >
+              Failed to load job detail: {formatError(detailQuery.error)}
+            </div>
+          ) : detailQuery.data ? (
             <div className="space-y-4 text-sm">
               <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-neutral-700">
                 <dt className="font-medium text-neutral-500">Requested at</dt>
-                <dd className="font-mono">{detailJob.requestedAt}</dd>
+                <dd className="font-mono">{detailQuery.data.requestedAt}</dd>
                 <dt className="font-medium text-neutral-500">Started at</dt>
-                <dd className="font-mono">{detailJob.startedAt ?? "—"}</dd>
+                <dd className="font-mono">
+                  {detailQuery.data.startedAt ?? "—"}
+                </dd>
                 <dt className="font-medium text-neutral-500">Completed at</dt>
-                <dd className="font-mono">{detailJob.completedAt ?? "—"}</dd>
+                <dd className="font-mono">
+                  {detailQuery.data.completedAt ?? "—"}
+                </dd>
               </dl>
               <div>
                 <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
                   stdout tail
                 </h3>
                 <pre className="max-h-64 overflow-auto rounded border border-neutral-200 bg-neutral-50 p-2 text-xs">
-                  {detailJob.stdoutTail ?? "(empty)"}
+                  {detailQuery.data.stdoutTail ?? "(empty)"}
                 </pre>
               </div>
               <div>
@@ -300,11 +331,11 @@ export default function SchedulerPage() {
                   stderr tail
                 </h3>
                 <pre className="max-h-64 overflow-auto rounded border border-neutral-200 bg-neutral-50 p-2 text-xs">
-                  {detailJob.stderrTail ?? "(empty)"}
+                  {detailQuery.data.stderrTail ?? "(empty)"}
                 </pre>
               </div>
             </div>
-          )}
+          ) : null}
         </DialogContent>
       </Dialog>
 
