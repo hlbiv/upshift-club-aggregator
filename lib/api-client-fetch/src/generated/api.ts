@@ -6,25 +6,52 @@
  * OpenAPI spec version: 0.2.0
  */
 import type {
+  AdminLoginRequest,
+  AdminLoginResponse,
+  AdminLogoutResponse,
   AnalyticsCoverageParams,
   AnalyticsDuplicatesParams,
   AnalyticsOverlapParams,
   ClubDetailResponse,
+  ClubDuplicateDetail,
+  ClubDuplicateList,
+  ClubDuplicateMergeRequest,
+  ClubDuplicateMergeResponse,
+  ClubDuplicateRejectRequest,
+  ClubDuplicateRejectResponse,
   ClubListResponse,
   ClubRelatedResponse,
   ClubSearchResponse,
   ClubStaffResponse,
   CoachSearchResponse,
   CoverageResponse,
+  CoverageTrendResponse,
   DuplicateReviewDecision,
   DuplicateReviewRequest,
   DuplicatesResponse,
   EventSearchResponse,
+  GaPremierOrphanCleanupRequest,
+  GaPremierOrphanCleanupResponse,
+  GetGrowthCoverageTrendParams,
+  GetGrowthScrapedCountsParams,
   HealthStatus,
   LeagueClubsResponse,
   LeagueListResponse,
+  ListClubDuplicatesParams,
   ListClubsParams,
+  ListScrapeHealthParams,
+  ListScrapeRunsParams,
+  ListScraperScheduleRunsParams,
   OverlapResponse,
+  RunNowRequest,
+  RunNowResponse,
+  SchedulerJob,
+  SchedulerJobList,
+  ScrapeHealthList,
+  ScrapeHealthRow,
+  ScrapeRunLog,
+  ScrapeRunLogList,
+  ScrapedCountsDelta,
   SearchClubsAdvancedParams,
   SearchClubsParams,
   SearchCoachesParams,
@@ -406,6 +433,437 @@ export const analyticsOverlap = async (
   options?: RequestInit,
 ): Promise<OverlapResponse> => {
   return customFetch<OverlapResponse>(getAnalyticsOverlapUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Authenticate an admin user by email + password. On success, sets the `upshift_admin_sid` cookie (httpOnly, sameSite=lax) and returns the admin identity. The session cookie is the only way to call the rest of the admin surface without an API key.
+
+ * @summary Admin login (session cookie)
+ */
+export const getAdminLoginUrl = () => {
+  return `/api/v1/admin/auth/login`;
+};
+
+export const adminLogin = async (
+  adminLoginRequest: AdminLoginRequest,
+  options?: RequestInit,
+): Promise<AdminLoginResponse> => {
+  return customFetch<AdminLoginResponse>(getAdminLoginUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(adminLoginRequest),
+  });
+};
+
+/**
+ * Delete the server-side session row for the caller's cookie and clear the `upshift_admin_sid` cookie. Idempotent — calling with an already expired / unknown cookie still returns `{ok: true}`.
+
+ * @summary Admin logout (clears session cookie)
+ */
+export const getAdminLogoutUrl = () => {
+  return `/api/v1/admin/auth/logout`;
+};
+
+export const adminLogout = async (
+  options?: RequestInit,
+): Promise<AdminLogoutResponse> => {
+  return customFetch<AdminLogoutResponse>(getAdminLogoutUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+/**
+ * Echo the caller's identity (id, email, role). For session callers the fields come straight from `admin_users`; for API-key callers the server synthesizes a service-account identity (`apikey+<name>@…`).
+
+ * @summary Current admin identity
+ */
+export const getAdminMeUrl = () => {
+  return `/api/v1/admin/me`;
+};
+
+export const adminMe = async (
+  options?: RequestInit,
+): Promise<AdminLoginResponse> => {
+  return customFetch<AdminLoginResponse>(getAdminMeUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Read-only view onto `scrape_run_logs`, newest first. `status` accepts the DB enum (`running | ok | partial | failed`) plus legacy aliases (`success` → `ok|partial`, `failure` → `failed`).
+
+ * @summary List scrape-run log entries
+ */
+export const getListScrapeRunsUrl = (params?: ListScrapeRunsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/scrape-runs?${stringifiedParams}`
+    : `/api/v1/admin/scrape-runs`;
+};
+
+export const listScrapeRuns = async (
+  params?: ListScrapeRunsParams,
+  options?: RequestInit,
+): Promise<ScrapeRunLogList> => {
+  return customFetch<ScrapeRunLogList>(getListScrapeRunsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * @summary Get a single scrape-run row
+ */
+export const getGetScrapeRunUrl = (id: number) => {
+  return `/api/v1/admin/scrape-runs/${id}`;
+};
+
+export const getScrapeRun = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ScrapeRunLog> => {
+  return customFetch<ScrapeRunLog>(getGetScrapeRunUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Read-only view onto `scrape_health`. The response envelope is `{rows, total}` — pagination is server-side only via `page` / `page_size`; the contract itself doesn't echo page numbers.
+
+ * @summary Rolling scrape-health rollup per entity
+ */
+export const getListScrapeHealthUrl = (params?: ListScrapeHealthParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/scrape-health?${stringifiedParams}`
+    : `/api/v1/admin/scrape-health`;
+};
+
+export const listScrapeHealth = async (
+  params?: ListScrapeHealthParams,
+  options?: RequestInit,
+): Promise<ScrapeHealthList> => {
+  return customFetch<ScrapeHealthList>(getListScrapeHealthUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * `scrape_health` is keyed by `(entity_type, entity_id)` — not a surrogate id — so the detail route is 2-segment.
+
+ * @summary Get one scrape-health row by (entity_type, entity_id)
+ */
+export const getGetScrapeHealthUrl = (
+  entityType: "club" | "event" | "league" | "college" | "coach",
+  entityId: number,
+) => {
+  return `/api/v1/admin/scrape-health/${entityType}/${entityId}`;
+};
+
+export const getScrapeHealth = async (
+  entityType: "club" | "event" | "league" | "college" | "coach",
+  entityId: number,
+  options?: RequestInit,
+): Promise<ScrapeHealthRow> => {
+  return customFetch<ScrapeHealthRow>(
+    getGetScrapeHealthUrl(entityType, entityId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * Populated by `scraper/dedup/club_dedup.py --persist`. Default status is `pending`; pass `status=merged|rejected|all` to widen. Rows are sorted by score DESC so the strongest candidates surface first.
+
+ * @summary List club-duplicate pairs in the review queue
+ */
+export const getListClubDuplicatesUrl = (params?: ListClubDuplicatesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/dedup/clubs?${stringifiedParams}`
+    : `/api/v1/admin/dedup/clubs`;
+};
+
+export const listClubDuplicates = async (
+  params?: ListClubDuplicatesParams,
+  options?: RequestInit,
+): Promise<ClubDuplicateList> => {
+  return customFetch<ClubDuplicateList>(getListClubDuplicatesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Extends the queue row with the live `canonical_clubs` rows on both sides plus affiliation and roster-snapshot counts — everything a reviewer needs on one screen.
+
+ * @summary Club-duplicate detail with live side-by-side context
+ */
+export const getGetClubDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/clubs/${id}`;
+};
+
+export const getClubDuplicate = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ClubDuplicateDetail> => {
+  return customFetch<ClubDuplicateDetail>(getGetClubDuplicateUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Invokes the transactional `mergeClubs` helper. The 18-field helper result is logged server-side; only the 5-field contract projection (`ok`, `winnerId`, `loserAliasesCreated`, `affiliationsReparented`, `rosterSnapshotsReparented`) returns to the caller.
+
+ * @summary Merge a duplicate-club pair (transactional reparent + alias)
+ */
+export const getMergeClubDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/clubs/${id}/merge`;
+};
+
+export const mergeClubDuplicate = async (
+  id: number,
+  clubDuplicateMergeRequest: ClubDuplicateMergeRequest,
+  options?: RequestInit,
+): Promise<ClubDuplicateMergeResponse> => {
+  return customFetch<ClubDuplicateMergeResponse>(getMergeClubDuplicateUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(clubDuplicateMergeRequest),
+  });
+};
+
+/**
+ * Flips the queue row to `status=rejected` with optional `notes`. No data reparenting; the two clubs remain separate canonical rows.
+
+ * @summary Reject a duplicate-club pair (no merge performed)
+ */
+export const getRejectClubDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/clubs/${id}/reject`;
+};
+
+export const rejectClubDuplicate = async (
+  id: number,
+  clubDuplicateRejectRequest?: ClubDuplicateRejectRequest,
+  options?: RequestInit,
+): Promise<ClubDuplicateRejectResponse> => {
+  return customFetch<ClubDuplicateRejectResponse>(
+    getRejectClubDuplicateUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(clubDuplicateRejectRequest),
+    },
+  );
+};
+
+/**
+ * Identifies `club_roster_snapshots` rows whose `club_name_raw` is a nav-menu token (FACILITIES, STAFF, NEWS, …) rather than a real club name. Default `dryRun=true` returns counts + sample names; pass `dryRun=false` to DELETE up to `limit` matching rows in a transaction.
+
+ * @summary Scan or delete GA Premier nav-token orphans in club_roster_snapshots
+ */
+export const getGaPremierOrphanCleanupUrl = () => {
+  return `/api/v1/admin/data-quality/ga-premier-orphans`;
+};
+
+export const gaPremierOrphanCleanup = async (
+  gaPremierOrphanCleanupRequest: GaPremierOrphanCleanupRequest,
+  options?: RequestInit,
+): Promise<GaPremierOrphanCleanupResponse> => {
+  return customFetch<GaPremierOrphanCleanupResponse>(
+    getGaPremierOrphanCleanupUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(gaPremierOrphanCleanupRequest),
+    },
+  );
+};
+
+/**
+ * Per-table `count(*) WHERE <timestamp_col> > since`. Timestamp column differs per table — `canonical_clubs.last_scraped_at`, `coaches.first_seen_at`, `events.last_scraped_at`, `club_roster_snapshots.snapshot_date`, `matches.scraped_at`.
+
+ * @summary Records-added-since-X delta across five headline ingest tables
+ */
+export const getGetGrowthScrapedCountsUrl = (
+  params: GetGrowthScrapedCountsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/growth/scraped-counts?${stringifiedParams}`
+    : `/api/v1/admin/growth/scraped-counts`;
+};
+
+export const getGrowthScrapedCounts = async (
+  params: GetGrowthScrapedCountsParams,
+  options?: RequestInit,
+): Promise<ScrapedCountsDelta> => {
+  return customFetch<ScrapedCountsDelta>(getGetGrowthScrapedCountsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Aggregates `scrape_run_logs` by day for the last `days` days. `successes` counts `status='ok'`; `failures` counts `status IN ('partial','failed')`. `running` rows contribute to `runs` but not to successes/failures.
+
+ * @summary Daily scrape-run telemetry points over a rolling window
+ */
+export const getGetGrowthCoverageTrendUrl = (
+  params?: GetGrowthCoverageTrendParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/growth/coverage-trend?${stringifiedParams}`
+    : `/api/v1/admin/growth/coverage-trend`;
+};
+
+export const getGrowthCoverageTrend = async (
+  params?: GetGrowthCoverageTrendParams,
+  options?: RequestInit,
+): Promise<CoverageTrendResponse> => {
+  return customFetch<CoverageTrendResponse>(
+    getGetGrowthCoverageTrendUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * Newest-first by `requested_at`. Default `limit` 20, max 100.
+
+ * @summary List recent scheduler-job rows for a given jobKey
+ */
+export const getListScraperScheduleRunsUrl = (
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+  params?: ListScraperScheduleRunsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/scraper-schedules/${jobKey}/runs?${stringifiedParams}`
+    : `/api/v1/admin/scraper-schedules/${jobKey}/runs`;
+};
+
+export const listScraperScheduleRuns = async (
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+  params?: ListScraperScheduleRunsParams,
+  options?: RequestInit,
+): Promise<SchedulerJobList> => {
+  return customFetch<SchedulerJobList>(
+    getListScraperScheduleRunsUrl(jobKey, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * Inserts a `scheduler_jobs` row at `status=pending`; the in-process worker picks it up on its next tick. Guarded by `requireSuperAdmin` (session-only) plus the 30/min mutation rate limiter. Body `args` are forwarded as CLI flags by the worker.
+
+ * @summary Enqueue a one-off run of an allow-listed scheduler jobKey
+ */
+export const getRunScraperScheduleNowUrl = (
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+) => {
+  return `/api/v1/admin/scraper-schedules/${jobKey}/run`;
+};
+
+export const runScraperScheduleNow = async (
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+  runNowRequest?: RunNowRequest,
+  options?: RequestInit,
+): Promise<RunNowResponse> => {
+  return customFetch<RunNowResponse>(getRunScraperScheduleNowUrl(jobKey), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(runNowRequest),
+  });
+};
+
+/**
+ * @summary Get a single scheduler_jobs row by id
+ */
+export const getGetSchedulerJobUrl = (id: number) => {
+  return `/api/v1/admin/scheduler-jobs/${id}`;
+};
+
+export const getSchedulerJob = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SchedulerJob> => {
+  return customFetch<SchedulerJob>(getGetSchedulerJobUrl(id), {
     ...options,
     method: "GET",
   });

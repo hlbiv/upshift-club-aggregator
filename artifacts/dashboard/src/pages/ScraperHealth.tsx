@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
-import type {
-  ScrapeHealthList,
-  ScrapeHealthRow,
-  ScrapeRunLog,
-  ScrapeRunLogList,
-} from "@hlbiv/api-zod/admin";
-import { adminFetch } from "../lib/api";
+import {
+  useListScrapeHealth,
+  useListScrapeRuns,
+  type ScrapeHealthList,
+  type ScrapeHealthRow,
+  type ScrapeRunLog,
+  type ScrapeRunLogList,
+} from "@workspace/api-client-react";
 import AdminNav from "../components/AdminNav";
 
 /**
@@ -14,68 +14,15 @@ import AdminNav from "../components/AdminNav";
  *   GET /api/v1/admin/scrape-health         → ScrapeHealthList (rollup)
  *   GET /api/v1/admin/scrape-runs?limit=50  → ScrapeRunLogList (recent)
  *
- * Both requests run in parallel on mount. No polling this phase — refresh
- * = full page reload. Filters / pagination / "Run now" are future work.
- * The two tables intentionally use plain Tailwind utility classes so a
- * future designer pass doesn't have to unwind bespoke CSS.
+ * Proof-of-concept page for the Orval-generated React Query hooks. Other
+ * admin pages still use the hand-rolled `adminFetch()` helper; this one
+ * is intentionally first so the pattern can be reviewed in isolation.
+ * See Workstream A notes in CLAUDE.md.
  */
 
-type FetchState<T> =
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "ok"; data: T };
-
 export default function ScraperHealthPage() {
-  const [health, setHealth] = useState<FetchState<ScrapeHealthList>>({
-    kind: "loading",
-  });
-  const [runs, setRuns] = useState<FetchState<ScrapeRunLogList>>({
-    kind: "loading",
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-
-    adminFetch("/api/v1/admin/scrape-health")
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          setHealth({ kind: "error", message: `HTTP ${res.status}` });
-          return;
-        }
-        const data = (await res.json()) as ScrapeHealthList;
-        setHealth({ kind: "ok", data });
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setHealth({
-          kind: "error",
-          message: e instanceof Error ? e.message : "Network error",
-        });
-      });
-
-    adminFetch("/api/v1/admin/scrape-runs?limit=50")
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          setRuns({ kind: "error", message: `HTTP ${res.status}` });
-          return;
-        }
-        const data = (await res.json()) as ScrapeRunLogList;
-        setRuns({ kind: "ok", data });
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setRuns({
-          kind: "error",
-          message: e instanceof Error ? e.message : "Network error",
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const healthQuery = useListScrapeHealth();
+  const runsQuery = useListScrapeRuns({ limit: 50 });
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
@@ -96,7 +43,11 @@ export default function ScraperHealthPage() {
         >
           Rollup
         </h2>
-        <HealthTable state={health} />
+        <HealthTable
+          data={healthQuery.data}
+          isLoading={healthQuery.isLoading}
+          error={healthQuery.error}
+        />
       </section>
 
       <section aria-labelledby="runs-heading">
@@ -106,17 +57,42 @@ export default function ScraperHealthPage() {
         >
           Recent runs
         </h2>
-        <RunsTable state={runs} />
+        <RunsTable
+          data={runsQuery.data}
+          isLoading={runsQuery.isLoading}
+          error={runsQuery.error}
+        />
       </section>
     </main>
   );
 }
 
-function HealthTable({ state }: { state: FetchState<ScrapeHealthList> }) {
-  if (state.kind === "loading") return <TablePlaceholder label="Loading…" />;
-  if (state.kind === "error")
-    return <TablePlaceholder label={`Failed to load: ${state.message}`} />;
-  const rows = state.data.rows;
+function formatError(err: unknown): string {
+  if (!err) return "Network error";
+  if (err instanceof Error) {
+    // The customFetch ApiError class attaches a numeric `status` — surface
+    // that verbatim so operators can grep the log lines. Cast via unknown
+    // so TS lets us narrow an arbitrary property off of an Error subclass.
+    const status = (err as unknown as { status?: unknown }).status;
+    if (typeof status === "number") return `HTTP ${status}`;
+    return err.message;
+  }
+  return String(err);
+}
+
+function HealthTable({
+  data,
+  isLoading,
+  error,
+}: {
+  data: ScrapeHealthList | undefined;
+  isLoading: boolean;
+  error: unknown;
+}) {
+  if (isLoading) return <TablePlaceholder label="Loading…" />;
+  if (error)
+    return <TablePlaceholder label={`Failed to load: ${formatError(error)}`} />;
+  const rows = data?.rows ?? [];
   if (rows.length === 0) return <TablePlaceholder label="No entries yet." />;
 
   return (
@@ -157,11 +133,19 @@ function HealthTable({ state }: { state: FetchState<ScrapeHealthList> }) {
   );
 }
 
-function RunsTable({ state }: { state: FetchState<ScrapeRunLogList> }) {
-  if (state.kind === "loading") return <TablePlaceholder label="Loading…" />;
-  if (state.kind === "error")
-    return <TablePlaceholder label={`Failed to load: ${state.message}`} />;
-  const runs = state.data.runs;
+function RunsTable({
+  data,
+  isLoading,
+  error,
+}: {
+  data: ScrapeRunLogList | undefined;
+  isLoading: boolean;
+  error: unknown;
+}) {
+  if (isLoading) return <TablePlaceholder label="Loading…" />;
+  if (error)
+    return <TablePlaceholder label={`Failed to load: ${formatError(error)}`} />;
+  const runs = data?.runs ?? [];
   if (runs.length === 0) return <TablePlaceholder label="No runs yet." />;
 
   return (
