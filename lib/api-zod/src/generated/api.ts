@@ -1165,6 +1165,66 @@ export const GetGrowthCoverageTrendResponse = zod.object({
 });
 
 /**
+ * Returns every jobKey in the server-side allow-list plus its curated `description`, `cronExpression` (null for Run-Now-only jobs), and the last N `scheduler_jobs` rows. Adding a new allow-listed jobKey to the server causes it to appear here automatically — the dashboard renders dynamically from this payload.
+
+ * @summary List all known scraper schedules with metadata + recent runs
+ */
+export const listScraperSchedulesQueryLimitDefault = 10;
+export const listScraperSchedulesQueryLimitMax = 100;
+
+export const ListScraperSchedulesQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .max(listScraperSchedulesQueryLimitMax)
+    .default(listScraperSchedulesQueryLimitDefault)
+    .describe("Recent runs per schedule (default 10, max 100)."),
+});
+
+export const ListScraperSchedulesResponse = zod.object({
+  schedules: zod.array(
+    zod
+      .object({
+        jobKey: zod.string(),
+        description: zod.string(),
+        cronExpression: zod
+          .string()
+          .nullable()
+          .describe(
+            'Curated display string (e.g. \"0 3 \* \* \*\") or null when the job runs only via admin-triggered \"Run now\".\n',
+          ),
+        recentRuns: zod.array(
+          zod
+            .object({
+              id: zod.number(),
+              jobKey: zod.string(),
+              args: zod.record(zod.string(), zod.unknown()).nullable(),
+              status: zod.enum([
+                "pending",
+                "running",
+                "success",
+                "failed",
+                "canceled",
+              ]),
+              requestedBy: zod.number().nullable(),
+              requestedAt: zod.coerce.date(),
+              startedAt: zod.coerce.date().nullable(),
+              completedAt: zod.coerce.date().nullable(),
+              exitCode: zod.number().nullable(),
+              stdoutTail: zod.string().nullable(),
+              stderrTail: zod.string().nullable(),
+            })
+            .describe(
+              "One row of `scheduler_jobs` — an admin-triggered scraper invocation.",
+            ),
+        ),
+      })
+      .describe(
+        "One known scraper schedule — metadata + recent `scheduler_jobs` rows.\n",
+      ),
+  ),
+});
+
+/**
  * Newest-first by `requested_at`. Default `limit` 20, max 100.
 
  * @summary List recent scheduler-job rows for a given jobKey

@@ -44,6 +44,7 @@ import {
   RunNowResponse,
   SchedulerJob,
   SchedulerJobList,
+  ScraperSchedulesResponse,
 } from "@hlbiv/api-zod/admin";
 import { requireSuperAdmin } from "../../middlewares/requireSuperAdmin";
 import { buildRateLimiter } from "../../middlewares/rateLimit";
@@ -65,10 +66,44 @@ function isAllowedJobKey(value: string): value is AllowedJobKey {
   return (ALLOWED_JOB_KEYS as readonly string[]).includes(value);
 }
 
+/**
+ * Server-owned metadata for each allow-listed jobKey. The dashboard reads
+ * this via GET /scraper-schedules so descriptions + cron hints are managed
+ * server-side (one source of truth) instead of duplicated in React.
+ *
+ * `cronExpression` is a display-only string — it doesn't drive actual
+ * scheduling. Cron jobs live in `.replit` as Replit Scheduled Deployments.
+ * The three jobKeys here currently have no fixed cron (Run Now only), so
+ * `cronExpression` is null for all three.
+ */
+export const JOB_METADATA: ReadonlyArray<{
+  readonly jobKey: AllowedJobKey;
+  readonly description: string;
+  readonly cronExpression: string | null;
+}> = [
+  {
+    jobKey: "nightly_tier1",
+    description: "Nightly Tier 1 league scraper",
+    cronExpression: null,
+  },
+  {
+    jobKey: "weekly_state",
+    description: "Weekly state associations sweep",
+    cronExpression: null,
+  },
+  {
+    jobKey: "hourly_linker",
+    description: "Hourly canonical-club linker",
+    cronExpression: null,
+  },
+] as const;
+
 /** Default limit for the runs-list endpoint. */
 export const DEFAULT_RUNS_LIMIT = 20;
 /** Upper bound on the `?limit=` query param. */
 export const MAX_RUNS_LIMIT = 100;
+/** Default recent-runs-per-schedule on GET /scraper-schedules. */
+export const DEFAULT_SCHEDULES_RUN_LIMIT = 10;
 
 /**
  * Minimal row shape the handlers rely on. Matches `typeof schedulerJobs.$inferSelect`
@@ -247,6 +282,54 @@ export function makeGetJobHandler(deps: SchedulerDeps): RequestHandler {
 }
 
 /**
+ * GET /scraper-schedules — open to any admin.
+ *
+ * Returns every allow-listed jobKey's metadata + its last N runs in a
+ * single payload. Drives the dynamic Scheduler page.
+ */
+export function makeListSchedulesHandler(
+  deps: SchedulerDeps,
+): RequestHandler {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const rawLimit = req.query.limit;
+      let limit = DEFAULT_SCHEDULES_RUN_LIMIT;
+      if (typeof rawLimit === "string" && rawLimit.length > 0) {
+        const parsed = Number(rawLimit);
+        if (
+          !Number.isFinite(parsed) ||
+          !Number.isInteger(parsed) ||
+          parsed <= 0
+        ) {
+          res.status(400).json({ error: "invalid limit" });
+          return;
+        }
+        limit = Math.min(parsed, MAX_RUNS_LIMIT);
+      }
+
+      const schedules = await Promise.all(
+        JOB_METADATA.map(async (meta) => {
+          const rows = await deps.listJobsByKey({
+            jobKey: meta.jobKey,
+            limit,
+          });
+          return {
+            jobKey: meta.jobKey,
+            description: meta.description,
+            cronExpression: meta.cronExpression,
+            recentRuns: rows.map(serializeJob),
+          };
+        }),
+      );
+
+      res.json(ScraperSchedulesResponse.parse({ schedules }));
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+/**
  * GET /scraper-schedules/:jobKey/runs — open to any admin.
  */
 export function makeListRunsHandler(deps: SchedulerDeps): RequestHandler {
@@ -293,13 +376,19 @@ export function makeListRunsHandler(deps: SchedulerDeps): RequestHandler {
 
 /**
  * Sub-router mounted at `/scraper-schedules`:
- *   POST /:jobKey/run   (super_admin + 30/min)
- *   GET  /:jobKey/runs  (any admin + 120/min)
+ *   GET  /             (any admin + 120/min)  — list all schedules
+ *   POST /:jobKey/run  (super_admin + 30/min) — enqueue a one-off run
+ *   GET  /:jobKey/runs (any admin + 120/min)  — last N runs for one jobKey
  */
 export function buildScraperSchedulesRouter(
   deps: SchedulerDeps = prodSchedulerDeps,
 ): IRouter {
   const router: IRouter = Router();
+  router.get(
+    "/",
+    buildRateLimiter({ authLimit: 120, ipLimit: 120 }),
+    makeListSchedulesHandler(deps),
+  );
   router.post(
     "/:jobKey/run",
     buildRateLimiter({ authLimit: 30, ipLimit: 30 }),

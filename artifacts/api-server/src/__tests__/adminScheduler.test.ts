@@ -24,6 +24,9 @@ import type { SchedulerJob as SchedulerJobRow } from "@workspace/db";
 import {
   makeRunNowHandler,
   makeGetJobHandler,
+  makeListSchedulesHandler,
+  JOB_METADATA,
+  DEFAULT_SCHEDULES_RUN_LIMIT,
   type SchedulerDeps,
   type AllowedJobKey,
 } from "../routes/admin/scheduler";
@@ -370,6 +373,158 @@ async function run() {
     });
     assert(!nextCalled, "mw-apikey", "next() should not be called");
     assert(res.statusCode === 403, "mw-apikey", `expected 403, got ${res.statusCode}`);
+  }
+
+  // --- 9. GET /scraper-schedules returns all metadata + per-job runs -----
+  //
+  // The handler fans out one `listJobsByKey` per JOB_METADATA entry and
+  // zips the results back with description + cronExpression. Verifies
+  // order is preserved and each jobKey gets its own run set.
+  {
+    type ListCall = { jobKey: string; limit: number };
+    const listCalls: ListCall[] = [];
+    const runsByKey: Record<string, SchedulerJobRow[]> = {
+      nightly_tier1: [fakeRow({ id: 11, jobKey: "nightly_tier1" })],
+      weekly_state: [],
+      hourly_linker: [
+        fakeRow({ id: 31, jobKey: "hourly_linker" }),
+        fakeRow({ id: 32, jobKey: "hourly_linker" }),
+      ],
+    };
+    const deps = makeDeps({
+      listJobsByKey: async ({ jobKey, limit }) => {
+        listCalls.push({ jobKey, limit });
+        return runsByKey[jobKey] ?? [];
+      },
+    });
+    const handler = makeListSchedulesHandler(deps);
+    const req = makeReq({
+      adminAuth: sessionAuth("admin"),
+      path: "/scraper-schedules",
+    });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "list-schedules-ok",
+      `expected 200, got ${res.statusCode}`,
+    );
+    const body = res.body as {
+      schedules?: Array<{
+        jobKey: string;
+        description: string;
+        cronExpression: string | null;
+        recentRuns: Array<{ id: number }>;
+      }>;
+    };
+    assert(
+      Array.isArray(body.schedules) &&
+        body.schedules.length === JOB_METADATA.length,
+      "list-schedules-ok",
+      `expected ${JOB_METADATA.length} schedules, got ${body.schedules?.length}`,
+    );
+    // Order matches JOB_METADATA.
+    body.schedules?.forEach((s, i) => {
+      const meta = JOB_METADATA[i]!;
+      assert(
+        s.jobKey === meta.jobKey,
+        "list-schedules-ok",
+        `schedules[${i}].jobKey mismatch: expected ${meta.jobKey}, got ${s.jobKey}`,
+      );
+      assert(
+        s.description === meta.description,
+        "list-schedules-ok",
+        `schedules[${i}].description mismatch for ${meta.jobKey}`,
+      );
+      assert(
+        s.cronExpression === meta.cronExpression,
+        "list-schedules-ok",
+        `schedules[${i}].cronExpression mismatch for ${meta.jobKey}`,
+      );
+    });
+    // Each JOB_METADATA entry triggered one listJobsByKey call with the
+    // default limit.
+    assert(
+      listCalls.length === JOB_METADATA.length,
+      "list-schedules-ok",
+      `expected ${JOB_METADATA.length} listJobsByKey calls, got ${listCalls.length}`,
+    );
+    assert(
+      listCalls.every((c) => c.limit === DEFAULT_SCHEDULES_RUN_LIMIT),
+      "list-schedules-ok",
+      `all calls should use default limit ${DEFAULT_SCHEDULES_RUN_LIMIT}`,
+    );
+    // Recent runs routed to the right schedule.
+    assert(
+      body.schedules?.[0]?.recentRuns.length === 1 &&
+        body.schedules[0].recentRuns[0]!.id === 11,
+      "list-schedules-ok",
+      `nightly_tier1 should have 1 run with id=11`,
+    );
+    assert(
+      body.schedules?.[1]?.recentRuns.length === 0,
+      "list-schedules-ok",
+      `weekly_state should have 0 runs`,
+    );
+    assert(
+      body.schedules?.[2]?.recentRuns.length === 2,
+      "list-schedules-ok",
+      `hourly_linker should have 2 runs`,
+    );
+  }
+
+  // --- 10. GET /scraper-schedules?limit=5 clamps + forwards the limit ----
+  {
+    const seenLimits: number[] = [];
+    const deps = makeDeps({
+      listJobsByKey: async ({ limit }) => {
+        seenLimits.push(limit);
+        return [];
+      },
+    });
+    const handler = makeListSchedulesHandler(deps);
+    const req = makeReq({
+      adminAuth: sessionAuth("admin"),
+      query: { limit: "5" },
+    });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "list-schedules-custom-limit",
+      `expected 200, got ${res.statusCode}`,
+    );
+    assert(
+      seenLimits.every((l) => l === 5),
+      "list-schedules-custom-limit",
+      `each dep call should receive limit=5, got ${JSON.stringify(seenLimits)}`,
+    );
+  }
+
+  // --- 11. GET /scraper-schedules?limit=abc → 400 ------------------------
+  {
+    const deps = makeDeps();
+    const handler = makeListSchedulesHandler(deps);
+    const req = makeReq({
+      adminAuth: sessionAuth("admin"),
+      query: { limit: "abc" },
+    });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "list-schedules-bad-limit",
+      `expected 400, got ${res.statusCode}`,
+    );
+    const body = res.body as { error?: string };
+    assert(
+      body.error === "invalid limit",
+      "list-schedules-bad-limit",
+      `expected 'invalid limit', got ${body.error}`,
+    );
   }
 
   // --- bonus: missing adminAuth (misconfigured route chain) → 403 --------

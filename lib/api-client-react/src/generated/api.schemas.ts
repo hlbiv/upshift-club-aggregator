@@ -634,6 +634,23 @@ export interface SchedulerJobList {
   total: number;
 }
 
+/**
+ * One known scraper schedule — metadata + recent `scheduler_jobs` rows.
+
+ */
+export interface ScraperSchedule {
+  jobKey: string;
+  description: string;
+  /** Curated display string (e.g. "0 3 * * *") or null when the job runs only via admin-triggered "Run now".
+   */
+  cronExpression: string | null;
+  recentRuns: SchedulerJob[];
+}
+
+export interface ScraperSchedulesResponse {
+  schedules: ScraperSchedule[];
+}
+
 export type RunNowRequestArgs = { [key: string]: unknown };
 
 /**
@@ -951,6 +968,14 @@ export type GetGrowthCoverageTrendParams = {
    * Size of the rolling window in days
    */
   days?: number;
+};
+
+export type ListScraperSchedulesParams = {
+  /**
+   * Recent runs per schedule (default 10, max 100).
+   * @maximum 100
+   */
+  limit?: number;
 };
 
 export type ListScraperScheduleRunsParams = {

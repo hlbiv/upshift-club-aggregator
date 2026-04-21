@@ -58,6 +58,7 @@ import type {
   ListScrapeHealthParams,
   ListScrapeRunsParams,
   ListScraperScheduleRunsParams,
+  ListScraperSchedulesParams,
   NavLeakedNamesResponse,
   OverlapResponse,
   RunNowRequest,
@@ -69,6 +70,7 @@ import type {
   ScrapeRunLog,
   ScrapeRunLogList,
   ScrapedCountsDelta,
+  ScraperSchedulesResponse,
   SearchClubsAdvancedParams,
   SearchClubsParams,
   SearchCoachesParams,
@@ -3144,6 +3146,114 @@ export function useGetGrowthCoverageTrend<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetGrowthCoverageTrendQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns every jobKey in the server-side allow-list plus its curated `description`, `cronExpression` (null for Run-Now-only jobs), and the last N `scheduler_jobs` rows. Adding a new allow-listed jobKey to the server causes it to appear here automatically — the dashboard renders dynamically from this payload.
+
+ * @summary List all known scraper schedules with metadata + recent runs
+ */
+export const getListScraperSchedulesUrl = (
+  params?: ListScraperSchedulesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/scraper-schedules?${stringifiedParams}`
+    : `/api/v1/admin/scraper-schedules`;
+};
+
+export const listScraperSchedules = async (
+  params?: ListScraperSchedulesParams,
+  options?: RequestInit,
+): Promise<ScraperSchedulesResponse> => {
+  return customFetch<ScraperSchedulesResponse>(
+    getListScraperSchedulesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListScraperSchedulesQueryKey = (
+  params?: ListScraperSchedulesParams,
+) => {
+  return [
+    `/api/v1/admin/scraper-schedules`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListScraperSchedulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listScraperSchedules>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListScraperSchedulesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScraperSchedules>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListScraperSchedulesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listScraperSchedules>>
+  > = ({ signal }) =>
+    listScraperSchedules(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listScraperSchedules>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListScraperSchedulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listScraperSchedules>>
+>;
+export type ListScraperSchedulesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List all known scraper schedules with metadata + recent runs
+ */
+
+export function useListScraperSchedules<
+  TData = Awaited<ReturnType<typeof listScraperSchedules>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: ListScraperSchedulesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScraperSchedules>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListScraperSchedulesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

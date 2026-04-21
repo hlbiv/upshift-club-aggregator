@@ -399,3 +399,27 @@ export const RunNowResponse = z.object({
   requestedAt: z.string().datetime(),
 });
 export type RunNowResponse = z.infer<typeof RunNowResponse>;
+
+/**
+ * One known scraper schedule — metadata (jobKey + description +
+ * cronExpression) plus the latest N `scheduler_jobs` rows for that jobKey.
+ * Returned by GET /v1/admin/scraper-schedules.
+ *
+ * `cronExpression` is a curated display string ("0 3 * * *") or null when
+ * the job only runs via admin-triggered "Run now" (no fixed cron). The
+ * server is the source of truth for both `description` and
+ * `cronExpression`; the dashboard just renders them.
+ */
+export const ScraperSchedule = z.object({
+  jobKey: z.string(),
+  description: z.string(),
+  cronExpression: z.string().nullable(),
+  recentRuns: z.array(SchedulerJob),
+});
+export type ScraperSchedule = z.infer<typeof ScraperSchedule>;
+
+/** Envelope of all known scraper schedules in server-defined order. */
+export const ScraperSchedulesResponse = z.object({
+  schedules: z.array(ScraperSchedule),
+});
+export type ScraperSchedulesResponse = z.infer<typeof ScraperSchedulesResponse>;

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import {
   useGetSchedulerJob,
-  useListScraperScheduleRuns,
+  useListScraperSchedules,
   useRunScraperScheduleNow,
+  type ScraperSchedule,
   type SchedulerJob,
 } from "@workspace/api-client-react";
 import {
@@ -25,89 +26,47 @@ import {
 import AdminNav from "../components/AdminNav";
 
 /**
- * Scheduler admin page (S.4).
+ * Scheduler admin page.
  *
- *   GET  /api/v1/admin/scraper-schedules/:jobKey/runs?limit=10
- *   POST /api/v1/admin/scraper-schedules/:jobKey/run   (super_admin only)
+ *   GET  /api/v1/admin/scraper-schedules              — all schedules + runs
+ *   POST /api/v1/admin/scraper-schedules/:jobKey/run  (super_admin only)
  *   GET  /api/v1/admin/scheduler-jobs/:id
  *
- * Three hardcoded job-key cards match the API's allow-list in
- * artifacts/api-server/src/routes/admin/scheduler.ts (ALLOWED_JOB_KEYS).
- * Cron-editing, cancel, and "run all" are intentionally out of scope.
+ * The page is driven by a single GET /scraper-schedules — adding a jobKey
+ * server-side (JOB_METADATA in scheduler.ts) makes it show up here with no
+ * UI change. Cron-editing, cancel, and "run all" are intentionally out of
+ * scope; cron lives in `.replit`.
  *
- * 403 handling for plain-admin role: the "Run now" mutation is gated by
- * requireSuperAdmin on the server; if a plain admin clicks it, the inline
- * error banner for that job card sticks until they dismiss it (click
- * anywhere on the card header).
+ * 403 handling for plain-admin role: "Run now" is gated by requireSuperAdmin
+ * on the server; if a plain admin clicks it, the inline error banner for
+ * that job card sticks until they dismiss it (click anywhere on the header).
  *
- * Implementation note: driven off Orval-generated React Query hooks
- * (`useListScraperScheduleRuns` / `useRunScraperScheduleNow` /
- * `useGetSchedulerJob`). Three `useListScraperScheduleRuns` invocations —
- * one per allow-listed jobKey — fire in parallel on mount. The query hook
- * expects a jobKey literal, so we unroll the three calls at the component
- * root rather than looping JOBS.map. Clicking a run row opens a dialog
- * backed by `useGetSchedulerJob` so the detail view always reflects the
- * row's current server state (stdout/stderr tails may arrive after the
- * row first appears pending in the list).
+ * Row-click opens a detail dialog backed by GET /scheduler-jobs/:id so the
+ * stdout/stderr tails always reflect current server state (tails may arrive
+ * after the row first appears pending in the list).
  */
 
-type JobKey = "nightly_tier1" | "weekly_state" | "hourly_linker";
-
-const JOBS: ReadonlyArray<{
-  readonly jobKey: JobKey;
-  readonly description: string;
-}> = [
-  {
-    jobKey: "nightly_tier1",
-    description: "Nightly Tier 1 league scraper",
-  },
-  {
-    jobKey: "weekly_state",
-    description: "Weekly state associations sweep",
-  },
-  {
-    jobKey: "hourly_linker",
-    description: "Hourly canonical-club linker",
-  },
-] as const;
+// The mutation hook is typed against the OpenAPI enum of allow-listed
+// jobKeys. Keep that narrow literal union here so we cast once when
+// dispatching instead of sprinkling casts per call-site.
+type MutationJobKey = "nightly_tier1" | "weekly_state" | "hourly_linker";
 
 type RunNowError =
   | { kind: "forbidden" }
   | { kind: "other"; message: string };
 
 export default function SchedulerPage() {
-  const [confirmFor, setConfirmFor] = useState<JobKey | null>(null);
-  const [submittingKey, setSubmittingKey] = useState<JobKey | null>(null);
-  const [runErrors, setRunErrors] = useState<
-    Partial<Record<JobKey, RunNowError>>
-  >({});
+  const [confirmFor, setConfirmFor] = useState<string | null>(null);
+  const [submittingKey, setSubmittingKey] = useState<string | null>(null);
+  const [runErrors, setRunErrors] = useState<Record<string, RunNowError>>({});
   const [toast, setToast] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
 
-  // The generated hook gates its own query on `!!id`, so passing 0 when
-  // nothing is selected disables the fetch. Real scheduler-job ids are
-  // always >= 1.
   const detailQuery = useGetSchedulerJob(selectedJobId ?? 0);
-
-  // One `useListScraperScheduleRuns` per allow-listed jobKey. Radix makes
-  // us unroll these because hooks can't be called inside `.map()`.
-  const nightlyQuery = useListScraperScheduleRuns("nightly_tier1", {
-    limit: 10,
-  });
-  const weeklyQuery = useListScraperScheduleRuns("weekly_state", { limit: 10 });
-  const hourlyQuery = useListScraperScheduleRuns("hourly_linker", {
-    limit: 10,
-  });
-
-  const queryByKey: Record<JobKey, typeof nightlyQuery> = {
-    nightly_tier1: nightlyQuery,
-    weekly_state: weeklyQuery,
-    hourly_linker: hourlyQuery,
-  };
-
+  const schedulesQuery = useListScraperSchedules({ limit: 10 });
   const mutation = useRunScraperScheduleNow();
 
-  async function onConfirmRun(jobKey: JobKey) {
+  async function onConfirmRun(jobKey: string) {
     setConfirmFor(null);
     setSubmittingKey(jobKey);
     setRunErrors((prev) => {
@@ -117,13 +76,12 @@ export default function SchedulerPage() {
     });
     try {
       const result = await mutation.mutateAsync({
-        jobKey,
+        jobKey: jobKey as MutationJobKey,
         data: { jobKey, args: {} },
       });
       setToast(`Job queued: #${result.id}`);
       window.setTimeout(() => setToast(null), 4000);
-      // Re-fetch runs so the new pending row shows up.
-      await queryByKey[jobKey].refetch();
+      await schedulesQuery.refetch();
     } catch (e: unknown) {
       const status =
         e instanceof Error
@@ -150,7 +108,7 @@ export default function SchedulerPage() {
     }
   }
 
-  function dismissError(jobKey: JobKey) {
+  function dismissError(jobKey: string) {
     setRunErrors((prev) => {
       const next = { ...prev };
       delete next[jobKey];
@@ -170,70 +128,37 @@ export default function SchedulerPage() {
         </p>
       </header>
 
-      <div className="space-y-8">
-        {JOBS.map((job) => {
-          const q = queryByKey[job.jobKey];
-          return (
-            <section
-              key={job.jobKey}
-              aria-labelledby={`job-${job.jobKey}-heading`}
-              className="rounded-lg border border-neutral-200 bg-white p-6"
-              onClick={() => dismissError(job.jobKey)}
-            >
-              <div className="mb-4 flex items-start justify-between gap-4">
-                <div>
-                  <h2
-                    id={`job-${job.jobKey}-heading`}
-                    className="text-lg font-semibold text-neutral-900"
-                  >
-                    <code className="font-mono">{job.jobKey}</code>
-                  </h2>
-                  <p className="text-sm text-neutral-500">{job.description}</p>
-                </div>
-                <button
-                  type="button"
-                  disabled={submittingKey === job.jobKey}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setConfirmFor(job.jobKey);
-                  }}
-                  className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
-                >
-                  {submittingKey === job.jobKey ? "Queuing…" : "Run now"}
-                </button>
-              </div>
-
-              {runErrors[job.jobKey] && (
-                <div
-                  role="alert"
-                  className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-                >
-                  {runErrors[job.jobKey]!.kind === "forbidden" ? (
-                    <>
-                      <strong>super_admin role required.</strong> Your account
-                      is plain <code>admin</code>; only <code>super_admin</code>{" "}
-                      can trigger scheduler jobs. Ask an owner to promote you
-                      or run this from a super_admin session.
-                    </>
-                  ) : (
-                    <>
-                      Run failed:{" "}
-                      {(runErrors[job.jobKey] as { message: string }).message}
-                    </>
-                  )}
-                </div>
-              )}
-
-              <RunsTable
-                isLoading={q.isLoading}
-                error={q.error}
-                jobs={q.data?.jobs}
-                onRowClick={(jobRow) => setSelectedJobId(jobRow.id)}
-              />
-            </section>
-          );
-        })}
-      </div>
+      {schedulesQuery.isLoading ? (
+        <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-10 text-center text-sm text-neutral-500">
+          Loading schedules…
+        </div>
+      ) : schedulesQuery.error ? (
+        <div
+          role="alert"
+          className="rounded border border-red-200 bg-red-50 px-3 py-4 text-sm text-red-800"
+        >
+          Failed to load schedules: {formatError(schedulesQuery.error)}
+        </div>
+      ) : !schedulesQuery.data ||
+        schedulesQuery.data.schedules.length === 0 ? (
+        <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-10 text-center text-sm text-neutral-500">
+          No scheduled jobs configured.
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {schedulesQuery.data.schedules.map((schedule) => (
+            <ScheduleCard
+              key={schedule.jobKey}
+              schedule={schedule}
+              submitting={submittingKey === schedule.jobKey}
+              error={runErrors[schedule.jobKey]}
+              onDismissError={() => dismissError(schedule.jobKey)}
+              onRunNowClick={() => setConfirmFor(schedule.jobKey)}
+              onRowClick={(job) => setSelectedJobId(job.id)}
+            />
+          ))}
+        </div>
+      )}
 
       <AlertDialog
         open={confirmFor !== null}
@@ -351,32 +276,87 @@ export default function SchedulerPage() {
   );
 }
 
-function RunsTable({
-  isLoading,
+function ScheduleCard({
+  schedule,
+  submitting,
   error,
+  onDismissError,
+  onRunNowClick,
+  onRowClick,
+}: {
+  schedule: ScraperSchedule;
+  submitting: boolean;
+  error: RunNowError | undefined;
+  onDismissError: () => void;
+  onRunNowClick: () => void;
+  onRowClick: (job: SchedulerJob) => void;
+}) {
+  return (
+    <section
+      aria-labelledby={`job-${schedule.jobKey}-heading`}
+      className="rounded-lg border border-neutral-200 bg-white p-6"
+      onClick={onDismissError}
+    >
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2
+            id={`job-${schedule.jobKey}-heading`}
+            className="text-lg font-semibold text-neutral-900"
+          >
+            <code className="font-mono">{schedule.jobKey}</code>
+          </h2>
+          <p className="text-sm text-neutral-500">{schedule.description}</p>
+          {schedule.cronExpression && (
+            <p className="mt-0.5 text-xs text-neutral-500">
+              Schedule:{" "}
+              <code className="font-mono">{schedule.cronExpression}</code>
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRunNowClick();
+          }}
+          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
+        >
+          {submitting ? "Queuing…" : "Run now"}
+        </button>
+      </div>
+
+      {error && (
+        <div
+          role="alert"
+          className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          {error.kind === "forbidden" ? (
+            <>
+              <strong>super_admin role required.</strong> Your account is plain{" "}
+              <code>admin</code>; only <code>super_admin</code> can trigger
+              scheduler jobs. Ask an owner to promote you or run this from a
+              super_admin session.
+            </>
+          ) : (
+            <>Run failed: {error.message}</>
+          )}
+        </div>
+      )}
+
+      <RunsTable jobs={schedule.recentRuns} onRowClick={onRowClick} />
+    </section>
+  );
+}
+
+function RunsTable({
   jobs,
   onRowClick,
 }: {
-  isLoading: boolean;
-  error: unknown;
-  jobs: SchedulerJob[] | undefined;
+  jobs: SchedulerJob[];
   onRowClick: (job: SchedulerJob) => void;
 }) {
-  if (isLoading) {
-    return (
-      <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
-        Loading runs…
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="rounded border border-dashed border-red-300 bg-red-50 px-3 py-6 text-center text-sm text-red-700">
-        Failed to load runs: {formatError(error)}
-      </div>
-    );
-  }
-  if (!jobs || jobs.length === 0) {
+  if (jobs.length === 0) {
     return (
       <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
         No runs yet.
