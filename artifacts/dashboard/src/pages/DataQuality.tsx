@@ -2,14 +2,17 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetNavLeakedNamesQueryKey,
+  getGetNumericOnlyNamesQueryKey,
   useGaPremierOrphanCleanup,
   useGetEmptyStaffPages,
   useGetNavLeakedNames,
+  useGetNumericOnlyNames,
   useGetStaleScrapes,
   useResolveRosterQualityFlag,
   type EmptyStaffPagesResponse,
   type GaPremierOrphanCleanupResponse,
   type NavLeakedNamesResponse,
+  type NumericOnlyNamesResponse,
   type StaleScrapesResponse,
 } from "@workspace/api-client-react";
 import {
@@ -41,7 +44,7 @@ import AdminNav from "../components/AdminNav";
 /**
  * Data-quality admin page.
  *
- * Four panels surfaced as tabs:
+ * Five panels surfaced as tabs:
  *
  *   1. GA Premier orphans — POST /api/v1/admin/data-quality/ga-premier-orphans
  *   2. Empty staff pages — GET /api/v1/admin/data-quality/empty-staff-pages
@@ -51,16 +54,15 @@ import AdminNav from "../components/AdminNav";
  *      scrape_health rows whose last_scraped_at is older than
  *      `threshold_days` days or never scraped. Default 14.
  *   4. Nav-leaked names — GET /api/v1/admin/data-quality/nav-leaked-names
- *      Roster snapshots flagged by Phase 2 heuristics as containing
- *      navigation-menu strings rather than real player names. Phase 1
- *      read-only panel — resolve-flag UI ships in Phase 3+. Empty until
- *      the scraper detector ships.
+ *      Roster snapshots flagged as containing navigation-menu strings
+ *      rather than real player names.
+ *   5. Numeric-only names — GET /api/v1/admin/data-quality/numeric-only-names
+ *      Roster snapshots flagged as containing jersey numbers or dates in
+ *      the player_name column instead of actual names.
  *
- * All four panels drive off Orval-generated React Query hooks
- * (`useGaPremierOrphanCleanup`, `useGetEmptyStaffPages`, `useGetStaleScrapes`,
- * `useGetNavLeakedNames`). Radix Tabs unmount inactive TabsContent by
- * default, so the read-only panels don't fire until the operator clicks
- * their tab.
+ * All five panels drive off Orval-generated React Query hooks. Radix Tabs
+ * unmount inactive TabsContent by default, so the read-only panels don't
+ * fire until the operator clicks their tab.
  */
 
 const MAX_LIMIT = 10_000;
@@ -88,6 +90,7 @@ export default function DataQualityPage() {
           <TabsTrigger value="empty-staff">Empty staff pages</TabsTrigger>
           <TabsTrigger value="stale-scrapes">Stale scrapes</TabsTrigger>
           <TabsTrigger value="nav-leaked">Nav-leaked names</TabsTrigger>
+          <TabsTrigger value="numeric-only">Numeric-only names</TabsTrigger>
         </TabsList>
 
         <TabsContent value="ga-premier">
@@ -101,6 +104,9 @@ export default function DataQualityPage() {
         </TabsContent>
         <TabsContent value="nav-leaked">
           <NavLeakedNamesPanel />
+        </TabsContent>
+        <TabsContent value="numeric-only">
+          <NumericOnlyNamesPanel />
         </TabsContent>
       </Tabs>
     </main>
@@ -868,6 +874,251 @@ function ResolvedBadge({
         <span className="ml-1 text-neutral-400">by {resolvedByEmail}</span>
       )}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Numeric-only names
+// ---------------------------------------------------------------------------
+
+type NumericOnlyState = "open" | "resolved" | "dismissed";
+
+function NumericOnlyNamesPanel() {
+  const [state, setState] = useState<NumericOnlyState>("open");
+  const [appliedState, setAppliedState] = useState<NumericOnlyState>("open");
+  const [page, setPage] = useState(1);
+
+  const query = useGetNumericOnlyNames({
+    page,
+    page_size: PANEL_DEFAULT_PAGE_SIZE,
+    state: appliedState,
+  });
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPage(1);
+    setAppliedState(state);
+  }
+
+  return (
+    <section aria-labelledby="numeric-only-heading">
+      <p className="mb-4 text-sm text-neutral-500">
+        Roster snapshots flagged as containing bare numbers (e.g.{" "}
+        <code>"14"</code>, <code>"2024-05-15"</code>) instead of real player
+        names — usually a scraper grabbing jersey numbers or dates. Use{" "}
+        <strong>Confirm</strong> when you've fixed the extractor; use{" "}
+        <strong>Dismiss</strong> for false positives.
+      </p>
+
+      <form
+        onSubmit={onSubmit}
+        className="mb-6 flex flex-wrap items-end gap-4 rounded-lg border border-neutral-200 bg-white p-4"
+      >
+        <fieldset
+          className="flex items-center gap-4 text-sm text-neutral-800"
+          aria-label="State filter"
+        >
+          <legend className="sr-only">State filter</legend>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="numeric-only-state"
+              value="open"
+              checked={state === "open"}
+              onChange={() => setState("open")}
+              className="h-4 w-4"
+            />
+            Open
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="numeric-only-state"
+              value="resolved"
+              checked={state === "resolved"}
+              onChange={() => setState("resolved")}
+              className="h-4 w-4"
+            />
+            Resolved
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="numeric-only-state"
+              value="dismissed"
+              checked={state === "dismissed"}
+              onChange={() => setState("dismissed")}
+              className="h-4 w-4"
+            />
+            Dismissed
+          </label>
+        </fieldset>
+        <button
+          type="submit"
+          disabled={query.isFetching}
+          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
+        >
+          {query.isFetching ? "Loading…" : "Refresh"}
+        </button>
+      </form>
+
+      {query.isError && (
+        <div
+          role="alert"
+          className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          Failed: {formatError(query.error)}
+        </div>
+      )}
+
+      {query.isLoading && <TablePlaceholder label="Loading…" />}
+
+      {query.isSuccess && query.data.rows.length === 0 && (
+        <TablePlaceholder label="No flagged snapshots." />
+      )}
+
+      {query.isSuccess && query.data.rows.length > 0 && (
+        <NumericOnlyNamesTable data={query.data} onPage={(p) => setPage(p)} />
+      )}
+    </section>
+  );
+}
+
+function NumericOnlyNamesTable({
+  data,
+  onPage,
+}: {
+  data: NumericOnlyNamesResponse;
+  onPage: (p: number) => void;
+}) {
+  const queryClient = useQueryClient();
+  const resolve = useResolveRosterQualityFlag({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getGetNumericOnlyNamesQueryKey().slice(0, 1),
+        });
+      },
+    },
+  });
+
+  return (
+    <>
+      <p className="mb-2 text-sm text-neutral-500">
+        {data.total.toLocaleString()} flagged snapshots
+      </p>
+      <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Club</TableHead>
+              <TableHead>Numeric strings</TableHead>
+              <TableHead>Roster size</TableHead>
+              <TableHead>Flagged at</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.rows.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell className="font-medium">
+                  {row.clubNameCanonical ?? (
+                    <span className="text-neutral-400">
+                      (unlinked snapshot #{row.snapshotId})
+                    </span>
+                  )}
+                  {row.clubId !== null && (
+                    <span className="ml-2 text-xs text-neutral-400">
+                      #{row.clubId}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {row.numericStrings.length === 0 ? (
+                    <span className="text-neutral-400">—</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {row.numericStrings.map((s, i) => (
+                        <span
+                          key={`${i}-${s}`}
+                          className="rounded bg-neutral-100 px-2 py-0.5 font-mono text-xs text-neutral-800"
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell>{row.snapshotRosterSize}</TableCell>
+                <TableCell>{formatDate(row.flaggedAt)}</TableCell>
+                <TableCell>
+                  <ResolvedBadge
+                    resolvedAt={row.resolvedAt}
+                    resolvedByEmail={row.resolvedByEmail}
+                    resolutionReason={row.resolutionReason}
+                  />
+                </TableCell>
+                <TableCell>
+                  {row.resolvedAt === null ? (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          resolve.mutate({
+                            id: row.id,
+                            data: { reason: "resolved" },
+                          })
+                        }
+                        disabled={
+                          resolve.isPending && resolve.variables?.id === row.id
+                        }
+                        className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Confirm flag ${row.id}`}
+                      >
+                        {resolve.isPending &&
+                        resolve.variables?.id === row.id &&
+                        resolve.variables?.data?.reason === "resolved"
+                          ? "Confirming…"
+                          : "Confirm"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          resolve.mutate({
+                            id: row.id,
+                            data: { reason: "dismissed" },
+                          })
+                        }
+                        disabled={
+                          resolve.isPending && resolve.variables?.id === row.id
+                        }
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs font-medium text-neutral-800 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Dismiss flag ${row.id}`}
+                      >
+                        {resolve.isPending &&
+                        resolve.variables?.id === row.id &&
+                        resolve.variables?.data?.reason === "dismissed"
+                          ? "Dismissing…"
+                          : "Dismiss"}
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-neutral-400">—</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <Pager
+        page={data.page}
+        pageSize={data.pageSize}
+        total={data.total}
+        onPage={onPage}
+      />
+    </>
   );
 }
 

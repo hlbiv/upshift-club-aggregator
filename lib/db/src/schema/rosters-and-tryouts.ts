@@ -158,8 +158,9 @@ export const tryoutsRelations = relations(tryouts, ({ one }) => ({
  * Per-snapshot data-quality flag for `club_roster_snapshots`.
  *
  * The table, read API, dashboard panel, and Resolve mutation are all shipped.
- * The Phase 2 detector at `scraper/nav_leaked_names_detector.py` populates
- * the `nav_leaked_name` flag type nightly.
+ * Detectors that populate this table live under `scraper/`:
+ *   - `scraper/nav_leaked_names_detector.py` → `nav_leaked_name`
+ *   - `scraper/numeric_only_name_detector.py` → `numeric_only_name`
  *
  * flag_type is a text column with a CHECK constraint (not a pgEnum), matching
  * the repo convention for extensible enum-like columns (see
@@ -168,7 +169,8 @@ export const tryoutsRelations = relations(tryouts, ({ one }) => ({
  * ALTER TYPE / pg_catalog dance.
  *
  * roster_quality_flags.metadata shape by flag_type:
- *   nav_leaked_name: { leaked_strings: string[], snapshot_roster_size: number }
+ *   nav_leaked_name:    { leaked_strings: string[], snapshot_roster_size: number }
+ *   numeric_only_name:  { numeric_strings: string[], snapshot_roster_size: number }
  *   <future flag_types>: <future shapes>
  *
  * Snapshot-supersession semantics: when a later snapshot replaces an earlier
@@ -227,7 +229,7 @@ export const rosterQualityFlags = pgTable(
   (t) => [
     check(
       "roster_quality_flags_flag_type_enum",
-      sql`${t.flagType} IN ('nav_leaked_name')`,
+      sql`${t.flagType} IN ('nav_leaked_name', 'numeric_only_name')`,
     ),
     // Two-field invariant: resolution_reason must be NULL iff resolved_at
     // is NULL; otherwise it must be one of the two allowed values. This

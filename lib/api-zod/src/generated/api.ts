@@ -1053,6 +1053,58 @@ export const GetNavLeakedNamesResponse = zod.object({
 });
 
 /**
+ * Paginated list of `roster_quality_flags` rows with `flag_type = 'numeric_only_name'`, joined to the parent `club_roster_snapshots` and the snapshot's `canonical_clubs` resolution (if any — `club_id` is NULL until the canonical-club linker runs). `numericStrings` and `snapshotRosterSize` are extracted from the flag row's jsonb `metadata` into typed response fields; callers never see the raw jsonb. `resolvedByEmail` is joined from `admin_users.email` if the flag has been resolved.
+Flagged snapshot-groups are ones where `player_name` consists entirely of digits, separators (`/`, `-`, `.`), and whitespace — common scraper bug where the jersey-number column is misparsed as the name column, or a date cell ends up where a name should be.
+
+ * @summary Roster snapshots flagged as having numeric-only player names
+ */
+export const getNumericOnlyNamesQueryPageDefault = 1;
+
+export const getNumericOnlyNamesQueryPageSizeDefault = 20;
+export const getNumericOnlyNamesQueryPageSizeMax = 100;
+
+export const getNumericOnlyNamesQueryStateDefault = `open`;
+
+export const GetNumericOnlyNamesQueryParams = zod.object({
+  page: zod.coerce.number().min(1).default(getNumericOnlyNamesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .min(1)
+    .max(getNumericOnlyNamesQueryPageSizeMax)
+    .default(getNumericOnlyNamesQueryPageSizeDefault),
+  state: zod
+    .enum(["open", "resolved", "dismissed", "all"])
+    .default(getNumericOnlyNamesQueryStateDefault)
+    .describe(
+      "Which flags to return. Semantics identical to the nav-leaked-names endpoint — `open` surfaces unresolved flags only (default), `resolved` \/ `dismissed` surface closed flags by resolution reason, `all` drops the filter.\n",
+    ),
+});
+
+export const GetNumericOnlyNamesResponse = zod.object({
+  rows: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        snapshotId: zod.number(),
+        clubId: zod.number().nullable(),
+        clubNameCanonical: zod.string().nullable(),
+        numericStrings: zod.array(zod.string()),
+        snapshotRosterSize: zod.number(),
+        flaggedAt: zod.coerce.date(),
+        resolvedAt: zod.coerce.date().nullable(),
+        resolvedByEmail: zod.string().nullable(),
+        resolutionReason: zod.enum(["resolved", "dismissed"]).nullable(),
+      })
+      .describe(
+        "One `roster_quality_flags` row of type `numeric_only_name` joined to its `club_roster_snapshots` parent (and the snapshot's `canonical_clubs` resolution if the linker has run). `numericStrings` and `snapshotRosterSize` are extracted from the jsonb `metadata` payload into typed columns at the API boundary — callers do not see raw jsonb. `clubId` \/ `clubNameCanonical` are nullable because the canonical-club linker may not have run yet. `resolvedByEmail` is joined from `admin_users` when the flag has been resolved. `resolutionReason` is `'resolved'`, `'dismissed'`, or null while the flag is still open.\n",
+      ),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
  * Stamps `resolved_at = NOW()`, `resolved_by = <admin user id>`, and `resolution_reason = <reason>` on the row. The underlying `club_roster_snapshots` row is NOT mutated.
 The `reason` field splits the triage action into two operator intents:
   * `resolved` — the flag was legitimate; the operator has cleaned

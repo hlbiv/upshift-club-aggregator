@@ -100,6 +100,8 @@ import {
   StaleScrapesResponse,
   NavLeakedNamesRequest,
   NavLeakedNamesResponse,
+  NumericOnlyNamesRequest,
+  NumericOnlyNamesResponse,
   ResolveRosterQualityFlagRequest,
   CoachQualityFlagsRequest,
   CoachQualityFlagsResponse,
@@ -234,6 +236,10 @@ export function makeDataQualityRouter(deps: DataQualityDeps): IRouter {
   router.get(
     "/nav-leaked-names",
     makeNavLeakedNamesHandler(prodNavLeakedNamesDeps),
+  );
+  router.get(
+    "/numeric-only-names",
+    makeNumericOnlyNamesHandler(prodNumericOnlyNamesDeps),
   );
   router.patch(
     "/roster-quality-flags/:id/resolve",
@@ -443,6 +449,208 @@ export const prodNavLeakedNamesDeps: NavLeakedNamesDeps = {
 
     const total = Number(list[0]?.total ?? 0);
     const rows: NavLeakedNamesRawRow[] = list.map((r) => ({
+      id: r.id,
+      snapshotId: r.snapshot_id,
+      clubId: r.club_id,
+      clubNameCanonical: r.club_name_canonical,
+      metadata: r.metadata,
+      flaggedAt: r.flagged_at,
+      resolvedAt: r.resolved_at,
+      resolvedByEmail: r.resolved_by_email,
+      resolutionReason: r.resolution_reason,
+    }));
+
+    return { rows, total };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Numeric-only-names — DI surface + handler factory + prod wiring.
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw row shape returned by the DB layer for the numeric-only-names panel.
+ * Same shape as NavLeakedNamesRawRow; the handler extracts
+ * `numeric_strings` + `snapshot_roster_size` out of the metadata jsonb at
+ * the API boundary.
+ */
+export interface NumericOnlyNamesRawRow {
+  id: number;
+  snapshotId: number;
+  clubId: number | null;
+  clubNameCanonical: string | null;
+  metadata: unknown;
+  flaggedAt: Date | string;
+  resolvedAt: Date | string | null;
+  resolvedByEmail: string | null;
+  resolutionReason: "resolved" | "dismissed" | null;
+}
+
+export type NumericOnlyNamesState =
+  | "open"
+  | "resolved"
+  | "dismissed"
+  | "all";
+
+export interface NumericOnlyNamesDeps {
+  listNumericOnlyNames: (args: {
+    page: number;
+    pageSize: number;
+    state: NumericOnlyNamesState;
+  }) => Promise<{ rows: NumericOnlyNamesRawRow[]; total: number }>;
+}
+
+/**
+ * Extract `numeric_strings` + `snapshot_roster_size` from a
+ * `roster_quality_flags.metadata` jsonb payload for `flag_type =
+ * 'numeric_only_name'`. Tolerant of missing / malformed fields — defaults
+ * to [] / 0 rather than throwing.
+ */
+function extractNumericOnlyMetadata(raw: unknown): {
+  numericStrings: string[];
+  snapshotRosterSize: number;
+} {
+  if (raw === null || typeof raw !== "object") {
+    return { numericStrings: [], snapshotRosterSize: 0 };
+  }
+  const m = raw as Record<string, unknown>;
+  const numericStrings = Array.isArray(m.numeric_strings)
+    ? m.numeric_strings.filter((x): x is string => typeof x === "string")
+    : [];
+  const sizeRaw = m.snapshot_roster_size;
+  const snapshotRosterSize =
+    typeof sizeRaw === "number" && Number.isFinite(sizeRaw)
+      ? Math.trunc(sizeRaw)
+      : 0;
+  return { numericStrings, snapshotRosterSize };
+}
+
+export function makeNumericOnlyNamesHandler(
+  deps: NumericOnlyNamesDeps,
+): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const parsed = NumericOnlyNamesRequest.safeParse({
+        page: toNumberOrUndefined(req.query.page),
+        pageSize:
+          toNumberOrUndefined(req.query.page_size) ??
+          toNumberOrUndefined(req.query.pageSize) ??
+          toNumberOrUndefined(req.query.limit),
+        state: toStringOrUndefined(req.query.state),
+      });
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid query params" });
+        return;
+      }
+      const { page, pageSize, state } = parsed.data;
+
+      const { rows, total } = await deps.listNumericOnlyNames({
+        page,
+        pageSize,
+        state,
+      });
+
+      const mapped = rows.map((r) => {
+        const { numericStrings, snapshotRosterSize } =
+          extractNumericOnlyMetadata(r.metadata);
+        return {
+          id: r.id,
+          snapshotId: r.snapshotId,
+          clubId: r.clubId,
+          clubNameCanonical: r.clubNameCanonical,
+          numericStrings,
+          snapshotRosterSize,
+          flaggedAt: toIsoRequired(r.flaggedAt),
+          resolvedAt: toIsoOrNull(r.resolvedAt),
+          resolvedByEmail: r.resolvedByEmail,
+          resolutionReason: r.resolutionReason,
+        };
+      });
+
+      res.json(
+        NumericOnlyNamesResponse.parse({
+          rows: mapped,
+          total,
+          page,
+          pageSize,
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+/**
+ * Production DB-backed dep for the numeric-only-names panel. Query is the
+ * nav-leaked variant with the flag_type predicate swapped — same COUNT(*)
+ * OVER () + ORDER BY + join topology.
+ */
+export const prodNumericOnlyNamesDeps: NumericOnlyNamesDeps = {
+  listNumericOnlyNames: async ({ page, pageSize, state }) => {
+    const offset = (page - 1) * pageSize;
+    const statePredicate =
+      state === "open"
+        ? sql`rqf.resolved_at IS NULL`
+        : state === "resolved"
+          ? sql`rqf.resolved_at IS NOT NULL AND rqf.resolution_reason = 'resolved'`
+          : state === "dismissed"
+            ? sql`rqf.resolved_at IS NOT NULL AND rqf.resolution_reason = 'dismissed'`
+            : sql`TRUE`;
+
+    const result = await defaultDb.execute<{
+      id: number;
+      snapshot_id: number;
+      club_id: number | null;
+      club_name_canonical: string | null;
+      metadata: unknown;
+      flagged_at: Date | string;
+      resolved_at: Date | string | null;
+      resolved_by_email: string | null;
+      resolution_reason: "resolved" | "dismissed" | null;
+      total: string;
+    }>(sql`
+      SELECT
+        rqf.id,
+        rqf.snapshot_id,
+        crs.club_id,
+        cc.club_name_canonical,
+        rqf.metadata,
+        rqf.created_at AS flagged_at,
+        rqf.resolved_at,
+        au.email AS resolved_by_email,
+        rqf.resolution_reason,
+        COUNT(*) OVER () AS total
+      FROM ${rosterQualityFlags} rqf
+      JOIN ${clubRosterSnapshots} crs ON crs.id = rqf.snapshot_id
+      LEFT JOIN ${canonicalClubs} cc ON cc.id = crs.club_id
+      LEFT JOIN ${adminUsers} au ON au.id = rqf.resolved_by
+      WHERE rqf.flag_type = 'numeric_only_name'
+        AND (${statePredicate})
+      ORDER BY
+        (rqf.resolved_at IS NOT NULL) ASC,
+        rqf.created_at ASC,
+        rqf.id ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `);
+
+    const list = Array.from(
+      result as unknown as Array<{
+        id: number;
+        snapshot_id: number;
+        club_id: number | null;
+        club_name_canonical: string | null;
+        metadata: unknown;
+        flagged_at: Date | string;
+        resolved_at: Date | string | null;
+        resolved_by_email: string | null;
+        resolution_reason: "resolved" | "dismissed" | null;
+        total: string;
+      }>,
+    );
+
+    const total = Number(list[0]?.total ?? 0);
+    const rows: NumericOnlyNamesRawRow[] = list.map((r) => ({
       id: r.id,
       snapshotId: r.snapshot_id,
       clubId: r.club_id,

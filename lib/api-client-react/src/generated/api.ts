@@ -51,6 +51,7 @@ import type {
   GetGrowthCoverageTrendParams,
   GetGrowthScrapedCountsParams,
   GetNavLeakedNamesParams,
+  GetNumericOnlyNamesParams,
   GetStaleScrapesParams,
   HealthStatus,
   LeagueClubsResponse,
@@ -62,6 +63,7 @@ import type {
   ListScraperScheduleRunsParams,
   ListScraperSchedulesParams,
   NavLeakedNamesResponse,
+  NumericOnlyNamesResponse,
   OverlapResponse,
   ResolveRosterQualityFlagRequest,
   RunNowRequest,
@@ -2749,6 +2751,115 @@ export function useGetNavLeakedNames<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetNavLeakedNamesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Paginated list of `roster_quality_flags` rows with `flag_type = 'numeric_only_name'`, joined to the parent `club_roster_snapshots` and the snapshot's `canonical_clubs` resolution (if any — `club_id` is NULL until the canonical-club linker runs). `numericStrings` and `snapshotRosterSize` are extracted from the flag row's jsonb `metadata` into typed response fields; callers never see the raw jsonb. `resolvedByEmail` is joined from `admin_users.email` if the flag has been resolved.
+Flagged snapshot-groups are ones where `player_name` consists entirely of digits, separators (`/`, `-`, `.`), and whitespace — common scraper bug where the jersey-number column is misparsed as the name column, or a date cell ends up where a name should be.
+
+ * @summary Roster snapshots flagged as having numeric-only player names
+ */
+export const getGetNumericOnlyNamesUrl = (
+  params?: GetNumericOnlyNamesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/numeric-only-names?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/numeric-only-names`;
+};
+
+export const getNumericOnlyNames = async (
+  params?: GetNumericOnlyNamesParams,
+  options?: RequestInit,
+): Promise<NumericOnlyNamesResponse> => {
+  return customFetch<NumericOnlyNamesResponse>(
+    getGetNumericOnlyNamesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetNumericOnlyNamesQueryKey = (
+  params?: GetNumericOnlyNamesParams,
+) => {
+  return [
+    `/api/v1/admin/data-quality/numeric-only-names`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetNumericOnlyNamesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNumericOnlyNames>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetNumericOnlyNamesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getNumericOnlyNames>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetNumericOnlyNamesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getNumericOnlyNames>>
+  > = ({ signal }) =>
+    getNumericOnlyNames(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getNumericOnlyNames>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetNumericOnlyNamesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getNumericOnlyNames>>
+>;
+export type GetNumericOnlyNamesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Roster snapshots flagged as having numeric-only player names
+ */
+
+export function useGetNumericOnlyNames<
+  TData = Awaited<ReturnType<typeof getNumericOnlyNames>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetNumericOnlyNamesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getNumericOnlyNames>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetNumericOnlyNamesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

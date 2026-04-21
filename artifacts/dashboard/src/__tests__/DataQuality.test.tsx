@@ -843,3 +843,182 @@ describe("DataQualityPage — Stale scrapes tab", () => {
     });
   });
 });
+
+describe("DataQualityPage — Numeric-only names tab", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("loads and renders rows with default state=open", async () => {
+    const fetchMock = makeFetchMock({
+      "numeric-only-names": () =>
+        jsonResponse({
+          rows: [
+            {
+              id: 1,
+              snapshotId: 1001,
+              clubId: 42,
+              clubNameCanonical: "Numeric FC",
+              numericStrings: ["14", "2024-05-15"],
+              snapshotRosterSize: 18,
+              flaggedAt: "2026-04-15T12:00:00Z",
+              resolvedAt: null,
+              resolvedByEmail: null,
+              resolutionReason: null,
+            },
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        }),
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /numeric-only names/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Numeric FC")).toBeInTheDocument();
+    });
+
+    // Numeric chips render.
+    expect(screen.getByText("14")).toBeInTheDocument();
+    expect(screen.getByText("2024-05-15")).toBeInTheDocument();
+
+    // Active badge on the unresolved row.
+    expect(screen.getByText("Active")).toBeInTheDocument();
+
+    // Request used the default state=open.
+    const call = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("numeric-only-names"),
+    );
+    expect(call).toBeDefined();
+    expect(String(call?.[0])).toContain("state=open");
+    expect(String(call?.[0])).toContain("page=1");
+    expect(String(call?.[0])).toContain("page_size=20");
+  });
+
+  it("renders empty state when rows is empty", async () => {
+    const fetchMock = makeFetchMock({
+      "numeric-only-names": () =>
+        jsonResponse({ rows: [], total: 0, page: 1, pageSize: 20 }),
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /numeric-only names/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/no flagged snapshots/i)).toBeInTheDocument();
+    });
+  });
+
+  it("clicking Confirm fires PATCH with reason=resolved and refreshes the list", async () => {
+    let listCalls = 0;
+    let patchCalls = 0;
+    let lastPatchedUrl = "";
+    let lastPatchedBody = "";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/roster-quality-flags/") && url.endsWith("/resolve")) {
+        patchCalls += 1;
+        lastPatchedUrl = url;
+        lastPatchedBody = typeof init?.body === "string" ? init.body : "";
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("numeric-only-names")) {
+        listCalls += 1;
+        const showResolved = listCalls > 1;
+        return jsonResponse({
+          rows: showResolved
+            ? []
+            : [
+                {
+                  id: 77,
+                  snapshotId: 7700,
+                  clubId: 11,
+                  clubNameCanonical: "Resolve Me FC",
+                  numericStrings: ["7"],
+                  snapshotRosterSize: 18,
+                  flaggedAt: "2026-04-12T10:00:00Z",
+                  resolvedAt: null,
+                  resolvedByEmail: null,
+                  resolutionReason: null,
+                },
+              ],
+          total: showResolved ? 0 : 1,
+          page: 1,
+          pageSize: 20,
+        });
+      }
+      return new Response("not mocked", { status: 404 });
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock as unknown as typeof fetch,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /numeric-only names/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Resolve Me FC")).toBeInTheDocument();
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: /confirm flag 77/i }),
+    );
+
+    await waitFor(() => {
+      expect(patchCalls).toBe(1);
+    });
+    expect(lastPatchedUrl).toContain("/roster-quality-flags/77/resolve");
+    expect(JSON.parse(lastPatchedBody)).toEqual({ reason: "resolved" });
+
+    await waitFor(() => {
+      expect(screen.getByText(/no flagged snapshots/i)).toBeInTheDocument();
+    });
+  });
+
+  it("renders error banner on HTTP 500", async () => {
+    const fetchMock = makeFetchMock({
+      "numeric-only-names": () =>
+        new Response(JSON.stringify({ error: "boom" }), { status: 500 }),
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /numeric-only names/i }),
+    );
+
+    await waitFor(() => {
+      const alert = screen.getByRole("alert");
+      expect(within(alert).getByText(/500/)).toBeInTheDocument();
+    });
+  });
+});

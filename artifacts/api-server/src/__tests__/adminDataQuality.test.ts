@@ -15,6 +15,7 @@ import {
   makeCoachQualityFlagsHandler,
   makeGaPremierOrphanHandler,
   makeNavLeakedNamesHandler,
+  makeNumericOnlyNamesHandler,
   makeResolveCoachQualityFlagHandler,
   makeResolveRosterQualityFlagHandler,
   type CoachQualityFlagRawRow,
@@ -22,6 +23,8 @@ import {
   type DataQualityDeps,
   type NavLeakedNamesDeps,
   type NavLeakedNamesRawRow,
+  type NumericOnlyNamesDeps,
+  type NumericOnlyNamesRawRow,
   type ResolveCoachQualityFlagDeps,
   type ResolveRosterQualityFlagDeps,
 } from "../routes/admin/data-quality";
@@ -699,6 +702,222 @@ async function run() {
       res.statusCode === 400,
       "nav-leaked-validation",
       `expected 400 for page_size > 100, got ${res.statusCode}`,
+    );
+  }
+
+  // -----------------------------------------------------------------------
+  // Numeric-only-names — parallel of the nav-leaked scenarios above, proving
+  // the Phase 2 generalization (schema CHECK list, metadata extractor,
+  // handler factory, prod wiring) accepts a second flag_type without
+  // structural change. Same jsonb shredding + pagination + state filter.
+  // -----------------------------------------------------------------------
+
+  // --- Numeric-only: metadata-to-typed-field extraction -------------------
+  {
+    const calls: Array<{
+      page: number;
+      pageSize: number;
+      state: string;
+    }> = [];
+    const fakeRows: NumericOnlyNamesRawRow[] = [
+      {
+        id: 100,
+        snapshotId: 900,
+        clubId: 7,
+        clubNameCanonical: "Numeric FC",
+        metadata: {
+          numeric_strings: ["14", "2024-05-15", "5/15"],
+          snapshot_roster_size: 18,
+        },
+        flaggedAt: new Date("2026-04-15T12:00:00Z"),
+        resolvedAt: null,
+        resolvedByEmail: null,
+        resolutionReason: null,
+      },
+      {
+        id: 101,
+        snapshotId: 901,
+        clubId: null,
+        clubNameCanonical: null,
+        metadata: {
+          numeric_strings: ["7"],
+          snapshot_roster_size: 1,
+        },
+        flaggedAt: "2026-04-16T09:00:00.000Z",
+        resolvedAt: "2026-04-17T10:00:00.000Z",
+        resolvedByEmail: "ops@upshift.test",
+        resolutionReason: "resolved",
+      },
+    ];
+    const deps: NumericOnlyNamesDeps = {
+      listNumericOnlyNames: async (args) => {
+        calls.push(args);
+        return { rows: fakeRows, total: 2 };
+      },
+    };
+    const handler = makeNumericOnlyNamesHandler(deps);
+    const req = makeReq({
+      query: { page: "1", page_size: "20", state: "all" },
+    });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "numeric-only",
+      `expected 200, got ${res.statusCode}`,
+    );
+    assert(
+      calls.length === 1 &&
+        calls[0]?.page === 1 &&
+        calls[0]?.pageSize === 20 &&
+        calls[0]?.state === "all",
+      "numeric-only",
+      `expected single call with page=1 pageSize=20 state=all; got ${JSON.stringify(calls)}`,
+    );
+    const body = res.body as {
+      total?: number;
+      rows?: Array<{
+        id: number;
+        snapshotId: number;
+        clubId: number | null;
+        clubNameCanonical: string | null;
+        numericStrings: string[];
+        snapshotRosterSize: number;
+        flaggedAt: string;
+        resolvedAt: string | null;
+        resolutionReason: "resolved" | "dismissed" | null;
+      }>;
+    };
+    assert(body.total === 2, "numeric-only", `total should be 2, got ${body.total}`);
+    const r0 = body.rows?.[0];
+    assert(
+      Array.isArray(r0?.numericStrings) &&
+        r0?.numericStrings.length === 3 &&
+        r0?.numericStrings[0] === "14" &&
+        r0?.numericStrings[1] === "2024-05-15" &&
+        r0?.numericStrings[2] === "5/15",
+      "numeric-only",
+      `row0 numericStrings should be extracted from metadata.numeric_strings, got ${JSON.stringify(r0?.numericStrings)}`,
+    );
+    assert(
+      r0?.snapshotRosterSize === 18,
+      "numeric-only",
+      `row0 snapshotRosterSize should be 18, got ${r0?.snapshotRosterSize}`,
+    );
+    const r1 = body.rows?.[1];
+    assert(
+      r1?.clubId === null && r1?.clubNameCanonical === null,
+      "numeric-only",
+      `row1 unlinked snapshot nulls should survive`,
+    );
+    assert(
+      r1?.resolutionReason === "resolved",
+      "numeric-only",
+      `row1 resolutionReason should pass through, got ${r1?.resolutionReason}`,
+    );
+  }
+
+  // --- Numeric-only: malformed metadata is tolerated ----------------------
+  {
+    const deps: NumericOnlyNamesDeps = {
+      listNumericOnlyNames: async () => ({
+        rows: [
+          {
+            id: 200,
+            snapshotId: 2000,
+            clubId: 1,
+            clubNameCanonical: "Test FC",
+            metadata: { snapshot_roster_size: "not-a-number" },
+            flaggedAt: new Date("2026-04-13T00:00:00Z"),
+            resolvedAt: null,
+            resolvedByEmail: null,
+            resolutionReason: null,
+          },
+          {
+            id: 201,
+            snapshotId: 2001,
+            clubId: 2,
+            clubNameCanonical: "Other FC",
+            metadata: null,
+            flaggedAt: new Date("2026-04-13T01:00:00Z"),
+            resolvedAt: null,
+            resolvedByEmail: null,
+            resolutionReason: null,
+          },
+        ],
+        total: 2,
+      }),
+    };
+    const handler = makeNumericOnlyNamesHandler(deps);
+    const req = makeReq({ query: {} });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "numeric-only-malformed",
+      `expected 200 even with malformed metadata, got ${res.statusCode}`,
+    );
+    const body = res.body as {
+      rows?: Array<{ numericStrings: string[]; snapshotRosterSize: number }>;
+    };
+    assert(
+      body.rows?.[0]?.numericStrings.length === 0 &&
+        body.rows?.[0]?.snapshotRosterSize === 0,
+      "numeric-only-malformed",
+      `row with bad metadata should default to [] / 0, got ${JSON.stringify(body.rows?.[0])}`,
+    );
+    assert(
+      body.rows?.[1]?.numericStrings.length === 0 &&
+        body.rows?.[1]?.snapshotRosterSize === 0,
+      "numeric-only-malformed",
+      `row with null metadata should default to [] / 0`,
+    );
+  }
+
+  // --- Numeric-only: defaults applied when query is empty -----------------
+  {
+    const calls: Array<{ page: number; pageSize: number; state: string }> = [];
+    const deps: NumericOnlyNamesDeps = {
+      listNumericOnlyNames: async (args) => {
+        calls.push(args);
+        return { rows: [], total: 0 };
+      },
+    };
+    const handler = makeNumericOnlyNamesHandler(deps);
+    const req = makeReq({ query: {} });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "numeric-only-defaults",
+      `expected 200, got ${res.statusCode}`,
+    );
+    assert(
+      calls[0]?.page === 1 &&
+        calls[0]?.pageSize === 20 &&
+        calls[0]?.state === "open",
+      "numeric-only-defaults",
+      `empty query should apply defaults, got ${JSON.stringify(calls[0])}`,
+    );
+  }
+
+  // --- Numeric-only: invalid state → 400 ----------------------------------
+  {
+    const deps: NumericOnlyNamesDeps = {
+      listNumericOnlyNames: async () => ({ rows: [], total: 0 }),
+    };
+    const handler = makeNumericOnlyNamesHandler(deps);
+    const req = makeReq({ query: { state: "bogus" } });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "numeric-only-state-invalid",
+      `expected 400 for state=bogus, got ${res.statusCode}`,
     );
   }
 

@@ -406,6 +406,70 @@ export const CoachQualityFlagsResponse = z.object({
 });
 export type CoachQualityFlagsResponse = z.infer<typeof CoachQualityFlagsResponse>;
 
+// ---------------------------------------------------------------------------
+// numeric_only_name — roster_quality_flags flag_type for scraper bugs where
+// jersey numbers or dates leak into player_name.
+// ---------------------------------------------------------------------------
+
+/**
+ * State filter for GET /v1/admin/data-quality/numeric-only-names — same
+ * open / resolved / dismissed / all semantics as nav-leaked-names. See
+ * NavLeakedNamesState for the rationale.
+ */
+export const NumericOnlyNamesState = z.enum([
+  "open",
+  "resolved",
+  "dismissed",
+  "all",
+]);
+export type NumericOnlyNamesState = z.infer<typeof NumericOnlyNamesState>;
+
+/**
+ * Request for GET /v1/admin/data-quality/numeric-only-names.
+ *
+ * Panel for `roster_quality_flags` rows whose `flag_type =
+ * 'numeric_only_name'`. Surfaces scraper bugs where jersey numbers or
+ * dates leak into the `player_name` column instead of actual names.
+ */
+export const NumericOnlyNamesRequest = z.object({
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(100).default(20),
+  state: NumericOnlyNamesState.default("open"),
+});
+export type NumericOnlyNamesRequest = z.infer<typeof NumericOnlyNamesRequest>;
+
+/**
+ * One row of the numeric-only-names panel — identical shape to
+ * NavLeakedNamesRow, with `numericStrings` in place of `leakedStrings`.
+ *
+ * Typed fields extracted from `roster_quality_flags.metadata` for
+ * `flag_type='numeric_only_name'`:
+ *   metadata.numeric_strings → numericStrings
+ *   metadata.snapshot_roster_size → snapshotRosterSize
+ */
+export const NumericOnlyNamesRow = z.object({
+  id: z.number().int(),
+  snapshotId: z.number().int(),
+  clubId: z.number().int().nullable(),
+  clubNameCanonical: z.string().nullable(),
+  numericStrings: z.array(z.string()),
+  snapshotRosterSize: z.number().int(),
+  flaggedAt: z.string().datetime(),
+  resolvedAt: z.string().datetime().nullable(),
+  resolvedByEmail: z.string().nullable(),
+  resolutionReason: z.enum(["resolved", "dismissed"]).nullable(),
+});
+export type NumericOnlyNamesRow = z.infer<typeof NumericOnlyNamesRow>;
+
+/** Paginated envelope for the numeric-only-names panel. */
+export const NumericOnlyNamesResponse = z.object({
+  rows: z.array(NumericOnlyNamesRow),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export type NumericOnlyNamesResponse = z.infer<typeof NumericOnlyNamesResponse>;
+
 
 /**
  * Growth dashboard — "records added since X" counts across the five

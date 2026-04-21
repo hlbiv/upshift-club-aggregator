@@ -1110,6 +1110,67 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/data-quality/numeric-only-names:
+    get:
+      operationId: getNumericOnlyNames
+      tags: [admin]
+      summary: Roster snapshots flagged as having numeric-only player names
+      description: >
+        Paginated list of `roster_quality_flags` rows with
+        `flag_type = 'numeric_only_name'`, joined to the parent
+        `club_roster_snapshots` and the snapshot's `canonical_clubs`
+        resolution (if any — `club_id` is NULL until the canonical-club
+        linker runs). `numericStrings` and `snapshotRosterSize` are
+        extracted from the flag row's jsonb `metadata` into typed response
+        fields; callers never see the raw jsonb. `resolvedByEmail` is
+        joined from `admin_users.email` if the flag has been resolved.
+
+        Flagged snapshot-groups are ones where `player_name` consists
+        entirely of digits, separators (`/`, `-`, `.`), and whitespace —
+        common scraper bug where the jersey-number column is misparsed as
+        the name column, or a date cell ends up where a name should be.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: state
+          in: query
+          description: >
+            Which flags to return. Semantics identical to the
+            nav-leaked-names endpoint — `open` surfaces unresolved flags
+            only (default), `resolved` / `dismissed` surface closed flags
+            by resolution reason, `all` drops the filter.
+          schema:
+            type: string
+            enum: [open, resolved, dismissed, all]
+            default: open
+      responses:
+        "200":
+          description: Paginated list of numeric-only-name rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NumericOnlyNamesResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/data-quality/roster-quality-flags/{id}/resolve:
     patch:
       operationId: resolveRosterQualityFlag
@@ -2810,6 +2871,81 @@ components:
           type: integer
       required:
         - items
+        - total
+        - page
+        - pageSize
+
+    NumericOnlyNamesRow:
+      type: object
+      description: >
+        One `roster_quality_flags` row of type `numeric_only_name` joined
+        to its `club_roster_snapshots` parent (and the snapshot's
+        `canonical_clubs` resolution if the linker has run).
+        `numericStrings` and `snapshotRosterSize` are extracted from the
+        jsonb `metadata` payload into typed columns at the API boundary —
+        callers do not see raw jsonb. `clubId` / `clubNameCanonical` are
+        nullable because the canonical-club linker may not have run yet.
+        `resolvedByEmail` is joined from `admin_users` when the flag has
+        been resolved. `resolutionReason` is `'resolved'`, `'dismissed'`,
+        or null while the flag is still open.
+      properties:
+        id:
+          type: integer
+        snapshotId:
+          type: integer
+        clubId:
+          type: integer
+          nullable: true
+        clubNameCanonical:
+          type: string
+          nullable: true
+        numericStrings:
+          type: array
+          items:
+            type: string
+        snapshotRosterSize:
+          type: integer
+        flaggedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolvedByEmail:
+          type: string
+          nullable: true
+        resolutionReason:
+          type: string
+          enum: [resolved, dismissed]
+          nullable: true
+      required:
+        - id
+        - snapshotId
+        - clubId
+        - clubNameCanonical
+        - numericStrings
+        - snapshotRosterSize
+        - flaggedAt
+        - resolvedAt
+        - resolvedByEmail
+        - resolutionReason
+
+    NumericOnlyNamesResponse:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/NumericOnlyNamesRow"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - rows
         - total
         - page
         - pageSize
