@@ -157,6 +157,59 @@ class TestParseCardRoster:
 
 
 # ---------------------------------------------------------------------------
+# parse_roster_html — Sidearm Vue-embedded JSON strategy
+# ---------------------------------------------------------------------------
+
+
+class TestParseSidearmVueEmbeddedJson:
+    """Strategy 5: Sidearm classic sites whose roster <li> elements are
+    never rendered server-side, but ship the full player list inline
+    inside a ``new Vue({ data: () => ({ roster: {...} }) })`` block.
+
+    Fixture is a trimmed real capture from gomason.com (George Mason
+    men's soccer) — one of the D1 programs where both the static
+    SIDEARM-card parser AND the Playwright fallback returned 0 players
+    in production before this strategy existed.
+    """
+
+    def test_extracts_at_least_ten_players(self):
+        html = _read("sidearm_vue_embedded_sample.html")
+        players = parse_roster_html(html)
+        assert len(players) >= 10, (
+            f"expected >=10 players from Vue-embedded JSON, got {len(players)}"
+        )
+
+    def test_first_player_fields(self):
+        html = _read("sidearm_vue_embedded_sample.html")
+        players = parse_roster_html(html)
+        by_name = {p.player_name: p for p in players}
+        # John Balkey is the first player in the George Mason roster JSON
+        assert "John Balkey" in by_name
+        balkey = by_name["John Balkey"]
+        assert balkey.jersey_number == "12"
+        assert balkey.position == "M"
+        assert balkey.year == "sophomore"  # "So." normalizes to sophomore
+        assert balkey.hometown == "Leesburg, Va"
+
+    def test_prev_club_falls_back_to_highschool(self):
+        """When ``previous_school`` is blank, the parser uses ``highschool``."""
+        html = _read("sidearm_vue_embedded_sample.html")
+        players = parse_roster_html(html)
+        by_name = {p.player_name: p for p in players}
+        # Balkey has previous_school="" and highschool="Riverside High School"
+        # — the parser should prefer previous_school but fall through when empty.
+        assert by_name["John Balkey"].prev_club == "Riverside High School"
+
+    def test_redshirt_year_normalized(self):
+        """RS-year formats in ``academic_year_short`` map to the base enum."""
+        html = _read("sidearm_vue_embedded_sample.html")
+        players = parse_roster_html(html)
+        by_name = {p.player_name: p for p in players}
+        # Jack Desroches is R-Sr. in the source JSON — should normalize to "senior"
+        assert by_name["Jack Desroches"].year == "senior"
+
+
+# ---------------------------------------------------------------------------
 # normalize_year — exhaustive edge cases
 # ---------------------------------------------------------------------------
 
