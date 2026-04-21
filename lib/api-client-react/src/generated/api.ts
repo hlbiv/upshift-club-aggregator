@@ -17,26 +17,53 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AdminLoginRequest,
+  AdminLoginResponse,
+  AdminLogoutResponse,
   AnalyticsCoverageParams,
   AnalyticsDuplicatesParams,
   AnalyticsOverlapParams,
   ClubDetailResponse,
+  ClubDuplicateDetail,
+  ClubDuplicateList,
+  ClubDuplicateMergeRequest,
+  ClubDuplicateMergeResponse,
+  ClubDuplicateRejectRequest,
+  ClubDuplicateRejectResponse,
   ClubListResponse,
   ClubRelatedResponse,
   ClubSearchResponse,
   ClubStaffResponse,
   CoachSearchResponse,
   CoverageResponse,
+  CoverageTrendResponse,
   DuplicateReviewDecision,
   DuplicateReviewRequest,
   DuplicatesResponse,
   ErrorResponse,
   EventSearchResponse,
+  GaPremierOrphanCleanupRequest,
+  GaPremierOrphanCleanupResponse,
+  GetGrowthCoverageTrendParams,
+  GetGrowthScrapedCountsParams,
   HealthStatus,
   LeagueClubsResponse,
   LeagueListResponse,
+  ListClubDuplicatesParams,
   ListClubsParams,
+  ListScrapeHealthParams,
+  ListScrapeRunsParams,
+  ListScraperScheduleRunsParams,
   OverlapResponse,
+  RunNowRequest,
+  RunNowResponse,
+  SchedulerJob,
+  SchedulerJobList,
+  ScrapeHealthList,
+  ScrapeHealthRow,
+  ScrapeRunLog,
+  ScrapeRunLogList,
+  ScrapedCountsDelta,
   SearchClubsAdvancedParams,
   SearchClubsParams,
   SearchCoachesParams,
@@ -1412,6 +1439,1626 @@ export function useAnalyticsOverlap<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getAnalyticsOverlapQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Authenticate an admin user by email + password. On success, sets the `upshift_admin_sid` cookie (httpOnly, sameSite=lax) and returns the admin identity. The session cookie is the only way to call the rest of the admin surface without an API key.
+
+ * @summary Admin login (session cookie)
+ */
+export const getAdminLoginUrl = () => {
+  return `/api/v1/admin/auth/login`;
+};
+
+export const adminLogin = async (
+  adminLoginRequest: AdminLoginRequest,
+  options?: RequestInit,
+): Promise<AdminLoginResponse> => {
+  return customFetch<AdminLoginResponse>(getAdminLoginUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(adminLoginRequest),
+  });
+};
+
+export const getAdminLoginMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminLogin>>,
+    TError,
+    { data: BodyType<AdminLoginRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminLogin>>,
+  TError,
+  { data: BodyType<AdminLoginRequest> },
+  TContext
+> => {
+  const mutationKey = ["adminLogin"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminLogin>>,
+    { data: BodyType<AdminLoginRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return adminLogin(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminLoginMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminLogin>>
+>;
+export type AdminLoginMutationBody = BodyType<AdminLoginRequest>;
+export type AdminLoginMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Admin login (session cookie)
+ */
+export const useAdminLogin = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminLogin>>,
+    TError,
+    { data: BodyType<AdminLoginRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminLogin>>,
+  TError,
+  { data: BodyType<AdminLoginRequest> },
+  TContext
+> => {
+  return useMutation(getAdminLoginMutationOptions(options));
+};
+
+/**
+ * Delete the server-side session row for the caller's cookie and clear the `upshift_admin_sid` cookie. Idempotent — calling with an already expired / unknown cookie still returns `{ok: true}`.
+
+ * @summary Admin logout (clears session cookie)
+ */
+export const getAdminLogoutUrl = () => {
+  return `/api/v1/admin/auth/logout`;
+};
+
+export const adminLogout = async (
+  options?: RequestInit,
+): Promise<AdminLogoutResponse> => {
+  return customFetch<AdminLogoutResponse>(getAdminLogoutUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getAdminLogoutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminLogout>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminLogout>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["adminLogout"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminLogout>>,
+    void
+  > = () => {
+    return adminLogout(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminLogoutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminLogout>>
+>;
+
+export type AdminLogoutMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Admin logout (clears session cookie)
+ */
+export const useAdminLogout = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminLogout>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminLogout>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getAdminLogoutMutationOptions(options));
+};
+
+/**
+ * Echo the caller's identity (id, email, role). For session callers the fields come straight from `admin_users`; for API-key callers the server synthesizes a service-account identity (`apikey+<name>@…`).
+
+ * @summary Current admin identity
+ */
+export const getAdminMeUrl = () => {
+  return `/api/v1/admin/me`;
+};
+
+export const adminMe = async (
+  options?: RequestInit,
+): Promise<AdminLoginResponse> => {
+  return customFetch<AdminLoginResponse>(getAdminMeUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminMeQueryKey = () => {
+  return [`/api/v1/admin/me`] as const;
+};
+
+export const getAdminMeQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminMe>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof adminMe>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getAdminMeQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof adminMe>>> = ({
+    signal,
+  }) => adminMe({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminMe>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminMeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminMe>>
+>;
+export type AdminMeQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Current admin identity
+ */
+
+export function useAdminMe<
+  TData = Awaited<ReturnType<typeof adminMe>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof adminMe>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminMeQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Read-only view onto `scrape_run_logs`, newest first. `status` accepts the DB enum (`running | ok | partial | failed`) plus legacy aliases (`success` → `ok|partial`, `failure` → `failed`).
+
+ * @summary List scrape-run log entries
+ */
+export const getListScrapeRunsUrl = (params?: ListScrapeRunsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/scrape-runs?${stringifiedParams}`
+    : `/api/v1/admin/scrape-runs`;
+};
+
+export const listScrapeRuns = async (
+  params?: ListScrapeRunsParams,
+  options?: RequestInit,
+): Promise<ScrapeRunLogList> => {
+  return customFetch<ScrapeRunLogList>(getListScrapeRunsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListScrapeRunsQueryKey = (params?: ListScrapeRunsParams) => {
+  return [`/api/v1/admin/scrape-runs`, ...(params ? [params] : [])] as const;
+};
+
+export const getListScrapeRunsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listScrapeRuns>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListScrapeRunsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScrapeRuns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListScrapeRunsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listScrapeRuns>>> = ({
+    signal,
+  }) => listScrapeRuns(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listScrapeRuns>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListScrapeRunsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listScrapeRuns>>
+>;
+export type ListScrapeRunsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List scrape-run log entries
+ */
+
+export function useListScrapeRuns<
+  TData = Awaited<ReturnType<typeof listScrapeRuns>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListScrapeRunsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScrapeRuns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListScrapeRunsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get a single scrape-run row
+ */
+export const getGetScrapeRunUrl = (id: number) => {
+  return `/api/v1/admin/scrape-runs/${id}`;
+};
+
+export const getScrapeRun = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ScrapeRunLog> => {
+  return customFetch<ScrapeRunLog>(getGetScrapeRunUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetScrapeRunQueryKey = (id: number) => {
+  return [`/api/v1/admin/scrape-runs/${id}`] as const;
+};
+
+export const getGetScrapeRunQueryOptions = <
+  TData = Awaited<ReturnType<typeof getScrapeRun>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getScrapeRun>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetScrapeRunQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getScrapeRun>>> = ({
+    signal,
+  }) => getScrapeRun(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getScrapeRun>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetScrapeRunQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getScrapeRun>>
+>;
+export type GetScrapeRunQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get a single scrape-run row
+ */
+
+export function useGetScrapeRun<
+  TData = Awaited<ReturnType<typeof getScrapeRun>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getScrapeRun>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetScrapeRunQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Read-only view onto `scrape_health`. The response envelope is `{rows, total}` — pagination is server-side only via `page` / `page_size`; the contract itself doesn't echo page numbers.
+
+ * @summary Rolling scrape-health rollup per entity
+ */
+export const getListScrapeHealthUrl = (params?: ListScrapeHealthParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/scrape-health?${stringifiedParams}`
+    : `/api/v1/admin/scrape-health`;
+};
+
+export const listScrapeHealth = async (
+  params?: ListScrapeHealthParams,
+  options?: RequestInit,
+): Promise<ScrapeHealthList> => {
+  return customFetch<ScrapeHealthList>(getListScrapeHealthUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListScrapeHealthQueryKey = (
+  params?: ListScrapeHealthParams,
+) => {
+  return [`/api/v1/admin/scrape-health`, ...(params ? [params] : [])] as const;
+};
+
+export const getListScrapeHealthQueryOptions = <
+  TData = Awaited<ReturnType<typeof listScrapeHealth>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListScrapeHealthParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScrapeHealth>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListScrapeHealthQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listScrapeHealth>>
+  > = ({ signal }) => listScrapeHealth(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listScrapeHealth>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListScrapeHealthQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listScrapeHealth>>
+>;
+export type ListScrapeHealthQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Rolling scrape-health rollup per entity
+ */
+
+export function useListScrapeHealth<
+  TData = Awaited<ReturnType<typeof listScrapeHealth>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListScrapeHealthParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScrapeHealth>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListScrapeHealthQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * `scrape_health` is keyed by `(entity_type, entity_id)` — not a surrogate id — so the detail route is 2-segment.
+
+ * @summary Get one scrape-health row by (entity_type, entity_id)
+ */
+export const getGetScrapeHealthUrl = (
+  entityType: "club" | "event" | "league" | "college" | "coach",
+  entityId: number,
+) => {
+  return `/api/v1/admin/scrape-health/${entityType}/${entityId}`;
+};
+
+export const getScrapeHealth = async (
+  entityType: "club" | "event" | "league" | "college" | "coach",
+  entityId: number,
+  options?: RequestInit,
+): Promise<ScrapeHealthRow> => {
+  return customFetch<ScrapeHealthRow>(
+    getGetScrapeHealthUrl(entityType, entityId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetScrapeHealthQueryKey = (
+  entityType: "club" | "event" | "league" | "college" | "coach",
+  entityId: number,
+) => {
+  return [`/api/v1/admin/scrape-health/${entityType}/${entityId}`] as const;
+};
+
+export const getGetScrapeHealthQueryOptions = <
+  TData = Awaited<ReturnType<typeof getScrapeHealth>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  entityType: "club" | "event" | "league" | "college" | "coach",
+  entityId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getScrapeHealth>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetScrapeHealthQueryKey(entityType, entityId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getScrapeHealth>>> = ({
+    signal,
+  }) => getScrapeHealth(entityType, entityId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(entityType && entityId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getScrapeHealth>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetScrapeHealthQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getScrapeHealth>>
+>;
+export type GetScrapeHealthQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get one scrape-health row by (entity_type, entity_id)
+ */
+
+export function useGetScrapeHealth<
+  TData = Awaited<ReturnType<typeof getScrapeHealth>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  entityType: "club" | "event" | "league" | "college" | "coach",
+  entityId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getScrapeHealth>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetScrapeHealthQueryOptions(
+    entityType,
+    entityId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Populated by `scraper/dedup/club_dedup.py --persist`. Default status is `pending`; pass `status=merged|rejected|all` to widen. Rows are sorted by score DESC so the strongest candidates surface first.
+
+ * @summary List club-duplicate pairs in the review queue
+ */
+export const getListClubDuplicatesUrl = (params?: ListClubDuplicatesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/dedup/clubs?${stringifiedParams}`
+    : `/api/v1/admin/dedup/clubs`;
+};
+
+export const listClubDuplicates = async (
+  params?: ListClubDuplicatesParams,
+  options?: RequestInit,
+): Promise<ClubDuplicateList> => {
+  return customFetch<ClubDuplicateList>(getListClubDuplicatesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListClubDuplicatesQueryKey = (
+  params?: ListClubDuplicatesParams,
+) => {
+  return [`/api/v1/admin/dedup/clubs`, ...(params ? [params] : [])] as const;
+};
+
+export const getListClubDuplicatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listClubDuplicates>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListClubDuplicatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listClubDuplicates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListClubDuplicatesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listClubDuplicates>>
+  > = ({ signal }) => listClubDuplicates(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listClubDuplicates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListClubDuplicatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listClubDuplicates>>
+>;
+export type ListClubDuplicatesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List club-duplicate pairs in the review queue
+ */
+
+export function useListClubDuplicates<
+  TData = Awaited<ReturnType<typeof listClubDuplicates>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListClubDuplicatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listClubDuplicates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListClubDuplicatesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Extends the queue row with the live `canonical_clubs` rows on both sides plus affiliation and roster-snapshot counts — everything a reviewer needs on one screen.
+
+ * @summary Club-duplicate detail with live side-by-side context
+ */
+export const getGetClubDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/clubs/${id}`;
+};
+
+export const getClubDuplicate = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ClubDuplicateDetail> => {
+  return customFetch<ClubDuplicateDetail>(getGetClubDuplicateUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetClubDuplicateQueryKey = (id: number) => {
+  return [`/api/v1/admin/dedup/clubs/${id}`] as const;
+};
+
+export const getGetClubDuplicateQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClubDuplicate>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClubDuplicate>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetClubDuplicateQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getClubDuplicate>>
+  > = ({ signal }) => getClubDuplicate(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getClubDuplicate>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetClubDuplicateQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getClubDuplicate>>
+>;
+export type GetClubDuplicateQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Club-duplicate detail with live side-by-side context
+ */
+
+export function useGetClubDuplicate<
+  TData = Awaited<ReturnType<typeof getClubDuplicate>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClubDuplicate>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetClubDuplicateQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Invokes the transactional `mergeClubs` helper. The 18-field helper result is logged server-side; only the 5-field contract projection (`ok`, `winnerId`, `loserAliasesCreated`, `affiliationsReparented`, `rosterSnapshotsReparented`) returns to the caller.
+
+ * @summary Merge a duplicate-club pair (transactional reparent + alias)
+ */
+export const getMergeClubDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/clubs/${id}/merge`;
+};
+
+export const mergeClubDuplicate = async (
+  id: number,
+  clubDuplicateMergeRequest: ClubDuplicateMergeRequest,
+  options?: RequestInit,
+): Promise<ClubDuplicateMergeResponse> => {
+  return customFetch<ClubDuplicateMergeResponse>(getMergeClubDuplicateUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(clubDuplicateMergeRequest),
+  });
+};
+
+export const getMergeClubDuplicateMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeClubDuplicate>>,
+    TError,
+    { id: number; data: BodyType<ClubDuplicateMergeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mergeClubDuplicate>>,
+  TError,
+  { id: number; data: BodyType<ClubDuplicateMergeRequest> },
+  TContext
+> => {
+  const mutationKey = ["mergeClubDuplicate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mergeClubDuplicate>>,
+    { id: number; data: BodyType<ClubDuplicateMergeRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return mergeClubDuplicate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MergeClubDuplicateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mergeClubDuplicate>>
+>;
+export type MergeClubDuplicateMutationBody =
+  BodyType<ClubDuplicateMergeRequest>;
+export type MergeClubDuplicateMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Merge a duplicate-club pair (transactional reparent + alias)
+ */
+export const useMergeClubDuplicate = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeClubDuplicate>>,
+    TError,
+    { id: number; data: BodyType<ClubDuplicateMergeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof mergeClubDuplicate>>,
+  TError,
+  { id: number; data: BodyType<ClubDuplicateMergeRequest> },
+  TContext
+> => {
+  return useMutation(getMergeClubDuplicateMutationOptions(options));
+};
+
+/**
+ * Flips the queue row to `status=rejected` with optional `notes`. No data reparenting; the two clubs remain separate canonical rows.
+
+ * @summary Reject a duplicate-club pair (no merge performed)
+ */
+export const getRejectClubDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/clubs/${id}/reject`;
+};
+
+export const rejectClubDuplicate = async (
+  id: number,
+  clubDuplicateRejectRequest?: ClubDuplicateRejectRequest,
+  options?: RequestInit,
+): Promise<ClubDuplicateRejectResponse> => {
+  return customFetch<ClubDuplicateRejectResponse>(
+    getRejectClubDuplicateUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(clubDuplicateRejectRequest),
+    },
+  );
+};
+
+export const getRejectClubDuplicateMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectClubDuplicate>>,
+    TError,
+    { id: number; data: BodyType<ClubDuplicateRejectRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectClubDuplicate>>,
+  TError,
+  { id: number; data: BodyType<ClubDuplicateRejectRequest> },
+  TContext
+> => {
+  const mutationKey = ["rejectClubDuplicate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectClubDuplicate>>,
+    { id: number; data: BodyType<ClubDuplicateRejectRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return rejectClubDuplicate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectClubDuplicateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectClubDuplicate>>
+>;
+export type RejectClubDuplicateMutationBody =
+  BodyType<ClubDuplicateRejectRequest>;
+export type RejectClubDuplicateMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Reject a duplicate-club pair (no merge performed)
+ */
+export const useRejectClubDuplicate = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectClubDuplicate>>,
+    TError,
+    { id: number; data: BodyType<ClubDuplicateRejectRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectClubDuplicate>>,
+  TError,
+  { id: number; data: BodyType<ClubDuplicateRejectRequest> },
+  TContext
+> => {
+  return useMutation(getRejectClubDuplicateMutationOptions(options));
+};
+
+/**
+ * Identifies `club_roster_snapshots` rows whose `club_name_raw` is a nav-menu token (FACILITIES, STAFF, NEWS, …) rather than a real club name. Default `dryRun=true` returns counts + sample names; pass `dryRun=false` to DELETE up to `limit` matching rows in a transaction.
+
+ * @summary Scan or delete GA Premier nav-token orphans in club_roster_snapshots
+ */
+export const getGaPremierOrphanCleanupUrl = () => {
+  return `/api/v1/admin/data-quality/ga-premier-orphans`;
+};
+
+export const gaPremierOrphanCleanup = async (
+  gaPremierOrphanCleanupRequest: GaPremierOrphanCleanupRequest,
+  options?: RequestInit,
+): Promise<GaPremierOrphanCleanupResponse> => {
+  return customFetch<GaPremierOrphanCleanupResponse>(
+    getGaPremierOrphanCleanupUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(gaPremierOrphanCleanupRequest),
+    },
+  );
+};
+
+export const getGaPremierOrphanCleanupMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof gaPremierOrphanCleanup>>,
+    TError,
+    { data: BodyType<GaPremierOrphanCleanupRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof gaPremierOrphanCleanup>>,
+  TError,
+  { data: BodyType<GaPremierOrphanCleanupRequest> },
+  TContext
+> => {
+  const mutationKey = ["gaPremierOrphanCleanup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof gaPremierOrphanCleanup>>,
+    { data: BodyType<GaPremierOrphanCleanupRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return gaPremierOrphanCleanup(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GaPremierOrphanCleanupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof gaPremierOrphanCleanup>>
+>;
+export type GaPremierOrphanCleanupMutationBody =
+  BodyType<GaPremierOrphanCleanupRequest>;
+export type GaPremierOrphanCleanupMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Scan or delete GA Premier nav-token orphans in club_roster_snapshots
+ */
+export const useGaPremierOrphanCleanup = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof gaPremierOrphanCleanup>>,
+    TError,
+    { data: BodyType<GaPremierOrphanCleanupRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof gaPremierOrphanCleanup>>,
+  TError,
+  { data: BodyType<GaPremierOrphanCleanupRequest> },
+  TContext
+> => {
+  return useMutation(getGaPremierOrphanCleanupMutationOptions(options));
+};
+
+/**
+ * Per-table `count(*) WHERE <timestamp_col> > since`. Timestamp column differs per table — `canonical_clubs.last_scraped_at`, `coaches.first_seen_at`, `events.last_scraped_at`, `club_roster_snapshots.snapshot_date`, `matches.scraped_at`.
+
+ * @summary Records-added-since-X delta across five headline ingest tables
+ */
+export const getGetGrowthScrapedCountsUrl = (
+  params: GetGrowthScrapedCountsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/growth/scraped-counts?${stringifiedParams}`
+    : `/api/v1/admin/growth/scraped-counts`;
+};
+
+export const getGrowthScrapedCounts = async (
+  params: GetGrowthScrapedCountsParams,
+  options?: RequestInit,
+): Promise<ScrapedCountsDelta> => {
+  return customFetch<ScrapedCountsDelta>(getGetGrowthScrapedCountsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGrowthScrapedCountsQueryKey = (
+  params?: GetGrowthScrapedCountsParams,
+) => {
+  return [
+    `/api/v1/admin/growth/scraped-counts`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetGrowthScrapedCountsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGrowthScrapedCounts>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetGrowthScrapedCountsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGrowthScrapedCounts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetGrowthScrapedCountsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGrowthScrapedCounts>>
+  > = ({ signal }) =>
+    getGrowthScrapedCounts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGrowthScrapedCounts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGrowthScrapedCountsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGrowthScrapedCounts>>
+>;
+export type GetGrowthScrapedCountsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Records-added-since-X delta across five headline ingest tables
+ */
+
+export function useGetGrowthScrapedCounts<
+  TData = Awaited<ReturnType<typeof getGrowthScrapedCounts>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetGrowthScrapedCountsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGrowthScrapedCounts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGrowthScrapedCountsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Aggregates `scrape_run_logs` by day for the last `days` days. `successes` counts `status='ok'`; `failures` counts `status IN ('partial','failed')`. `running` rows contribute to `runs` but not to successes/failures.
+
+ * @summary Daily scrape-run telemetry points over a rolling window
+ */
+export const getGetGrowthCoverageTrendUrl = (
+  params?: GetGrowthCoverageTrendParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/growth/coverage-trend?${stringifiedParams}`
+    : `/api/v1/admin/growth/coverage-trend`;
+};
+
+export const getGrowthCoverageTrend = async (
+  params?: GetGrowthCoverageTrendParams,
+  options?: RequestInit,
+): Promise<CoverageTrendResponse> => {
+  return customFetch<CoverageTrendResponse>(
+    getGetGrowthCoverageTrendUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetGrowthCoverageTrendQueryKey = (
+  params?: GetGrowthCoverageTrendParams,
+) => {
+  return [
+    `/api/v1/admin/growth/coverage-trend`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetGrowthCoverageTrendQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGrowthCoverageTrend>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetGrowthCoverageTrendParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGrowthCoverageTrend>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetGrowthCoverageTrendQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGrowthCoverageTrend>>
+  > = ({ signal }) =>
+    getGrowthCoverageTrend(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGrowthCoverageTrend>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGrowthCoverageTrendQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGrowthCoverageTrend>>
+>;
+export type GetGrowthCoverageTrendQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Daily scrape-run telemetry points over a rolling window
+ */
+
+export function useGetGrowthCoverageTrend<
+  TData = Awaited<ReturnType<typeof getGrowthCoverageTrend>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetGrowthCoverageTrendParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGrowthCoverageTrend>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGrowthCoverageTrendQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Newest-first by `requested_at`. Default `limit` 20, max 100.
+
+ * @summary List recent scheduler-job rows for a given jobKey
+ */
+export const getListScraperScheduleRunsUrl = (
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+  params?: ListScraperScheduleRunsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/scraper-schedules/${jobKey}/runs?${stringifiedParams}`
+    : `/api/v1/admin/scraper-schedules/${jobKey}/runs`;
+};
+
+export const listScraperScheduleRuns = async (
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+  params?: ListScraperScheduleRunsParams,
+  options?: RequestInit,
+): Promise<SchedulerJobList> => {
+  return customFetch<SchedulerJobList>(
+    getListScraperScheduleRunsUrl(jobKey, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListScraperScheduleRunsQueryKey = (
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+  params?: ListScraperScheduleRunsParams,
+) => {
+  return [
+    `/api/v1/admin/scraper-schedules/${jobKey}/runs`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListScraperScheduleRunsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listScraperScheduleRuns>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+  params?: ListScraperScheduleRunsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScraperScheduleRuns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListScraperScheduleRunsQueryKey(jobKey, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listScraperScheduleRuns>>
+  > = ({ signal }) =>
+    listScraperScheduleRuns(jobKey, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobKey,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listScraperScheduleRuns>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListScraperScheduleRunsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listScraperScheduleRuns>>
+>;
+export type ListScraperScheduleRunsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List recent scheduler-job rows for a given jobKey
+ */
+
+export function useListScraperScheduleRuns<
+  TData = Awaited<ReturnType<typeof listScraperScheduleRuns>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+  params?: ListScraperScheduleRunsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScraperScheduleRuns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListScraperScheduleRunsQueryOptions(
+    jobKey,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Inserts a `scheduler_jobs` row at `status=pending`; the in-process worker picks it up on its next tick. Guarded by `requireSuperAdmin` (session-only) plus the 30/min mutation rate limiter. Body `args` are forwarded as CLI flags by the worker.
+
+ * @summary Enqueue a one-off run of an allow-listed scheduler jobKey
+ */
+export const getRunScraperScheduleNowUrl = (
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+) => {
+  return `/api/v1/admin/scraper-schedules/${jobKey}/run`;
+};
+
+export const runScraperScheduleNow = async (
+  jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker",
+  runNowRequest?: RunNowRequest,
+  options?: RequestInit,
+): Promise<RunNowResponse> => {
+  return customFetch<RunNowResponse>(getRunScraperScheduleNowUrl(jobKey), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(runNowRequest),
+  });
+};
+
+export const getRunScraperScheduleNowMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runScraperScheduleNow>>,
+    TError,
+    {
+      jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker";
+      data: BodyType<RunNowRequest>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runScraperScheduleNow>>,
+  TError,
+  {
+    jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker";
+    data: BodyType<RunNowRequest>;
+  },
+  TContext
+> => {
+  const mutationKey = ["runScraperScheduleNow"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runScraperScheduleNow>>,
+    {
+      jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker";
+      data: BodyType<RunNowRequest>;
+    }
+  > = (props) => {
+    const { jobKey, data } = props ?? {};
+
+    return runScraperScheduleNow(jobKey, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunScraperScheduleNowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runScraperScheduleNow>>
+>;
+export type RunScraperScheduleNowMutationBody = BodyType<RunNowRequest>;
+export type RunScraperScheduleNowMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Enqueue a one-off run of an allow-listed scheduler jobKey
+ */
+export const useRunScraperScheduleNow = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runScraperScheduleNow>>,
+    TError,
+    {
+      jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker";
+      data: BodyType<RunNowRequest>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runScraperScheduleNow>>,
+  TError,
+  {
+    jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker";
+    data: BodyType<RunNowRequest>;
+  },
+  TContext
+> => {
+  return useMutation(getRunScraperScheduleNowMutationOptions(options));
+};
+
+/**
+ * @summary Get a single scheduler_jobs row by id
+ */
+export const getGetSchedulerJobUrl = (id: number) => {
+  return `/api/v1/admin/scheduler-jobs/${id}`;
+};
+
+export const getSchedulerJob = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SchedulerJob> => {
+  return customFetch<SchedulerJob>(getGetSchedulerJobUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSchedulerJobQueryKey = (id: number) => {
+  return [`/api/v1/admin/scheduler-jobs/${id}`] as const;
+};
+
+export const getGetSchedulerJobQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSchedulerJob>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSchedulerJob>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSchedulerJobQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSchedulerJob>>> = ({
+    signal,
+  }) => getSchedulerJob(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSchedulerJob>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSchedulerJobQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSchedulerJob>>
+>;
+export type GetSchedulerJobQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get a single scheduler_jobs row by id
+ */
+
+export function useGetSchedulerJob<
+  TData = Awaited<ReturnType<typeof getSchedulerJob>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSchedulerJob>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSchedulerJobQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

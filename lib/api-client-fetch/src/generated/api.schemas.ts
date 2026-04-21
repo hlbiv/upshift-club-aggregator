@@ -296,6 +296,306 @@ export interface OverlapResponse {
   page_size: number;
 }
 
+export interface AdminLoginRequest {
+  email: string;
+  /** @minLength 8 */
+  password: string;
+}
+
+export type AdminLoginResponseRole =
+  (typeof AdminLoginResponseRole)[keyof typeof AdminLoginResponseRole];
+
+export const AdminLoginResponseRole = {
+  admin: "admin",
+  super_admin: "super_admin",
+} as const;
+
+export interface AdminLoginResponse {
+  id: number;
+  email: string;
+  role: AdminLoginResponseRole;
+}
+
+export type AdminMeResponse = AdminLoginResponse;
+
+export interface AdminLogoutResponse {
+  ok: boolean;
+}
+
+export type ScrapeRunLogStatus =
+  (typeof ScrapeRunLogStatus)[keyof typeof ScrapeRunLogStatus];
+
+export const ScrapeRunLogStatus = {
+  running: "running",
+  ok: "ok",
+  partial: "partial",
+  failed: "failed",
+} as const;
+
+export type ScrapeRunLogMetadata = { [key: string]: unknown } | null;
+
+/**
+ * One row of `scrape_run_logs` — a single scraper invocation.
+ */
+export interface ScrapeRunLog {
+  id: number;
+  scraperKey: string;
+  jobKey: string | null;
+  status: ScrapeRunLogStatus;
+  startedAt: string;
+  completedAt: string | null;
+  recordsTouched: number | null;
+  errorMessage: string | null;
+  metadata: ScrapeRunLogMetadata;
+}
+
+export interface ScrapeRunLogList {
+  runs: ScrapeRunLog[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type ScrapeHealthRowEntityType =
+  (typeof ScrapeHealthRowEntityType)[keyof typeof ScrapeHealthRowEntityType];
+
+export const ScrapeHealthRowEntityType = {
+  club: "club",
+  event: "event",
+  league: "league",
+  college: "college",
+  coach: "coach",
+} as const;
+
+export type ScrapeHealthRowLastStatus =
+  | (typeof ScrapeHealthRowLastStatus)[keyof typeof ScrapeHealthRowLastStatus]
+  | null;
+
+export const ScrapeHealthRowLastStatus = {
+  running: "running",
+  ok: "ok",
+  partial: "partial",
+  failed: "failed",
+} as const;
+
+export type ScrapeHealthRowMetadata = { [key: string]: unknown } | null;
+
+/**
+ * One row of `scrape_health` — rolling status per entity.
+ */
+export interface ScrapeHealthRow {
+  entityType: ScrapeHealthRowEntityType;
+  entityId: number;
+  lastScrapedAt: string | null;
+  lastStatus: ScrapeHealthRowLastStatus;
+  consecutiveFailures: number;
+  nextScheduledAt: string | null;
+  metadata: ScrapeHealthRowMetadata;
+}
+
+export interface ScrapeHealthList {
+  rows: ScrapeHealthRow[];
+  total: number;
+}
+
+export type ClubDuplicateStatus =
+  (typeof ClubDuplicateStatus)[keyof typeof ClubDuplicateStatus];
+
+export const ClubDuplicateStatus = {
+  pending: "pending",
+  merged: "merged",
+  rejected: "rejected",
+} as const;
+
+export type ClubDuplicateLeftSnapshot = { [key: string]: unknown };
+
+export type ClubDuplicateRightSnapshot = { [key: string]: unknown };
+
+/**
+ * One club-duplicate pair record surfaced in the dedup review queue.
+ */
+export interface ClubDuplicate {
+  id: number;
+  leftClubId: number;
+  rightClubId: number;
+  score: number;
+  method: string;
+  status: ClubDuplicateStatus;
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewedBy: number | null;
+  leftSnapshot: ClubDuplicateLeftSnapshot;
+  rightSnapshot: ClubDuplicateRightSnapshot;
+}
+
+export interface ClubDuplicateList {
+  pairs: ClubDuplicate[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type ClubDuplicateDetailLeftCurrent = { [key: string]: unknown };
+
+export type ClubDuplicateDetailRightCurrent = { [key: string]: unknown };
+
+export type ClubDuplicateDetailAffiliations = {
+  leftAffiliationCount: number;
+  rightAffiliationCount: number;
+};
+
+export type ClubDuplicateDetailRosters = {
+  leftRosterSnapshotCount: number;
+  rightRosterSnapshotCount: number;
+};
+
+export type ClubDuplicateDetail = ClubDuplicate & {
+  leftCurrent: ClubDuplicateDetailLeftCurrent;
+  rightCurrent: ClubDuplicateDetailRightCurrent;
+  affiliations: ClubDuplicateDetailAffiliations;
+  rosters: ClubDuplicateDetailRosters;
+};
+
+export interface ClubDuplicateMergeRequest {
+  winnerId: number;
+  loserId: number;
+  notes?: string;
+}
+
+export interface ClubDuplicateMergeResponse {
+  ok: boolean;
+  winnerId: number;
+  loserAliasesCreated: number;
+  affiliationsReparented: number;
+  rosterSnapshotsReparented: number;
+}
+
+/**
+ * Optional notes attached to the rejection.
+ */
+export interface ClubDuplicateRejectRequest {
+  notes?: string;
+}
+
+/**
+ * `reject` returns a minimal acknowledgement. Inspect `/dedup/clubs/{id}` to read the flipped `status` + `reviewedAt`/`reviewedBy`.
+
+ */
+export interface ClubDuplicateRejectResponse {
+  ok: boolean;
+  id: number;
+}
+
+/**
+ * `dryRun` defaults to true — callers must explicitly opt in to destructive DELETEs. `limit` caps scan/delete size (max 10,000).
+
+ */
+export interface GaPremierOrphanCleanupRequest {
+  dryRun?: boolean;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: number;
+}
+
+export interface GaPremierOrphanCleanupResponse {
+  scanned: number;
+  flagged: number;
+  deleted: number;
+  /** @maxItems 20 */
+  sampleNames: string[];
+}
+
+/**
+ * Records added across the five headline ingest tables since a point in time.
+ */
+export interface ScrapedCountsDelta {
+  since: string;
+  clubsAdded: number;
+  coachesAdded: number;
+  eventsAdded: number;
+  rosterSnapshotsAdded: number;
+  matchesAdded: number;
+}
+
+/**
+ * One day of scrape-run telemetry aggregated from scrape_run_logs.
+ */
+export interface CoverageTrendPoint {
+  date: string;
+  runs: number;
+  successes: number;
+  failures: number;
+  rowsTouched: number;
+}
+
+export interface CoverageTrendResponse {
+  points: CoverageTrendPoint[];
+  windowDays: number;
+}
+
+export type SchedulerJobArgs = { [key: string]: unknown } | null;
+
+export type SchedulerJobStatus =
+  (typeof SchedulerJobStatus)[keyof typeof SchedulerJobStatus];
+
+export const SchedulerJobStatus = {
+  pending: "pending",
+  running: "running",
+  success: "success",
+  failed: "failed",
+  canceled: "canceled",
+} as const;
+
+/**
+ * One row of `scheduler_jobs` — an admin-triggered scraper invocation.
+ */
+export interface SchedulerJob {
+  id: number;
+  jobKey: string;
+  args: SchedulerJobArgs;
+  status: SchedulerJobStatus;
+  requestedBy: number | null;
+  requestedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  exitCode: number | null;
+  stdoutTail: string | null;
+  stderrTail: string | null;
+}
+
+export interface SchedulerJobList {
+  jobs: SchedulerJob[];
+  total: number;
+}
+
+export type RunNowRequestArgs = { [key: string]: unknown };
+
+/**
+ * Enqueue a one-off run. `jobKey` is taken from the URL path — when present in the body it must match. `args` are forwarded as CLI flags by the worker (`{"event-id": 123}` → `["--event-id", "123"]`).
+
+ */
+export interface RunNowRequest {
+  /** @minLength 1 */
+  jobKey?: string;
+  args?: RunNowRequestArgs;
+}
+
+export type RunNowResponseStatus =
+  (typeof RunNowResponseStatus)[keyof typeof RunNowResponseStatus];
+
+export const RunNowResponseStatus = {
+  pending: "pending",
+} as const;
+
+export interface RunNowResponse {
+  id: number;
+  jobKey: string;
+  status: RunNowResponseStatus;
+  requestedAt: string;
+}
+
 export type ListClubsParams = {
   /**
    * Filter by US state abbreviation or full name (ILIKE match)
@@ -468,4 +768,80 @@ export type AnalyticsOverlapParams = {
    * @maximum 100
    */
   page_size?: number;
+};
+
+export type ListScrapeRunsParams = {
+  /**
+   * ISO-8601 lower bound on `started_at`
+   */
+  since?: string;
+  /**
+   * Exact match on `scraper_key`
+   */
+  source?: string;
+  /**
+   * One of `running|ok|partial|failed|success|failure`
+   */
+  status?: string;
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
+  /**
+   * Alias for page_size
+   */
+  limit?: number;
+};
+
+export type ListScrapeHealthParams = {
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
+};
+
+export type ListClubDuplicatesParams = {
+  status?: ListClubDuplicatesStatus;
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
+  /**
+   * Alias for page_size
+   */
+  limit?: number;
+};
+
+export type ListClubDuplicatesStatus =
+  (typeof ListClubDuplicatesStatus)[keyof typeof ListClubDuplicatesStatus];
+
+export const ListClubDuplicatesStatus = {
+  pending: "pending",
+  merged: "merged",
+  rejected: "rejected",
+  all: "all",
+} as const;
+
+export type GetGrowthScrapedCountsParams = {
+  /**
+   * ISO-8601 lower bound
+   */
+  since: string;
+};
+
+export type GetGrowthCoverageTrendParams = {
+  /**
+   * Size of the rolling window in days
+   */
+  days?: number;
+};
+
+export type ListScraperScheduleRunsParams = {
+  /**
+   * @maximum 100
+   */
+  limit?: number;
 };

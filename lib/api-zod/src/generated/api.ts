@@ -621,3 +621,478 @@ export const AnalyticsOverlapResponse = zod.object({
   page: zod.number(),
   page_size: zod.number(),
 });
+
+/**
+ * Authenticate an admin user by email + password. On success, sets the `upshift_admin_sid` cookie (httpOnly, sameSite=lax) and returns the admin identity. The session cookie is the only way to call the rest of the admin surface without an API key.
+
+ * @summary Admin login (session cookie)
+ */
+export const adminLoginBodyPasswordMin = 8;
+
+export const AdminLoginBody = zod.object({
+  email: zod.string().email(),
+  password: zod.string().min(adminLoginBodyPasswordMin),
+});
+
+export const AdminLoginResponse = zod.object({
+  id: zod.number(),
+  email: zod.string().email(),
+  role: zod.enum(["admin", "super_admin"]),
+});
+
+/**
+ * Delete the server-side session row for the caller's cookie and clear the `upshift_admin_sid` cookie. Idempotent — calling with an already expired / unknown cookie still returns `{ok: true}`.
+
+ * @summary Admin logout (clears session cookie)
+ */
+export const AdminLogoutResponse = zod.object({
+  ok: zod.literal(true),
+});
+
+/**
+ * Echo the caller's identity (id, email, role). For session callers the fields come straight from `admin_users`; for API-key callers the server synthesizes a service-account identity (`apikey+<name>@…`).
+
+ * @summary Current admin identity
+ */
+export const AdminMeResponse = zod.object({
+  id: zod.number(),
+  email: zod.string().email(),
+  role: zod.enum(["admin", "super_admin"]),
+});
+
+/**
+ * Read-only view onto `scrape_run_logs`, newest first. `status` accepts the DB enum (`running | ok | partial | failed`) plus legacy aliases (`success` → `ok|partial`, `failure` → `failed`).
+
+ * @summary List scrape-run log entries
+ */
+export const listScrapeRunsQueryPageDefault = 1;
+export const listScrapeRunsQueryPageSizeDefault = 20;
+export const listScrapeRunsQueryPageSizeMax = 100;
+
+export const ListScrapeRunsQueryParams = zod.object({
+  since: zod.date().optional().describe("ISO-8601 lower bound on `started_at`"),
+  source: zod.coerce
+    .string()
+    .optional()
+    .describe("Exact match on `scraper_key`"),
+  status: zod.coerce
+    .string()
+    .optional()
+    .describe("One of `running|ok|partial|failed|success|failure`"),
+  page: zod.coerce.number().default(listScrapeRunsQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(listScrapeRunsQueryPageSizeMax)
+    .default(listScrapeRunsQueryPageSizeDefault),
+  limit: zod.coerce.number().optional().describe("Alias for page_size"),
+});
+
+export const ListScrapeRunsResponse = zod.object({
+  runs: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        scraperKey: zod.string(),
+        jobKey: zod.string().nullable(),
+        status: zod.enum(["running", "ok", "partial", "failed"]),
+        startedAt: zod.coerce.date(),
+        completedAt: zod.coerce.date().nullable(),
+        recordsTouched: zod.number().nullable(),
+        errorMessage: zod.string().nullable(),
+        metadata: zod.record(zod.string(), zod.unknown()).nullable(),
+      })
+      .describe("One row of `scrape_run_logs` — a single scraper invocation."),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
+ * @summary Get a single scrape-run row
+ */
+export const GetScrapeRunParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetScrapeRunResponse = zod
+  .object({
+    id: zod.number(),
+    scraperKey: zod.string(),
+    jobKey: zod.string().nullable(),
+    status: zod.enum(["running", "ok", "partial", "failed"]),
+    startedAt: zod.coerce.date(),
+    completedAt: zod.coerce.date().nullable(),
+    recordsTouched: zod.number().nullable(),
+    errorMessage: zod.string().nullable(),
+    metadata: zod.record(zod.string(), zod.unknown()).nullable(),
+  })
+  .describe("One row of `scrape_run_logs` — a single scraper invocation.");
+
+/**
+ * Read-only view onto `scrape_health`. The response envelope is `{rows, total}` — pagination is server-side only via `page` / `page_size`; the contract itself doesn't echo page numbers.
+
+ * @summary Rolling scrape-health rollup per entity
+ */
+export const listScrapeHealthQueryPageDefault = 1;
+export const listScrapeHealthQueryPageSizeDefault = 20;
+export const listScrapeHealthQueryPageSizeMax = 100;
+
+export const ListScrapeHealthQueryParams = zod.object({
+  page: zod.coerce.number().default(listScrapeHealthQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(listScrapeHealthQueryPageSizeMax)
+    .default(listScrapeHealthQueryPageSizeDefault),
+});
+
+export const ListScrapeHealthResponse = zod.object({
+  rows: zod.array(
+    zod
+      .object({
+        entityType: zod.enum(["club", "event", "league", "college", "coach"]),
+        entityId: zod.number(),
+        lastScrapedAt: zod.coerce.date().nullable(),
+        lastStatus: zod.enum(["running", "ok", "partial", "failed"]).nullable(),
+        consecutiveFailures: zod.number(),
+        nextScheduledAt: zod.coerce.date().nullable(),
+        metadata: zod.record(zod.string(), zod.unknown()).nullable(),
+      })
+      .describe("One row of `scrape_health` — rolling status per entity."),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * `scrape_health` is keyed by `(entity_type, entity_id)` — not a surrogate id — so the detail route is 2-segment.
+
+ * @summary Get one scrape-health row by (entity_type, entity_id)
+ */
+export const GetScrapeHealthParams = zod.object({
+  entity_type: zod.enum(["club", "event", "league", "college", "coach"]),
+  entity_id: zod.coerce.number(),
+});
+
+export const GetScrapeHealthResponse = zod
+  .object({
+    entityType: zod.enum(["club", "event", "league", "college", "coach"]),
+    entityId: zod.number(),
+    lastScrapedAt: zod.coerce.date().nullable(),
+    lastStatus: zod.enum(["running", "ok", "partial", "failed"]).nullable(),
+    consecutiveFailures: zod.number(),
+    nextScheduledAt: zod.coerce.date().nullable(),
+    metadata: zod.record(zod.string(), zod.unknown()).nullable(),
+  })
+  .describe("One row of `scrape_health` — rolling status per entity.");
+
+/**
+ * Populated by `scraper/dedup/club_dedup.py --persist`. Default status is `pending`; pass `status=merged|rejected|all` to widen. Rows are sorted by score DESC so the strongest candidates surface first.
+
+ * @summary List club-duplicate pairs in the review queue
+ */
+export const listClubDuplicatesQueryStatusDefault = `pending`;
+export const listClubDuplicatesQueryPageDefault = 1;
+export const listClubDuplicatesQueryPageSizeDefault = 20;
+export const listClubDuplicatesQueryPageSizeMax = 100;
+
+export const ListClubDuplicatesQueryParams = zod.object({
+  status: zod
+    .enum(["pending", "merged", "rejected", "all"])
+    .default(listClubDuplicatesQueryStatusDefault),
+  page: zod.coerce.number().default(listClubDuplicatesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(listClubDuplicatesQueryPageSizeMax)
+    .default(listClubDuplicatesQueryPageSizeDefault),
+  limit: zod.coerce.number().optional().describe("Alias for page_size"),
+});
+
+export const ListClubDuplicatesResponse = zod.object({
+  pairs: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        leftClubId: zod.number(),
+        rightClubId: zod.number(),
+        score: zod.number(),
+        method: zod.string(),
+        status: zod.enum(["pending", "merged", "rejected"]),
+        createdAt: zod.coerce.date(),
+        reviewedAt: zod.coerce.date().nullable(),
+        reviewedBy: zod.number().nullable(),
+        leftSnapshot: zod.record(zod.string(), zod.unknown()),
+        rightSnapshot: zod.record(zod.string(), zod.unknown()),
+      })
+      .describe(
+        "One club-duplicate pair record surfaced in the dedup review queue.",
+      ),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
+ * Extends the queue row with the live `canonical_clubs` rows on both sides plus affiliation and roster-snapshot counts — everything a reviewer needs on one screen.
+
+ * @summary Club-duplicate detail with live side-by-side context
+ */
+export const GetClubDuplicateParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetClubDuplicateResponse = zod
+  .object({
+    id: zod.number(),
+    leftClubId: zod.number(),
+    rightClubId: zod.number(),
+    score: zod.number(),
+    method: zod.string(),
+    status: zod.enum(["pending", "merged", "rejected"]),
+    createdAt: zod.coerce.date(),
+    reviewedAt: zod.coerce.date().nullable(),
+    reviewedBy: zod.number().nullable(),
+    leftSnapshot: zod.record(zod.string(), zod.unknown()),
+    rightSnapshot: zod.record(zod.string(), zod.unknown()),
+  })
+  .describe(
+    "One club-duplicate pair record surfaced in the dedup review queue.",
+  )
+  .and(
+    zod.object({
+      leftCurrent: zod.record(zod.string(), zod.unknown()),
+      rightCurrent: zod.record(zod.string(), zod.unknown()),
+      affiliations: zod.object({
+        leftAffiliationCount: zod.number(),
+        rightAffiliationCount: zod.number(),
+      }),
+      rosters: zod.object({
+        leftRosterSnapshotCount: zod.number(),
+        rightRosterSnapshotCount: zod.number(),
+      }),
+    }),
+  );
+
+/**
+ * Invokes the transactional `mergeClubs` helper. The 18-field helper result is logged server-side; only the 5-field contract projection (`ok`, `winnerId`, `loserAliasesCreated`, `affiliationsReparented`, `rosterSnapshotsReparented`) returns to the caller.
+
+ * @summary Merge a duplicate-club pair (transactional reparent + alias)
+ */
+export const MergeClubDuplicateParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const MergeClubDuplicateBody = zod.object({
+  winnerId: zod.number(),
+  loserId: zod.number(),
+  notes: zod.string().optional(),
+});
+
+export const MergeClubDuplicateResponse = zod.object({
+  ok: zod.literal(true),
+  winnerId: zod.number(),
+  loserAliasesCreated: zod.number(),
+  affiliationsReparented: zod.number(),
+  rosterSnapshotsReparented: zod.number(),
+});
+
+/**
+ * Flips the queue row to `status=rejected` with optional `notes`. No data reparenting; the two clubs remain separate canonical rows.
+
+ * @summary Reject a duplicate-club pair (no merge performed)
+ */
+export const RejectClubDuplicateParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RejectClubDuplicateBody = zod
+  .object({
+    notes: zod.string().optional(),
+  })
+  .describe("Optional notes attached to the rejection.");
+
+export const RejectClubDuplicateResponse = zod
+  .object({
+    ok: zod.literal(true),
+    id: zod.number(),
+  })
+  .describe(
+    "`reject` returns a minimal acknowledgement. Inspect `\/dedup\/clubs\/{id}` to read the flipped `status` + `reviewedAt`\/`reviewedBy`.\n",
+  );
+
+/**
+ * Identifies `club_roster_snapshots` rows whose `club_name_raw` is a nav-menu token (FACILITIES, STAFF, NEWS, …) rather than a real club name. Default `dryRun=true` returns counts + sample names; pass `dryRun=false` to DELETE up to `limit` matching rows in a transaction.
+
+ * @summary Scan or delete GA Premier nav-token orphans in club_roster_snapshots
+ */
+export const gaPremierOrphanCleanupBodyDryRunDefault = true;
+export const gaPremierOrphanCleanupBodyLimitDefault = 500;
+export const gaPremierOrphanCleanupBodyLimitMax = 10000;
+
+export const GaPremierOrphanCleanupBody = zod
+  .object({
+    dryRun: zod.boolean().default(gaPremierOrphanCleanupBodyDryRunDefault),
+    limit: zod
+      .number()
+      .min(1)
+      .max(gaPremierOrphanCleanupBodyLimitMax)
+      .default(gaPremierOrphanCleanupBodyLimitDefault),
+  })
+  .describe(
+    "`dryRun` defaults to true — callers must explicitly opt in to destructive DELETEs. `limit` caps scan\/delete size (max 10,000).\n",
+  );
+
+export const gaPremierOrphanCleanupResponseSampleNamesMax = 20;
+
+export const GaPremierOrphanCleanupResponse = zod.object({
+  scanned: zod.number(),
+  flagged: zod.number(),
+  deleted: zod.number(),
+  sampleNames: zod
+    .array(zod.string())
+    .max(gaPremierOrphanCleanupResponseSampleNamesMax),
+});
+
+/**
+ * Per-table `count(*) WHERE <timestamp_col> > since`. Timestamp column differs per table — `canonical_clubs.last_scraped_at`, `coaches.first_seen_at`, `events.last_scraped_at`, `club_roster_snapshots.snapshot_date`, `matches.scraped_at`.
+
+ * @summary Records-added-since-X delta across five headline ingest tables
+ */
+export const GetGrowthScrapedCountsQueryParams = zod.object({
+  since: zod.date().describe("ISO-8601 lower bound"),
+});
+
+export const GetGrowthScrapedCountsResponse = zod
+  .object({
+    since: zod.coerce.date(),
+    clubsAdded: zod.number(),
+    coachesAdded: zod.number(),
+    eventsAdded: zod.number(),
+    rosterSnapshotsAdded: zod.number(),
+    matchesAdded: zod.number(),
+  })
+  .describe(
+    "Records added across the five headline ingest tables since a point in time.",
+  );
+
+/**
+ * Aggregates `scrape_run_logs` by day for the last `days` days. `successes` counts `status='ok'`; `failures` counts `status IN ('partial','failed')`. `running` rows contribute to `runs` but not to successes/failures.
+
+ * @summary Daily scrape-run telemetry points over a rolling window
+ */
+export const getGrowthCoverageTrendQueryDaysDefault = 30;
+
+export const GetGrowthCoverageTrendQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .default(getGrowthCoverageTrendQueryDaysDefault)
+    .describe("Size of the rolling window in days"),
+});
+
+export const GetGrowthCoverageTrendResponse = zod.object({
+  points: zod.array(
+    zod
+      .object({
+        date: zod.string(),
+        runs: zod.number(),
+        successes: zod.number(),
+        failures: zod.number(),
+        rowsTouched: zod.number(),
+      })
+      .describe(
+        "One day of scrape-run telemetry aggregated from scrape_run_logs.",
+      ),
+  ),
+  windowDays: zod.number(),
+});
+
+/**
+ * Newest-first by `requested_at`. Default `limit` 20, max 100.
+
+ * @summary List recent scheduler-job rows for a given jobKey
+ */
+export const ListScraperScheduleRunsParams = zod.object({
+  jobKey: zod.enum(["nightly_tier1", "weekly_state", "hourly_linker"]),
+});
+
+export const listScraperScheduleRunsQueryLimitDefault = 20;
+export const listScraperScheduleRunsQueryLimitMax = 100;
+
+export const ListScraperScheduleRunsQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .max(listScraperScheduleRunsQueryLimitMax)
+    .default(listScraperScheduleRunsQueryLimitDefault),
+});
+
+export const ListScraperScheduleRunsResponse = zod.object({
+  jobs: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        jobKey: zod.string(),
+        args: zod.record(zod.string(), zod.unknown()).nullable(),
+        status: zod.enum([
+          "pending",
+          "running",
+          "success",
+          "failed",
+          "canceled",
+        ]),
+        requestedBy: zod.number().nullable(),
+        requestedAt: zod.coerce.date(),
+        startedAt: zod.coerce.date().nullable(),
+        completedAt: zod.coerce.date().nullable(),
+        exitCode: zod.number().nullable(),
+        stdoutTail: zod.string().nullable(),
+        stderrTail: zod.string().nullable(),
+      })
+      .describe(
+        "One row of `scheduler_jobs` — an admin-triggered scraper invocation.",
+      ),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * Inserts a `scheduler_jobs` row at `status=pending`; the in-process worker picks it up on its next tick. Guarded by `requireSuperAdmin` (session-only) plus the 30/min mutation rate limiter. Body `args` are forwarded as CLI flags by the worker.
+
+ * @summary Enqueue a one-off run of an allow-listed scheduler jobKey
+ */
+export const RunScraperScheduleNowParams = zod.object({
+  jobKey: zod.enum(["nightly_tier1", "weekly_state", "hourly_linker"]),
+});
+
+export const RunScraperScheduleNowBody = zod
+  .object({
+    jobKey: zod.string().min(1).optional(),
+    args: zod.record(zod.string(), zod.unknown()).optional(),
+  })
+  .describe(
+    'Enqueue a one-off run. `jobKey` is taken from the URL path — when present in the body it must match. `args` are forwarded as CLI flags by the worker (`{\"event-id\": 123}` → `[\"--event-id\", \"123\"]`).\n',
+  );
+
+/**
+ * @summary Get a single scheduler_jobs row by id
+ */
+export const GetSchedulerJobParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetSchedulerJobResponse = zod
+  .object({
+    id: zod.number(),
+    jobKey: zod.string(),
+    args: zod.record(zod.string(), zod.unknown()).nullable(),
+    status: zod.enum(["pending", "running", "success", "failed", "canceled"]),
+    requestedBy: zod.number().nullable(),
+    requestedAt: zod.coerce.date(),
+    startedAt: zod.coerce.date().nullable(),
+    completedAt: zod.coerce.date().nullable(),
+    exitCode: zod.number().nullable(),
+    stdoutTail: zod.string().nullable(),
+    stderrTail: zod.string().nullable(),
+  })
+  .describe(
+    "One row of `scheduler_jobs` — an admin-triggered scraper invocation.",
+  );

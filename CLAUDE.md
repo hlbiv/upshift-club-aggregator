@@ -215,7 +215,7 @@ pnpm --filter @workspace/api-server run dev            # start API on 8080
 
 ## REST API
 
-Base: `/api` on port 8080. Pagination: `?page=1&page_size=20` (max 100).
+Base: `/api` on port 8080. Pagination: `?page=1&page_size=20` (max 100). Admin endpoints (`/api/v1/admin/*`) are documented in `lib/api-spec/openapi.yaml` alongside the public routes — new dashboard pages should prefer the Orval-generated React Query hooks from `@workspace/api-client-react` over the hand-rolled `adminFetch()` helper (`ScraperHealth.tsx` is the POC; other pages will migrate one at a time).
 
 ### Authentication (M2M)
 
