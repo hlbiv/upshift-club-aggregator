@@ -211,6 +211,8 @@ pnpm --filter @workspace/api-spec run codegen          # regen Zod from OpenAPI
 pnpm --filter @workspace/api-server run dev            # start API on 8080
 ```
 
+**`@hlbiv/api-zod` requires a build step.** The `lib/api-zod/dist/` folder is not checked in. After editing any source under `lib/api-zod/src/`, run `pnpm --filter @hlbiv/api-zod run build` before consumers can import the new exports. Root `pnpm typecheck` handles this automatically via project references; per-package `tsc --noEmit` does not and will surface TS6305 errors.
+
 ---
 
 ## REST API
