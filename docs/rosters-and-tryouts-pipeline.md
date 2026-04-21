@@ -159,14 +159,14 @@ change) adds:
   `roster_quality_flags_snapshot_type_uq` unique constraint plus the
   `WHERE metadata IS DISTINCT FROM EXCLUDED.metadata` clause means a
   re-run on unchanged data writes nothing.
-- Nightly cron — `nightly-nav-leaked-names-detect` at `35 3 * * *`,
-  five minutes after the canonical-school linker. (Add this block to
-  `.replit` `[[deployment.scheduledJobs]]` manually — the agent cannot
-  edit `.replit`.)
+- Nightly cron — `nightly-nav-leaked-names-detect` at `30 3 * * *`.
+  Add this block to `.replit` `[[deployment.scheduledJobs]]` manually
+  — the agent cannot edit `.replit`.
 - `PATCH /api/v1/admin/data-quality/roster-quality-flags/:id/resolve`
   — operator triage endpoint. Stamps `resolved_at = NOW()` and
-  `resolved_by = <admin user id>` (NULL for API-key callers). Idempotent
-  on re-resolve; 404 only when the id is unknown. The dashboard panel
+  `resolved_by = <admin user id>` (NULL for API-key callers). Returns
+  204 on first resolve, 400 if the flag is already resolved, 404 if
+  the id is unknown. The dashboard panel
   surfaces a per-row Resolve button that issues this PATCH and
   invalidates the nav-leaked-names query so the row disappears (or
   flips to the Resolved badge when "Include resolved flags" is on).
