@@ -327,6 +327,27 @@ assertTable(schema.rosterQualityFlags, "roster_quality_flags", {
 });
 
 // ---------------------------------------------------------------------------
+// Coach quality flags — canary table for coach-pollution remediation
+//   see lib/db/src/schema/coach-quality-flags.ts
+// ---------------------------------------------------------------------------
+
+assertTable(schema.coachQualityFlags, "coach_quality_flags", {
+  cols: [
+    "id",
+    "discovery_id",
+    "flag_type",
+    "metadata",
+    "flagged_at",
+    "resolved_at",
+    "resolved_by",
+    "resolution_note",
+  ],
+  uniques: ["coach_quality_flags_discovery_type_uq"],
+  checks: ["coach_quality_flags_flag_type_enum"],
+  indexes: ["coach_quality_flags_flagged_at_idx"],
+});
+
+// ---------------------------------------------------------------------------
 // Domain 8 — Scrape health
 // ---------------------------------------------------------------------------
 

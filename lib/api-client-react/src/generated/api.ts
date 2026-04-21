@@ -34,6 +34,7 @@ import type {
   ClubRelatedResponse,
   ClubSearchResponse,
   ClubStaffResponse,
+  CoachQualityFlagsResponse,
   CoachSearchResponse,
   CoverageResponse,
   CoverageTrendResponse,
@@ -45,6 +46,7 @@ import type {
   EventSearchResponse,
   GaPremierOrphanCleanupRequest,
   GaPremierOrphanCleanupResponse,
+  GetCoachQualityFlagsParams,
   GetEmptyStaffPagesParams,
   GetGrowthCoverageTrendParams,
   GetGrowthScrapedCountsParams,
@@ -2852,6 +2854,203 @@ export const useResolveRosterQualityFlag = <
   TContext
 > => {
   return useMutation(getResolveRosterQualityFlagMutationOptions(options));
+};
+
+/**
+ * Paginated list of `coach_quality_flags` rows, joined to the parent `coach_discoveries` (surfacing `coach_name`, `coach_email`, `club_name_raw`), the snapshot's `canonical_clubs` resolution (for a `club_display_name` when the discovery's `club_id` is set), and `admin_users` (for `resolved_by_email`). Callers never see raw jsonb — any typed metadata extraction happens at the API boundary on a per-flag-type basis (today the whole jsonb payload is returned verbatim in `metadata` as a `record<unknown>`; a future PR can promote per-flag fields into typed columns once the pollution investigation has settled on a stable contract).
+Phase 3 scope: the table is populated by PR 1 (shared guard + scraper wiring) and PR 2 (purge script audit rows) of the 3-PR coach-pollution remediation. This endpoint returns an empty list at PR-3 merge time by design.
+
+ * @summary coach_quality_flags canary rows, joined with coach + club context
+ */
+export const getGetCoachQualityFlagsUrl = (
+  params?: GetCoachQualityFlagsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/coach-quality-flags?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/coach-quality-flags`;
+};
+
+export const getCoachQualityFlags = async (
+  params?: GetCoachQualityFlagsParams,
+  options?: RequestInit,
+): Promise<CoachQualityFlagsResponse> => {
+  return customFetch<CoachQualityFlagsResponse>(
+    getGetCoachQualityFlagsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetCoachQualityFlagsQueryKey = (
+  params?: GetCoachQualityFlagsParams,
+) => {
+  return [
+    `/api/v1/admin/data-quality/coach-quality-flags`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetCoachQualityFlagsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCoachQualityFlags>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetCoachQualityFlagsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoachQualityFlags>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCoachQualityFlagsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCoachQualityFlags>>
+  > = ({ signal }) =>
+    getCoachQualityFlags(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCoachQualityFlags>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCoachQualityFlagsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCoachQualityFlags>>
+>;
+export type GetCoachQualityFlagsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary coach_quality_flags canary rows, joined with coach + club context
+ */
+
+export function useGetCoachQualityFlags<
+  TData = Awaited<ReturnType<typeof getCoachQualityFlags>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetCoachQualityFlagsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoachQualityFlags>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCoachQualityFlagsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on the row. The underlying `coach_discoveries` row is NOT mutated — resolving a flag means "operator has triaged this canary", not "the data is fixed".
+API-key callers get `resolved_by = NULL` (no admin user identity); session callers get their admin user id stamped — same pattern as the dedup PATCH endpoints and the roster-quality-flags resolve endpoint.
+Returns 400 if the flag is already resolved, and 404 if no `coach_quality_flags` row exists with that id.
+
+ * @summary Mark a coach_quality_flags row as resolved
+ */
+export const getResolveCoachQualityFlagUrl = (id: number) => {
+  return `/api/v1/admin/data-quality/coach-quality-flags/${id}/resolve`;
+};
+
+export const resolveCoachQualityFlag = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getResolveCoachQualityFlagUrl(id), {
+    ...options,
+    method: "PATCH",
+  });
+};
+
+export const getResolveCoachQualityFlagMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveCoachQualityFlag>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resolveCoachQualityFlag>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["resolveCoachQualityFlag"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resolveCoachQualityFlag>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return resolveCoachQualityFlag(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResolveCoachQualityFlagMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resolveCoachQualityFlag>>
+>;
+
+export type ResolveCoachQualityFlagMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Mark a coach_quality_flags row as resolved
+ */
+export const useResolveCoachQualityFlag = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveCoachQualityFlag>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resolveCoachQualityFlag>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getResolveCoachQualityFlagMutationOptions(options));
 };
 
 /**
