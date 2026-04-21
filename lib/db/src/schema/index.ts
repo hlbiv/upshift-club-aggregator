@@ -263,6 +263,8 @@ export * from "./commitments";
 export * from "./duplicate-review";
 export * from "./events";
 export * from "./hs";
+export * from "./hs_matches";
+export * from "./hs_state_rankings";
 export * from "./matches";
 export * from "./odp";
 export * from "./rosters-and-tryouts";
