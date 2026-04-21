@@ -50,6 +50,7 @@ CLI::
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -57,7 +58,7 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from bs4 import BeautifulSoup, Tag
@@ -291,13 +292,133 @@ def _cell_text(td: Tag) -> str:
 
 
 # ---------------------------------------------------------------------------
-# HTML parsing — three strategies, matching the TS scrapers
+# Sidearm Vue-embedded JSON helpers (Strategy 5)
+# ---------------------------------------------------------------------------
+
+# Regex locates the start of ``data: () => ({ ... roster: {`` where the
+# final ``{`` marks the first character of the JSON object we want to
+# extract. Captures the position of that brace in group 1.
+#
+# The `[^}]*` before ``roster:`` is intentional — other keys may appear
+# on the same factory (e.g. ``loading: true``, ``sport: "MSOC"``) but
+# none of them contain a ``}`` themselves because they are scalars. If
+# a site ever inserts a nested object before ``roster:``, the regex
+# will still work as long as that nested object doesn't contain the
+# string ``roster:`` (which would be an ambiguous match regardless).
+_SIDEARM_VUE_ROSTER_RE = re.compile(
+    r"data:\s*\(\s*\)\s*=>\s*\(\s*\{[^}]*roster:\s*(\{)",
+    re.DOTALL,
+)
+
+
+def _find_balanced_json_end(src: str, start: int) -> Optional[int]:
+    """Given ``src`` and the index of an opening ``{``, return the index
+    just past the matching closing ``}`` (i.e. the end-exclusive slice
+    bound).
+
+    Uses a simple state machine that understands JSON string literals
+    (including escapes) so that braces inside strings don't confuse the
+    depth counter. Returns ``None`` if no balanced closer is found.
+    """
+    depth = 0
+    in_str = False
+    escape = False
+    i = start
+    n = len(src)
+    while i < n:
+        c = src[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+        i += 1
+    return None
+
+
+def _parse_sidearm_vue_embedded_json(html: str) -> List[RosterPlayer]:
+    """Extract players from the Sidearm Vue data factory JSON blob.
+
+    Returns ``[]`` if the page isn't this shape, or if the embedded JSON
+    can't be parsed (malformed, truncated, etc.) — callers fall through
+    to their existing zero-player SKIP path. Never raises.
+    """
+    match = _SIDEARM_VUE_ROSTER_RE.search(html)
+    if not match:
+        return []
+    start = match.start(1)
+    end = _find_balanced_json_end(html, start)
+    if end is None:
+        return []
+    blob = html[start:end]
+    try:
+        roster_obj: Any = json.loads(blob)
+    except (ValueError, TypeError):
+        return []
+    raw_players = roster_obj.get("players") if isinstance(roster_obj, dict) else None
+    if not isinstance(raw_players, list):
+        return []
+
+    parsed: List[RosterPlayer] = []
+    for rp in raw_players:
+        if not isinstance(rp, dict):
+            continue
+        first = (rp.get("first_name") or "").strip()
+        last = (rp.get("last_name") or "").strip()
+        name = f"{first} {last}".strip()
+        if not name or len(name) < 2:
+            continue
+
+        jersey_raw = rp.get("jersey_number_2") or rp.get("jersey_number")
+        # Jersey fields are typed inconsistently (str on some sites, int
+        # on others). Normalize to stripped string; None for blanks.
+        if jersey_raw is None or jersey_raw == "":
+            jersey: Optional[str] = None
+        else:
+            jersey = str(jersey_raw).strip() or None
+
+        position_raw = rp.get("position_short") or rp.get("position_long")
+        position = position_raw.strip() if isinstance(position_raw, str) and position_raw.strip() else None
+
+        year_raw = rp.get("academic_year_short") or rp.get("academic_year_long")
+        year = normalize_year(year_raw) if isinstance(year_raw, str) else None
+
+        hometown_raw = rp.get("hometown")
+        hometown = hometown_raw.strip().rstrip(".") if isinstance(hometown_raw, str) and hometown_raw.strip() else None
+
+        prev_raw = rp.get("previous_school") or rp.get("highschool") or rp.get("high_school")
+        prev_club = prev_raw.strip() if isinstance(prev_raw, str) and prev_raw.strip() else None
+
+        parsed.append(RosterPlayer(
+            player_name=name,
+            position=position,
+            year=year,
+            hometown=hometown,
+            prev_club=prev_club,
+            jersey_number=jersey,
+        ))
+    return parsed
+
+
+# ---------------------------------------------------------------------------
+# HTML parsing — five strategies, matching the TS scrapers
 # ---------------------------------------------------------------------------
 
 def parse_roster_html(html: str) -> List[RosterPlayer]:
     """Extract player rows from an NCAA roster page.
 
-    Four strategies are tried in order; first non-empty result wins.
+    Five strategies are tried in order; first non-empty result wins.
 
     1. **Sidearm roster elements** — ``li.sidearm-roster-player`` or
        ``div.sidearm-roster-player`` with semantic CSS classes for each field.
@@ -309,6 +430,12 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
        ``roster-player-card-profile-field`` label/value rows. Used by
        ~20 D1 programs (Stanford, Penn State, USC, etc.) whose sites
        aren't SIDEARM.
+    5. **Sidearm Vue-embedded JSON** — a classic-SIDEARM variant where
+       the roster template is a Vue ``v-for`` and the full player list
+       is shipped inline inside the Vue instance's ``data: () => ({
+       roster: {...} })`` factory. Non-DOM strategy — delegates to
+       ``_parse_sidearm_vue_embedded_json`` which extracts + parses the
+       JSON blob directly.
     """
     soup = BeautifulSoup(html, "html.parser")
     players: List[RosterPlayer] = []
@@ -533,6 +660,40 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
             jersey_number=jersey or None,
         ))
 
+    if players:
+        return players
+
+    # --- Strategy 5: Sidearm Vue-embedded roster JSON ---
+    # A cluster of classic-SIDEARM programs (e.g. gomason.com) ship a Vue
+    # roster template whose player list is never rendered server-side, but
+    # the full roster JSON is embedded inline inside the Vue instance's
+    # ``data: () => ({ roster: {...} })`` initializer — a sibling script
+    # to the ``<template v-for="player in computedPlayers">`` block.
+    # The <li> shells DO appear in the HTML (strategy 1 picks them up
+    # when SSR hydration is complete), but the underlying requests fetch
+    # only sees the un-hydrated Vue template with zero player elements.
+    # This shape has both the static-0 and Playwright-0 outcome observed
+    # in the operational cluster.
+    #
+    # Markup signature (classic SIDEARM / Vue mount):
+    #   <script>
+    #     ... new Vue({
+    #       el: '#vue-rosters',
+    #       data: () => ({
+    #         roster: {"id":...,"players":[{"rp_id":..., "first_name":...,
+    #                  "last_name":..., "jersey_number":..., "position_short":...,
+    #                  "academic_year_short":..., "hometown":...,
+    #                  "highschool":..., "previous_school":..., ...}, ...]}
+    #       }),
+    #       ...
+    #     })
+    #   </script>
+    #
+    # The JSON lives inside JS source (not a ``<script type="application/json">``
+    # tag), so we locate the ``data: () => ({ ... roster: {`` prelude via
+    # regex and then walk the brace depth to find the balanced end of the
+    # roster object.
+    players = _parse_sidearm_vue_embedded_json(html)
     if players:
         return players
 
