@@ -432,6 +432,67 @@ assertTable(schema.schoolAliases, "school_aliases", {
 });
 
 // ---------------------------------------------------------------------------
+// Domain: HS state-tournament matches (CIF California pilot)
+//   see lib/db/src/schema/hs_matches.ts
+// ---------------------------------------------------------------------------
+
+assertTable(schema.hsMatches, "hs_matches", {
+  cols: [
+    "school_id",
+    "school_name_raw",
+    "school_state",
+    "opponent_school_id",
+    "opponent_raw",
+    "match_date",
+    "gender",
+    "team_level",
+    "result",
+    "score_for",
+    "score_against",
+    "tournament",
+    "round",
+    "season",
+    "source_url",
+    "first_seen_at",
+    "last_seen_at",
+  ],
+  uniques: ["hs_matches_natural_key_uq"],
+  indexes: [
+    "hs_matches_state_idx",
+    "hs_matches_school_id_idx",
+    "hs_matches_opponent_school_id_idx",
+    "hs_matches_tournament_idx",
+  ],
+});
+
+// ---------------------------------------------------------------------------
+// Domain: HS state rankings / polls (CIF California pilot)
+//   see lib/db/src/schema/hs_state_rankings.ts
+// ---------------------------------------------------------------------------
+
+assertTable(schema.hsStateRankings, "hs_state_rankings", {
+  cols: [
+    "state",
+    "gender",
+    "season",
+    "rank",
+    "school_id",
+    "school_name_raw",
+    "record",
+    "points",
+    "section",
+    "source_url",
+    "first_seen_at",
+    "last_seen_at",
+  ],
+  uniques: ["hs_state_rankings_natural_key_uq"],
+  indexes: [
+    "hs_state_rankings_state_season_idx",
+    "hs_state_rankings_school_id_idx",
+  ],
+});
+
+// ---------------------------------------------------------------------------
 // Domain 10 — Player iD selections (US Club iD program)
 // ---------------------------------------------------------------------------
 
