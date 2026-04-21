@@ -6,6 +6,8 @@ import DedupPage from "./pages/Dedup";
 import DedupDetailPage from "./pages/DedupDetail";
 import DataQualityPage from "./pages/DataQuality";
 import GrowthPage from "./pages/Growth";
+import CoveragePage from "./pages/Coverage";
+import CoverageLeaguePage from "./pages/CoverageLeague";
 import SchedulerPage from "./pages/Scheduler";
 
 /**
@@ -64,6 +66,22 @@ export default function App() {
         element={
           <ProtectedRoute>
             <GrowthPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coverage"
+        element={
+          <ProtectedRoute>
+            <CoveragePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coverage/:leagueId"
+        element={
+          <ProtectedRoute>
+            <CoverageLeaguePage />
           </ProtectedRoute>
         }
       />

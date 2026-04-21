@@ -742,6 +742,59 @@ export interface RunNowResponse {
   requestedAt: string;
 }
 
+/**
+ * Per-league aggregate coverage stats. A club belongs to a league via `club_affiliations.source_name = leagues_master.league_name` (exact match — there is no `leagues_master.aliases` column today).
+
+ */
+export interface CoverageLeagueRow {
+  leagueId: number;
+  leagueName: string;
+  /** Distinct clubs affiliated with this league. */
+  clubsTotal: number;
+  /** Clubs with at least one row in `club_roster_snapshots`. */
+  clubsWithRosterSnapshot: number;
+  /** Clubs with at least one row in `coach_discoveries`. */
+  clubsWithCoachDiscovery: number;
+  /** Clubs whose `scrape_health.last_scraped_at` is NULL / missing. */
+  clubsNeverScraped: number;
+  /** Clubs whose `scrape_health.last_scraped_at` is older than 14 days. */
+  clubsStale14d: number;
+}
+
+export interface CoverageLeaguesResponse {
+  rows: CoverageLeagueRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Per-club coverage detail within a single league.
+ */
+export interface CoverageLeagueDetailRow {
+  clubId: number;
+  clubNameCanonical: string;
+  lastScrapedAt: string | null;
+  consecutiveFailures: number;
+  coachCount: number;
+  hasRosterSnapshot: boolean;
+  staffPageUrl: string | null;
+  scrapeConfidence: number | null;
+}
+
+export type CoverageLeagueDetailResponseLeague = {
+  id: number;
+  name: string;
+};
+
+export interface CoverageLeagueDetailResponse {
+  league: CoverageLeagueDetailResponseLeague;
+  rows: CoverageLeagueDetailRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export type ListClubsParams = {
   /**
    * Filter by US state abbreviation or full name (ILIKE match)
@@ -1091,3 +1144,37 @@ export type ListScraperScheduleRunsParams = {
    */
   limit?: number;
 };
+
+export type GetCoverageLeaguesParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  page_size?: number;
+};
+
+export type GetCoverageLeagueDetailParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  page_size?: number;
+  status?: GetCoverageLeagueDetailStatus;
+};
+
+export type GetCoverageLeagueDetailStatus =
+  (typeof GetCoverageLeagueDetailStatus)[keyof typeof GetCoverageLeagueDetailStatus];
+
+export const GetCoverageLeagueDetailStatus = {
+  all: "all",
+  never_scraped: "never_scraped",
+  stale: "stale",
+} as const;

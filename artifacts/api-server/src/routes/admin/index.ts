@@ -22,6 +22,7 @@ import scrapeHealthRouter from "./scrape-health";
 import { dedupRouter } from "./dedup";
 import { dataQualityRouter } from "./data-quality";
 import growthRouter from "./growth";
+import coverageRouter from "./coverage";
 import {
   buildScraperSchedulesRouter,
   buildSchedulerJobsRouter,
@@ -38,6 +39,7 @@ authedAdminRouter.use("/scrape-health", scrapeHealthRouter);
 authedAdminRouter.use("/dedup", dedupRouter);
 authedAdminRouter.use("/data-quality", dataQualityRouter);
 authedAdminRouter.use("/growth", growthRouter);
+authedAdminRouter.use("/coverage", coverageRouter);
 // Scheduler (S.3) — "Run now" is super_admin-gated inside the sub-router;
 // the read endpoints inherit the surrounding requireAdmin guard.
 authedAdminRouter.use("/scraper-schedules", buildScraperSchedulesRouter());

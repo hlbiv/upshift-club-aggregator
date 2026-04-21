@@ -1518,6 +1518,131 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/coverage/leagues:
+    get:
+      operationId: getCoverageLeagues
+      tags: [admin]
+      summary: Per-league coverage rollup — clubs with rosters / coaches / staleness
+      description: >
+        Paginated rollup of every league in `leagues_master` alongside
+        aggregate counts of its affiliated canonical clubs. `clubsTotal`
+        counts clubs reachable via `club_affiliations` (join:
+        `leagues_master.league_name` = `club_affiliations.source_name`,
+        exact match — no league-side alias table today).
+
+        Subset counts:
+          * `clubsWithRosterSnapshot` — clubs with >=1 row in
+            `club_roster_snapshots.club_id`.
+          * `clubsWithCoachDiscovery` — clubs with >=1 row in
+            `coach_discoveries.club_id`.
+          * `clubsNeverScraped` — clubs with no `scrape_health` row for
+            `entity_type='club'` / `entity_id=club.id`.
+          * `clubsStale14d` — clubs with `scrape_health.last_scraped_at <
+            now() - 14 days`.
+
+        Ordered `clubs_never_scraped DESC, clubs_stale_14d DESC,
+        league_name ASC` so worst-covered leagues surface on page 1.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated per-league coverage rollup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverageLeaguesResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/coverage/leagues/{leagueId}:
+    get:
+      operationId: getCoverageLeagueDetail
+      tags: [admin]
+      summary: Per-club coverage drilldown inside one league
+      description: >
+        Paginated list of the canonical clubs affiliated with the given
+        league, each row carrying its last-scraped timestamp, consecutive
+        failures, coach count, roster-snapshot presence, staff-page URL,
+        and scrape confidence.
+
+        `status` filters:
+          * `all` (default) — every affiliated club.
+          * `never_scraped` — clubs whose `scrape_health.last_scraped_at`
+            is NULL or have no `scrape_health` row at all.
+          * `stale` — clubs with `scrape_health.last_scraped_at < now() -
+            14 days`.
+
+        Ordered `last_scraped_at ASC NULLS FIRST, club_name_canonical ASC`
+        so oldest + never-scraped clubs bubble up. Returns 404 if
+        `leagueId` is unknown.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: leagueId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, never_scraped, stale]
+            default: all
+      responses:
+        "200":
+          description: Paginated per-club coverage drilldown
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverageLeagueDetailResponse"
+        "400":
+          description: Invalid path / query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: League not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/scheduler-jobs/{id}:
     get:
       operationId: getSchedulerJob
@@ -3056,3 +3181,121 @@ components:
         - jobKey
         - status
         - requestedAt
+
+    CoverageLeagueRow:
+      type: object
+      description: >
+        Per-league aggregate coverage stats. A club belongs to a league via
+        `club_affiliations.source_name = leagues_master.league_name` (exact
+        match — there is no `leagues_master.aliases` column today).
+      properties:
+        leagueId:
+          type: integer
+        leagueName:
+          type: string
+        clubsTotal:
+          type: integer
+          description: Distinct clubs affiliated with this league.
+        clubsWithRosterSnapshot:
+          type: integer
+          description: Clubs with at least one row in `club_roster_snapshots`.
+        clubsWithCoachDiscovery:
+          type: integer
+          description: Clubs with at least one row in `coach_discoveries`.
+        clubsNeverScraped:
+          type: integer
+          description: Clubs whose `scrape_health.last_scraped_at` is NULL / missing.
+        clubsStale14d:
+          type: integer
+          description: Clubs whose `scrape_health.last_scraped_at` is older than 14 days.
+      required:
+        - leagueId
+        - leagueName
+        - clubsTotal
+        - clubsWithRosterSnapshot
+        - clubsWithCoachDiscovery
+        - clubsNeverScraped
+        - clubsStale14d
+
+    CoverageLeaguesResponse:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverageLeagueRow"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - rows
+        - total
+        - page
+        - pageSize
+
+    CoverageLeagueDetailRow:
+      type: object
+      description: Per-club coverage detail within a single league.
+      properties:
+        clubId:
+          type: integer
+        clubNameCanonical:
+          type: string
+        lastScrapedAt:
+          type: string
+          format: date-time
+          nullable: true
+        consecutiveFailures:
+          type: integer
+        coachCount:
+          type: integer
+        hasRosterSnapshot:
+          type: boolean
+        staffPageUrl:
+          type: string
+          nullable: true
+        scrapeConfidence:
+          type: number
+          nullable: true
+      required:
+        - clubId
+        - clubNameCanonical
+        - lastScrapedAt
+        - consecutiveFailures
+        - coachCount
+        - hasRosterSnapshot
+        - staffPageUrl
+        - scrapeConfidence
+
+    CoverageLeagueDetailResponse:
+      type: object
+      properties:
+        league:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+          required:
+            - id
+            - name
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverageLeagueDetailRow"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - league
+        - rows
+        - total
+        - page
+        - pageSize
