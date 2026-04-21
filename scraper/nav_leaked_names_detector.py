@@ -7,7 +7,23 @@ Match is case-insensitive on the FULL normalized player_name (not
 substring). Idempotent via the (snapshot_id, flag_type) unique
 constraint.
 
-CLI: python3 run.py --source nav-leaked-names-detect [--dry-run] [--limit N]
+Incremental scan window:
+    By default the detector restricts the scan to
+    `club_roster_snapshots` rows whose `scraped_at` is within the last
+    7 days. This keeps nightly runs bounded as the snapshots table
+    grows past the 10M-row scale. 7 days covers the slowest weekly
+    scraper cadence AND tolerates up to ~6 consecutive missed nightly
+    runs (Replit hiccup, transient DB unavailability). Idempotency of
+    the upsert (ON CONFLICT + WHERE metadata IS DISTINCT FROM) makes
+    re-scanning the same snapshot across consecutive windows a cheap
+    no-op, so overlap is free.
+
+    Use `--full-scan` to ignore the window — intended for one-time
+    re-scans after a nav-word-list expansion or historical-bug
+    investigation, not routine operation.
+
+CLI: python3 run.py --source nav-leaked-names-detect \\
+        [--dry-run] [--limit N] [--full-scan]
 """
 
 from __future__ import annotations
@@ -16,7 +32,7 @@ import logging
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import psycopg2  # type: ignore
@@ -134,22 +150,48 @@ class DetectorStats:
 GroupKey = Tuple[str, str, str, str]
 
 
+# Default incremental scan window, in days. Covers the slowest
+# weekly-cadence scraper plus headroom for multiple consecutive missed
+# nightly runs. See module docstring for rationale.
+DEFAULT_WINDOW_DAYS = 7
+
+
 def _fetch_snapshot_rows(
-    cur, limit: Optional[int]
+    cur,
+    limit: Optional[int],
+    full_scan: bool = False,
+    window_days: int = DEFAULT_WINDOW_DAYS,
 ) -> List[Tuple[int, str, str, str, str, str]]:
     """
     Return (id, club_name_raw, season, age_group, gender, player_name)
-    for every snapshot row, ordered by id. `limit` caps the row count
-    for smoke tests; production runs leave it None.
+    for snapshot rows, ordered by id.
+
+    By default only rows with `scraped_at >= NOW() - window_days` are
+    returned — see module docstring for the window rationale. Pass
+    `full_scan=True` to skip the window filter (operator escape hatch
+    for one-off historical re-scans).
+
+    `limit` caps the row count for smoke tests; production nightly
+    runs leave it None.
     """
-    sql = (
-        "SELECT id, club_name_raw, season, age_group, gender, player_name "
-        "FROM club_roster_snapshots "
-        "ORDER BY id"
-    )
+    if full_scan:
+        sql = (
+            "SELECT id, club_name_raw, season, age_group, gender, player_name "
+            "FROM club_roster_snapshots "
+            "ORDER BY id"
+        )
+        params: Tuple[Any, ...] = ()
+    else:
+        sql = (
+            "SELECT id, club_name_raw, season, age_group, gender, player_name "
+            "FROM club_roster_snapshots "
+            "WHERE scraped_at >= NOW() - (%s || ' days')::interval "
+            "ORDER BY id"
+        )
+        params = (str(int(window_days)),)
     if limit is not None:
         sql += f" LIMIT {int(limit)}"
-    cur.execute(sql)
+    cur.execute(sql, params if params else None)
     return list(cur.fetchall())
 
 
@@ -207,6 +249,8 @@ def detect_all(
     conn,
     dry_run: bool = False,
     limit: Optional[int] = None,
+    full_scan: bool = False,
+    window_days: int = DEFAULT_WINDOW_DAYS,
 ) -> DetectorStats:
     """
     Main entry point. Scans `club_roster_snapshots`, groups by
@@ -218,11 +262,19 @@ def detect_all(
         conn: open psycopg2 connection.
         dry_run: don't write — populate stats only.
         limit: cap on snapshot rows fetched (smoke testing).
+        full_scan: skip the default `scraped_at` window and scan every
+            snapshot row. Intended for one-off re-scans after the
+            nav-word list expands; routine nightly runs leave this
+            False.
+        window_days: size of the incremental window when `full_scan`
+            is False. Defaults to `DEFAULT_WINDOW_DAYS` (7).
     """
     stats = DetectorStats()
 
     with conn.cursor() as cur:
-        rows = _fetch_snapshot_rows(cur, limit)
+        rows = _fetch_snapshot_rows(
+            cur, limit, full_scan=full_scan, window_days=window_days
+        )
         stats.rows_scanned = len(rows)
 
         # Group rows by (club_name_raw, season, age_group, gender).
@@ -286,10 +338,17 @@ def detect_all(
 # CLI entry point — mirrors canonical_club_linker.run_cli shape.
 # ---------------------------------------------------------------------------
 
-def run_cli(dry_run: bool = False, limit: Optional[int] = None) -> int:
+def run_cli(
+    dry_run: bool = False,
+    limit: Optional[int] = None,
+    full_scan: bool = False,
+) -> int:
     """
     Entry point for `python run.py --source nav-leaked-names-detect`.
     Returns the process exit code (0 on success, 1 on DB unavailable).
+
+    `full_scan` maps to the CLI `--full-scan` flag; see module
+    docstring for when to use it.
     """
     from scrape_run_logger import ScrapeRunLogger, FailureKind
     from alerts import alert_scraper_failure
@@ -314,7 +373,12 @@ def run_cli(dry_run: bool = False, limit: Optional[int] = None) -> int:
     try:
         conn = psycopg2.connect(db_url)
         try:
-            stats = detect_all(conn, dry_run=dry_run, limit=limit)
+            stats = detect_all(
+                conn,
+                dry_run=dry_run,
+                limit=limit,
+                full_scan=full_scan,
+            )
         finally:
             conn.close()
     except Exception as exc:
