@@ -2,9 +2,11 @@ import { useState } from "react";
 import {
   useGaPremierOrphanCleanup,
   useGetEmptyStaffPages,
+  useGetNavLeakedNames,
   useGetStaleScrapes,
   type EmptyStaffPagesResponse,
   type GaPremierOrphanCleanupResponse,
+  type NavLeakedNamesResponse,
   type StaleScrapesResponse,
 } from "@workspace/api-client-react";
 import {
@@ -36,7 +38,7 @@ import AdminNav from "../components/AdminNav";
 /**
  * Data-quality admin page.
  *
- * Three panels surfaced as tabs:
+ * Four panels surfaced as tabs:
  *
  *   1. GA Premier orphans — POST /api/v1/admin/data-quality/ga-premier-orphans
  *   2. Empty staff pages — GET /api/v1/admin/data-quality/empty-staff-pages
@@ -45,11 +47,17 @@ import AdminNav from "../components/AdminNav";
  *   3. Stale scrapes — GET /api/v1/admin/data-quality/stale-scrapes
  *      scrape_health rows whose last_scraped_at is older than
  *      `threshold_days` days or never scraped. Default 14.
+ *   4. Nav-leaked names — GET /api/v1/admin/data-quality/nav-leaked-names
+ *      Roster snapshots flagged by Phase 2 heuristics as containing
+ *      navigation-menu strings rather than real player names. Phase 1
+ *      read-only panel — resolve-flag UI ships in Phase 3+. Empty until
+ *      the scraper detector ships.
  *
- * All three panels drive off Orval-generated React Query hooks
- * (`useGaPremierOrphanCleanup`, `useGetEmptyStaffPages`, `useGetStaleScrapes`).
- * Radix Tabs unmount inactive TabsContent by default, so the read-only
- * panels don't fire until the operator clicks their tab.
+ * All four panels drive off Orval-generated React Query hooks
+ * (`useGaPremierOrphanCleanup`, `useGetEmptyStaffPages`, `useGetStaleScrapes`,
+ * `useGetNavLeakedNames`). Radix Tabs unmount inactive TabsContent by
+ * default, so the read-only panels don't fire until the operator clicks
+ * their tab.
  */
 
 const MAX_LIMIT = 10_000;
@@ -76,6 +84,7 @@ export default function DataQualityPage() {
           <TabsTrigger value="ga-premier">GA Premier orphans</TabsTrigger>
           <TabsTrigger value="empty-staff">Empty staff pages</TabsTrigger>
           <TabsTrigger value="stale-scrapes">Stale scrapes</TabsTrigger>
+          <TabsTrigger value="nav-leaked">Nav-leaked names</TabsTrigger>
         </TabsList>
 
         <TabsContent value="ga-premier">
@@ -86,6 +95,9 @@ export default function DataQualityPage() {
         </TabsContent>
         <TabsContent value="stale-scrapes">
           <StaleScrapesPanel />
+        </TabsContent>
+        <TabsContent value="nav-leaked">
+          <NavLeakedNamesPanel />
         </TabsContent>
       </Tabs>
     </main>
@@ -574,6 +586,181 @@ function StaleScrapesTable({
         onPage={onPage}
       />
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Nav-leaked names (Phase 1 — read-only)
+// ---------------------------------------------------------------------------
+
+function NavLeakedNamesPanel() {
+  const [includeResolved, setIncludeResolved] = useState(false);
+  const [appliedIncludeResolved, setAppliedIncludeResolved] = useState(false);
+  const [page, setPage] = useState(1);
+
+  const query = useGetNavLeakedNames({
+    page,
+    page_size: PANEL_DEFAULT_PAGE_SIZE,
+    include_resolved: appliedIncludeResolved,
+  });
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPage(1);
+    setAppliedIncludeResolved(includeResolved);
+  }
+
+  return (
+    <section aria-labelledby="nav-leaked-heading">
+      <p className="mb-4 text-sm text-neutral-500">
+        Roster snapshots flagged as containing navigation-menu strings (e.g.{" "}
+        <code>"HOME"</code>, <code>"CONTACT"</code>) instead of real player
+        names. Phase 1 read-only panel — detection ships in Phase 2 and the
+        table is empty until then.
+      </p>
+
+      <form
+        onSubmit={onSubmit}
+        className="mb-6 flex flex-wrap items-end gap-4 rounded-lg border border-neutral-200 bg-white p-4"
+      >
+        <label className="flex items-center gap-2 text-sm text-neutral-800">
+          <input
+            type="checkbox"
+            checked={includeResolved}
+            onChange={(e) => setIncludeResolved(e.target.checked)}
+            className="h-4 w-4 rounded border-neutral-300"
+          />
+          Include resolved flags
+        </label>
+        <button
+          type="submit"
+          disabled={query.isFetching}
+          className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
+        >
+          {query.isFetching ? "Loading…" : "Refresh"}
+        </button>
+      </form>
+
+      {query.isError && (
+        <div
+          role="alert"
+          className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          Failed: {formatError(query.error)}
+        </div>
+      )}
+
+      {query.isLoading && <TablePlaceholder label="Loading…" />}
+
+      {query.isSuccess && query.data.rows.length === 0 && (
+        <TablePlaceholder label="No flagged snapshots." />
+      )}
+
+      {query.isSuccess && query.data.rows.length > 0 && (
+        <NavLeakedNamesTable data={query.data} onPage={(p) => setPage(p)} />
+      )}
+    </section>
+  );
+}
+
+function NavLeakedNamesTable({
+  data,
+  onPage,
+}: {
+  data: NavLeakedNamesResponse;
+  onPage: (p: number) => void;
+}) {
+  return (
+    <>
+      <p className="mb-2 text-sm text-neutral-500">
+        {data.total.toLocaleString()} flagged snapshots
+      </p>
+      <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Club</TableHead>
+              <TableHead>Leaked strings</TableHead>
+              <TableHead>Roster size</TableHead>
+              <TableHead>Flagged at</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.rows.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell className="font-medium">
+                  {row.clubNameCanonical ?? (
+                    <span className="text-neutral-400">
+                      (unlinked snapshot #{row.snapshotId})
+                    </span>
+                  )}
+                  {row.clubId !== null && (
+                    <span className="ml-2 text-xs text-neutral-400">
+                      #{row.clubId}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {row.leakedStrings.length === 0 ? (
+                    <span className="text-neutral-400">—</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {row.leakedStrings.map((s, i) => (
+                        <span
+                          key={`${i}-${s}`}
+                          className="rounded bg-neutral-100 px-2 py-0.5 font-mono text-xs text-neutral-800"
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell>{row.snapshotRosterSize}</TableCell>
+                <TableCell>{formatDate(row.flaggedAt)}</TableCell>
+                <TableCell>
+                  <ResolvedBadge
+                    resolvedAt={row.resolvedAt}
+                    resolvedByEmail={row.resolvedByEmail}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <Pager
+        page={data.page}
+        pageSize={data.pageSize}
+        total={data.total}
+        onPage={onPage}
+      />
+    </>
+  );
+}
+
+function ResolvedBadge({
+  resolvedAt,
+  resolvedByEmail,
+}: {
+  resolvedAt: string | null;
+  resolvedByEmail: string | null;
+}) {
+  if (resolvedAt === null) {
+    return (
+      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+        Active
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs text-neutral-600">
+      Resolved {formatDate(resolvedAt)}
+      {resolvedByEmail && (
+        <span className="ml-1 text-neutral-400">by {resolvedByEmail}</span>
+      )}
+    </span>
   );
 }
 
