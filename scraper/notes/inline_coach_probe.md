@@ -80,9 +80,14 @@ strategies in order, returning the first hit:
 4. **NEW `.roster-staff-members-card-item` / `.roster-card-item`** — title
    from `.roster-card-item__position`, name from `.roster-card-item__title`.
 
-`_is_strict_head_coach` uses a negative-lookbehind regex plus an explicit
-"associate|assistant head coach" guard so a real Head Coach card sitting
-next to an Associate Head Coach card is always preferred. Strategies 2 and 4
+`_is_strict_head_coach` first runs the title through `_NON_HEAD_COACH_RE`
+— an explicit guard regex that matches every subordinate-of-head-coach
+form we've observed (Associate / Assoc / Assoc., Assistant / Asst /
+Asst., "Assistant to the Head Coach", and prefixed variants like
+"Volunteer Assistant Head Coach") — and rejects the title if it matches.
+Only titles that survive that guard are then matched against the plain
+`_STRICT_HEAD_COACH_RE`. This two-step design ensures a real Head Coach
+card sitting next to an Associate Head Coach card is always preferred. Strategies 2 and 4
 both demonstrate this in their fixtures (each fixture contains a Head + an
 Associate card, and the test asserts the Head is returned).
 
