@@ -36,6 +36,8 @@ import type {
   ClubStaffResponse,
   CoachQualityFlagsResponse,
   CoachSearchResponse,
+  CoverageLeagueDetailResponse,
+  CoverageLeaguesResponse,
   CoverageResponse,
   CoverageTrendResponse,
   DuplicateReviewDecision,
@@ -47,6 +49,8 @@ import type {
   GaPremierOrphanCleanupRequest,
   GaPremierOrphanCleanupResponse,
   GetCoachQualityFlagsParams,
+  GetCoverageLeagueDetailParams,
+  GetCoverageLeaguesParams,
   GetEmptyStaffPagesParams,
   GetGrowthCoverageTrendParams,
   GetGrowthScrapedCountsParams,
@@ -3701,6 +3705,253 @@ export const useRunScraperScheduleNow = <
 > => {
   return useMutation(getRunScraperScheduleNowMutationOptions(options));
 };
+
+/**
+ * Paginated rollup of every league in `leagues_master` alongside aggregate counts of its affiliated canonical clubs. `clubsTotal` counts clubs reachable via `club_affiliations` (join: `leagues_master.league_name` = `club_affiliations.source_name`, exact match — no league-side alias table today).
+Subset counts:
+  * `clubsWithRosterSnapshot` — clubs with >=1 row in
+    `club_roster_snapshots.club_id`.
+  * `clubsWithCoachDiscovery` — clubs with >=1 row in
+    `coach_discoveries.club_id`.
+  * `clubsNeverScraped` — clubs with no `scrape_health` row for
+    `entity_type='club'` / `entity_id=club.id`.
+  * `clubsStale14d` — clubs with `scrape_health.last_scraped_at <
+    now() - 14 days`.
+
+Ordered `clubs_never_scraped DESC, clubs_stale_14d DESC, league_name ASC` so worst-covered leagues surface on page 1.
+
+ * @summary Per-league coverage rollup — clubs with rosters / coaches / staleness
+ */
+export const getGetCoverageLeaguesUrl = (params?: GetCoverageLeaguesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/coverage/leagues?${stringifiedParams}`
+    : `/api/v1/admin/coverage/leagues`;
+};
+
+export const getCoverageLeagues = async (
+  params?: GetCoverageLeaguesParams,
+  options?: RequestInit,
+): Promise<CoverageLeaguesResponse> => {
+  return customFetch<CoverageLeaguesResponse>(
+    getGetCoverageLeaguesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetCoverageLeaguesQueryKey = (
+  params?: GetCoverageLeaguesParams,
+) => {
+  return [
+    `/api/v1/admin/coverage/leagues`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetCoverageLeaguesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCoverageLeagues>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetCoverageLeaguesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoverageLeagues>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCoverageLeaguesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCoverageLeagues>>
+  > = ({ signal }) => getCoverageLeagues(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCoverageLeagues>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCoverageLeaguesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCoverageLeagues>>
+>;
+export type GetCoverageLeaguesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Per-league coverage rollup — clubs with rosters / coaches / staleness
+ */
+
+export function useGetCoverageLeagues<
+  TData = Awaited<ReturnType<typeof getCoverageLeagues>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetCoverageLeaguesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoverageLeagues>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCoverageLeaguesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Paginated list of the canonical clubs affiliated with the given league, each row carrying its last-scraped timestamp, consecutive failures, coach count, roster-snapshot presence, staff-page URL, and scrape confidence.
+`status` filters:
+  * `all` (default) — every affiliated club.
+  * `never_scraped` — clubs whose `scrape_health.last_scraped_at`
+    is NULL or have no `scrape_health` row at all.
+  * `stale` — clubs with `scrape_health.last_scraped_at < now() -
+    14 days`.
+
+Ordered `last_scraped_at ASC NULLS FIRST, club_name_canonical ASC` so oldest + never-scraped clubs bubble up. Returns 404 if `leagueId` is unknown.
+
+ * @summary Per-club coverage drilldown inside one league
+ */
+export const getGetCoverageLeagueDetailUrl = (
+  leagueId: number,
+  params?: GetCoverageLeagueDetailParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/coverage/leagues/${leagueId}?${stringifiedParams}`
+    : `/api/v1/admin/coverage/leagues/${leagueId}`;
+};
+
+export const getCoverageLeagueDetail = async (
+  leagueId: number,
+  params?: GetCoverageLeagueDetailParams,
+  options?: RequestInit,
+): Promise<CoverageLeagueDetailResponse> => {
+  return customFetch<CoverageLeagueDetailResponse>(
+    getGetCoverageLeagueDetailUrl(leagueId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetCoverageLeagueDetailQueryKey = (
+  leagueId: number,
+  params?: GetCoverageLeagueDetailParams,
+) => {
+  return [
+    `/api/v1/admin/coverage/leagues/${leagueId}`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetCoverageLeagueDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCoverageLeagueDetail>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  leagueId: number,
+  params?: GetCoverageLeagueDetailParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoverageLeagueDetail>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetCoverageLeagueDetailQueryKey(leagueId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCoverageLeagueDetail>>
+  > = ({ signal }) =>
+    getCoverageLeagueDetail(leagueId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!leagueId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCoverageLeagueDetail>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCoverageLeagueDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCoverageLeagueDetail>>
+>;
+export type GetCoverageLeagueDetailQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Per-club coverage drilldown inside one league
+ */
+
+export function useGetCoverageLeagueDetail<
+  TData = Awaited<ReturnType<typeof getCoverageLeagueDetail>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  leagueId: number,
+  params?: GetCoverageLeagueDetailParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoverageLeagueDetail>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCoverageLeagueDetailQueryOptions(
+    leagueId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Get a single scheduler_jobs row by id

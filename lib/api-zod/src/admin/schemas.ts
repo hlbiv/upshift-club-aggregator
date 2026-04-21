@@ -521,3 +521,101 @@ export const ScraperSchedulesResponse = z.object({
   schedules: z.array(ScraperSchedule),
 });
 export type ScraperSchedulesResponse = z.infer<typeof ScraperSchedulesResponse>;
+
+/**
+ * Phase 3 coverage drilldown.
+ *
+ * `/v1/admin/coverage/leagues` aggregates per-league club coverage — which
+ * clubs have a roster snapshot, a coach discovery, or are stale / never
+ * scraped. Join path: `leagues_master.league_name` ↔
+ * `club_affiliations.source_name`. Exact-match; no alias table on the league
+ * side today. See docstring on the route for the caveat.
+ *
+ * `/v1/admin/coverage/leagues/:leagueId` drilldown surfaces the per-club
+ * roster-snapshot / coach-discovery / stale-scrape state for one league.
+ */
+
+/** Request for GET /v1/admin/coverage/leagues. */
+export const CoverageLeaguesRequest = z.object({
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(100).default(20),
+});
+export type CoverageLeaguesRequest = z.infer<typeof CoverageLeaguesRequest>;
+
+/**
+ * One league with its aggregate coverage counts across its affiliated
+ * canonical_clubs. `clubsNeverScraped` counts clubs with no `scrape_health`
+ * row (or `last_scraped_at IS NULL` — both signal the canonical-club linker
+ * has seen them but the club-level scraper has not). `clubsStale14d` counts
+ * clubs with a `last_scraped_at` older than 14 days.
+ */
+export const CoverageLeagueRow = z.object({
+  leagueId: z.number().int(),
+  leagueName: z.string(),
+  clubsTotal: z.number().int(),
+  clubsWithRosterSnapshot: z.number().int(),
+  clubsWithCoachDiscovery: z.number().int(),
+  clubsNeverScraped: z.number().int(),
+  clubsStale14d: z.number().int(),
+});
+export type CoverageLeagueRow = z.infer<typeof CoverageLeagueRow>;
+
+/** Paginated envelope for /v1/admin/coverage/leagues. */
+export const CoverageLeaguesResponse = z.object({
+  rows: z.array(CoverageLeagueRow),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export type CoverageLeaguesResponse = z.infer<typeof CoverageLeaguesResponse>;
+
+/**
+ * Status filter for the per-league drilldown. `all` (default) returns every
+ * club affiliated with the league; `never_scraped` keeps only those with no
+ * `scrape_health.last_scraped_at`; `stale` keeps only those with a non-null
+ * `last_scraped_at` older than 14 days.
+ */
+export const CoverageLeagueDetailStatus = z.enum([
+  "all",
+  "never_scraped",
+  "stale",
+]);
+export type CoverageLeagueDetailStatus = z.infer<typeof CoverageLeagueDetailStatus>;
+
+/** Request for GET /v1/admin/coverage/leagues/:leagueId. */
+export const CoverageLeagueDetailRequest = z.object({
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(100).default(20),
+  status: CoverageLeagueDetailStatus.default("all"),
+});
+export type CoverageLeagueDetailRequest = z.infer<
+  typeof CoverageLeagueDetailRequest
+>;
+
+/** Per-club coverage row inside the drilldown table. */
+export const CoverageLeagueDetailRow = z.object({
+  clubId: z.number().int(),
+  clubNameCanonical: z.string(),
+  lastScrapedAt: z.string().datetime().nullable(),
+  consecutiveFailures: z.number().int(),
+  coachCount: z.number().int(),
+  hasRosterSnapshot: z.boolean(),
+  staffPageUrl: z.string().nullable(),
+  scrapeConfidence: z.number().nullable(),
+});
+export type CoverageLeagueDetailRow = z.infer<typeof CoverageLeagueDetailRow>;
+
+/** Paginated envelope for /v1/admin/coverage/leagues/:leagueId. */
+export const CoverageLeagueDetailResponse = z.object({
+  league: z.object({
+    id: z.number().int(),
+    name: z.string(),
+  }),
+  rows: z.array(CoverageLeagueDetailRow),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export type CoverageLeagueDetailResponse = z.infer<
+  typeof CoverageLeagueDetailResponse
+>;

@@ -1,0 +1,456 @@
+/**
+ * `/api/v1/admin/coverage/*` — per-league operations-visibility panels.
+ *
+ *   GET /api/v1/admin/coverage/leagues
+ *   GET /api/v1/admin/coverage/leagues/:leagueId
+ *
+ * Both routes are inherited behind `requireAdmin` + the 120/min read-tier
+ * limiter by the parent admin router in `./index.ts`.
+ *
+ * Join assumption
+ * ---------------
+ * The join between `leagues_master` and the clubs that belong to each
+ * league runs through `club_affiliations.source_name =
+ * leagues_master.league_name`, as an exact string match. There is no
+ * `leagues_master.aliases` column today, so source-name drift (e.g. the
+ * same league recorded as `"ECNL"` vs `"ECNL Boys"`) is NOT resolved —
+ * each string is treated as its own league on both sides of the join.
+ * If the schema grows a league-aliases table later, the CTE below is the
+ * single place to plug that in.
+ *
+ * Scrape-health coupling
+ * ----------------------
+ * Coverage staleness runs off `scrape_health` with `entity_type='club'`,
+ * keyed by `canonical_clubs.id`. A club with no `scrape_health` row counts
+ * as `never_scraped` (same semantic as a NULL `last_scraped_at`).
+ *
+ * Ordering
+ * --------
+ * - `/leagues`: `clubs_never_scraped DESC, clubs_stale_14d DESC,
+ *   league_name ASC` — the worst-covered leagues bubble to page 1.
+ * - `/leagues/:leagueId`: `last_scraped_at ASC NULLS FIRST,
+ *   club_name_canonical ASC` — oldest + never-scraped first.
+ *
+ * Testing
+ * -------
+ * Handlers are factory-built (same pattern as `admin/growth.ts` and
+ * `admin/data-quality.ts`) so unit tests can drive them with an in-memory
+ * `CoverageDeps` fake. The prod wiring lives at the bottom of this file.
+ */
+import {
+  Router,
+  type IRouter,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
+import { sql } from "drizzle-orm";
+import { db as defaultDb } from "@workspace/db";
+import {
+  CoverageLeaguesRequest,
+  CoverageLeaguesResponse,
+  CoverageLeagueDetailRequest,
+  CoverageLeagueDetailResponse,
+  type CoverageLeagueDetailStatus,
+} from "@hlbiv/api-zod/admin";
+
+// ---------------------------------------------------------------------------
+// DI surface.
+// ---------------------------------------------------------------------------
+
+export interface CoverageLeagueAggRow {
+  leagueId: number;
+  leagueName: string;
+  clubsTotal: number;
+  clubsWithRosterSnapshot: number;
+  clubsWithCoachDiscovery: number;
+  clubsNeverScraped: number;
+  clubsStale14d: number;
+}
+
+export interface CoverageLeagueDetailAggRow {
+  clubId: number;
+  clubNameCanonical: string;
+  lastScrapedAt: Date | string | null;
+  consecutiveFailures: number;
+  coachCount: number;
+  hasRosterSnapshot: boolean;
+  staffPageUrl: string | null;
+  scrapeConfidence: number | null;
+}
+
+export interface CoverageDeps {
+  listLeagues: (args: {
+    page: number;
+    pageSize: number;
+  }) => Promise<{ rows: CoverageLeagueAggRow[]; total: number }>;
+
+  /**
+   * Resolves the `(id, name)` pair for the requested league. Returns null
+   * if the id is unknown — the handler translates that into a 404.
+   */
+  findLeague: (args: {
+    leagueId: number;
+  }) => Promise<{ id: number; name: string } | null>;
+
+  listClubsInLeague: (args: {
+    leagueId: number;
+    leagueName: string;
+    status: CoverageLeagueDetailStatus;
+    page: number;
+    pageSize: number;
+  }) => Promise<{ rows: CoverageLeagueDetailAggRow[]; total: number }>;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers — ISO coercion lifted from admin/data-quality.ts.
+// ---------------------------------------------------------------------------
+
+function toIsoOrNull(value: Date | string | null): string | null {
+  if (value === null) return null;
+  if (value instanceof Date) return value.toISOString();
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function toNumberOrUndefined(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function toStringOrUndefined(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  return String(raw);
+}
+
+// ---------------------------------------------------------------------------
+// Handler factories.
+// ---------------------------------------------------------------------------
+
+export function makeListLeaguesHandler(deps: CoverageDeps) {
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const parsed = CoverageLeaguesRequest.safeParse({
+        page: toNumberOrUndefined(req.query.page),
+        pageSize:
+          toNumberOrUndefined(req.query.page_size) ??
+          toNumberOrUndefined(req.query.pageSize),
+      });
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid query params" });
+        return;
+      }
+      const { page, pageSize } = parsed.data;
+
+      const { rows, total } = await deps.listLeagues({ page, pageSize });
+
+      res.json(
+        CoverageLeaguesResponse.parse({
+          rows,
+          total,
+          page,
+          pageSize,
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export function makeLeagueDetailHandler(deps: CoverageDeps) {
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const leagueId = Number(req.params.leagueId);
+      if (!Number.isFinite(leagueId) || leagueId <= 0) {
+        res.status(400).json({ error: "Invalid leagueId" });
+        return;
+      }
+
+      const parsed = CoverageLeagueDetailRequest.safeParse({
+        page: toNumberOrUndefined(req.query.page),
+        pageSize:
+          toNumberOrUndefined(req.query.page_size) ??
+          toNumberOrUndefined(req.query.pageSize),
+        status: toStringOrUndefined(req.query.status),
+      });
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid query params" });
+        return;
+      }
+      const { page, pageSize, status } = parsed.data;
+
+      const league = await deps.findLeague({ leagueId });
+      if (league === null) {
+        res.status(404).json({ error: "League not found" });
+        return;
+      }
+
+      const { rows, total } = await deps.listClubsInLeague({
+        leagueId: league.id,
+        leagueName: league.name,
+        status,
+        page,
+        pageSize,
+      });
+
+      res.json(
+        CoverageLeagueDetailResponse.parse({
+          league,
+          rows: rows.map((r) => ({
+            clubId: r.clubId,
+            clubNameCanonical: r.clubNameCanonical,
+            lastScrapedAt: toIsoOrNull(r.lastScrapedAt),
+            consecutiveFailures: r.consecutiveFailures,
+            coachCount: r.coachCount,
+            hasRosterSnapshot: r.hasRosterSnapshot,
+            staffPageUrl: r.staffPageUrl,
+            scrapeConfidence: r.scrapeConfidence,
+          })),
+          total,
+          page,
+          pageSize,
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Production DB wiring.
+// ---------------------------------------------------------------------------
+
+const STALE_THRESHOLD_DAYS = 14;
+
+export const prodCoverageDeps: CoverageDeps = {
+  listLeagues: async ({ page, pageSize }) => {
+    const offset = (page - 1) * pageSize;
+
+    // Per-league aggregate. The join key is exact on
+    // `leagues_master.league_name = club_affiliations.source_name`.
+    // Distinct clubs only — a league with a duplicate affiliation row must
+    // not double-count. Subset flags use EXISTS so a club with 10 snapshots
+    // still counts 1.
+    const result = await defaultDb.execute<{
+      league_id: number;
+      league_name: string;
+      clubs_total: string;
+      clubs_with_roster_snapshot: string;
+      clubs_with_coach_discovery: string;
+      clubs_never_scraped: string;
+      clubs_stale_14d: string;
+      total: string;
+    }>(sql`
+      WITH league_clubs AS (
+        SELECT
+          lm.id         AS league_id,
+          lm.league_name,
+          cc.id         AS club_id,
+          EXISTS (
+            SELECT 1 FROM club_roster_snapshots crs WHERE crs.club_id = cc.id
+          ) AS has_roster_snapshot,
+          EXISTS (
+            SELECT 1 FROM coach_discoveries cd WHERE cd.club_id = cc.id
+          ) AS has_coach_discovery,
+          sh.last_scraped_at
+        FROM leagues_master lm
+        LEFT JOIN club_affiliations ca
+          ON ca.source_name = lm.league_name
+        LEFT JOIN canonical_clubs cc
+          ON cc.id = ca.club_id
+        LEFT JOIN scrape_health sh
+          ON sh.entity_type = 'club' AND sh.entity_id = cc.id
+      ),
+      league_agg AS (
+        SELECT
+          league_id,
+          league_name,
+          COUNT(DISTINCT club_id) AS clubs_total,
+          COUNT(DISTINCT club_id) FILTER (WHERE has_roster_snapshot)
+            AS clubs_with_roster_snapshot,
+          COUNT(DISTINCT club_id) FILTER (WHERE has_coach_discovery)
+            AS clubs_with_coach_discovery,
+          COUNT(DISTINCT club_id) FILTER (WHERE club_id IS NOT NULL AND last_scraped_at IS NULL)
+            AS clubs_never_scraped,
+          COUNT(DISTINCT club_id) FILTER (
+            WHERE last_scraped_at IS NOT NULL
+              AND last_scraped_at < now() - make_interval(days => ${STALE_THRESHOLD_DAYS})
+          ) AS clubs_stale_14d
+        FROM league_clubs
+        GROUP BY league_id, league_name
+      )
+      SELECT
+        league_id,
+        league_name,
+        clubs_total::text                AS clubs_total,
+        clubs_with_roster_snapshot::text AS clubs_with_roster_snapshot,
+        clubs_with_coach_discovery::text AS clubs_with_coach_discovery,
+        clubs_never_scraped::text        AS clubs_never_scraped,
+        clubs_stale_14d::text            AS clubs_stale_14d,
+        COUNT(*) OVER ()                 AS total
+      FROM league_agg
+      ORDER BY
+        clubs_never_scraped DESC,
+        clubs_stale_14d DESC,
+        league_name ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `);
+
+    const list = Array.from(
+      result as unknown as Array<{
+        league_id: number;
+        league_name: string;
+        clubs_total: string;
+        clubs_with_roster_snapshot: string;
+        clubs_with_coach_discovery: string;
+        clubs_never_scraped: string;
+        clubs_stale_14d: string;
+        total: string;
+      }>,
+    );
+
+    const total = Number(list[0]?.total ?? 0);
+    const rows: CoverageLeagueAggRow[] = list.map((r) => ({
+      leagueId: Number(r.league_id),
+      leagueName: r.league_name,
+      clubsTotal: Number(r.clubs_total ?? 0),
+      clubsWithRosterSnapshot: Number(r.clubs_with_roster_snapshot ?? 0),
+      clubsWithCoachDiscovery: Number(r.clubs_with_coach_discovery ?? 0),
+      clubsNeverScraped: Number(r.clubs_never_scraped ?? 0),
+      clubsStale14d: Number(r.clubs_stale_14d ?? 0),
+    }));
+
+    return { rows, total };
+  },
+
+  findLeague: async ({ leagueId }) => {
+    const result = await defaultDb.execute<{
+      id: number;
+      league_name: string;
+    }>(sql`
+      SELECT id, league_name
+      FROM leagues_master
+      WHERE id = ${leagueId}
+      LIMIT 1
+    `);
+    const list = Array.from(
+      result as unknown as Array<{ id: number; league_name: string }>,
+    );
+    const hit = list[0];
+    if (!hit) return null;
+    return { id: Number(hit.id), name: hit.league_name };
+  },
+
+  listClubsInLeague: async ({ leagueName, status, page, pageSize }) => {
+    const offset = (page - 1) * pageSize;
+
+    const statusPredicate =
+      status === "never_scraped"
+        ? sql`sh.last_scraped_at IS NULL`
+        : status === "stale"
+          ? sql`sh.last_scraped_at IS NOT NULL AND sh.last_scraped_at < now() - make_interval(days => ${STALE_THRESHOLD_DAYS})`
+          : sql`TRUE`;
+
+    const result = await defaultDb.execute<{
+      club_id: number;
+      club_name_canonical: string;
+      last_scraped_at: Date | string | null;
+      consecutive_failures: number | null;
+      coach_count: string;
+      has_roster_snapshot: boolean;
+      staff_page_url: string | null;
+      scrape_confidence: string | number | null;
+      total: string;
+    }>(sql`
+      SELECT
+        cc.id AS club_id,
+        cc.club_name_canonical,
+        sh.last_scraped_at,
+        COALESCE(sh.consecutive_failures, 0) AS consecutive_failures,
+        (
+          SELECT COUNT(DISTINCT cd.coach_id)
+          FROM coach_discoveries cd
+          WHERE cd.club_id = cc.id
+        )::text AS coach_count,
+        EXISTS (
+          SELECT 1 FROM club_roster_snapshots crs WHERE crs.club_id = cc.id
+        ) AS has_roster_snapshot,
+        cc.staff_page_url,
+        cc.scrape_confidence,
+        COUNT(*) OVER () AS total
+      FROM club_affiliations ca
+      JOIN canonical_clubs cc ON cc.id = ca.club_id
+      LEFT JOIN scrape_health sh
+        ON sh.entity_type = 'club' AND sh.entity_id = cc.id
+      WHERE ca.source_name = ${leagueName}
+        AND (${statusPredicate})
+      GROUP BY
+        cc.id,
+        cc.club_name_canonical,
+        sh.last_scraped_at,
+        sh.consecutive_failures,
+        cc.staff_page_url,
+        cc.scrape_confidence
+      ORDER BY sh.last_scraped_at ASC NULLS FIRST, cc.club_name_canonical ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `);
+
+    const list = Array.from(
+      result as unknown as Array<{
+        club_id: number;
+        club_name_canonical: string;
+        last_scraped_at: Date | string | null;
+        consecutive_failures: number | null;
+        coach_count: string;
+        has_roster_snapshot: boolean;
+        staff_page_url: string | null;
+        scrape_confidence: string | number | null;
+        total: string;
+      }>,
+    );
+
+    const total = Number(list[0]?.total ?? 0);
+    const rows: CoverageLeagueDetailAggRow[] = list.map((r) => ({
+      clubId: Number(r.club_id),
+      clubNameCanonical: r.club_name_canonical,
+      lastScrapedAt: r.last_scraped_at,
+      consecutiveFailures: Number(r.consecutive_failures ?? 0),
+      coachCount: Number(r.coach_count ?? 0),
+      hasRosterSnapshot: Boolean(r.has_roster_snapshot),
+      staffPageUrl: r.staff_page_url,
+      scrapeConfidence:
+        r.scrape_confidence === null || r.scrape_confidence === undefined
+          ? null
+          : Number(r.scrape_confidence),
+    }));
+
+    return { rows, total };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Router — prod-wired.
+// ---------------------------------------------------------------------------
+
+export function makeCoverageRouter(deps: CoverageDeps): IRouter {
+  const router: IRouter = Router();
+  router.get("/leagues", makeListLeaguesHandler(deps));
+  router.get("/leagues/:leagueId", makeLeagueDetailHandler(deps));
+  return router;
+}
+
+const coverageRouter: IRouter = makeCoverageRouter(prodCoverageDeps);
+
+export default coverageRouter;

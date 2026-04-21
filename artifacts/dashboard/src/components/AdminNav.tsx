@@ -65,6 +65,16 @@ export default function AdminNav() {
       >
         Growth
       </NavLink>
+      <NavLink
+        to="/coverage"
+        className={({ isActive }) =>
+          isActive
+            ? "font-semibold text-neutral-900 underline underline-offset-4"
+            : "text-neutral-500 hover:text-neutral-800"
+        }
+      >
+        Coverage
+      </NavLink>
     </nav>
   );
 }
