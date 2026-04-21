@@ -418,18 +418,17 @@ def _parse_sidearm_vue_embedded_json(html: str) -> List[RosterPlayer]:
 def parse_roster_html(html: str) -> List[RosterPlayer]:
     """Extract player rows from an NCAA roster page.
 
-    Five strategies are tried in order; first non-empty result wins.
+    Six strategies are tried in order; first non-empty result wins.
 
-    1. **Sidearm roster elements** — ``li.sidearm-roster-player`` or
-       ``div.sidearm-roster-player`` with semantic CSS classes for each field.
+    1. **Sidearm card template** — ``li.sidearm-roster-player`` or
+       ``div.sidearm-roster-player`` with ``.sidearm-roster-player-*`` fields.
     2. **Header-aware table** — any ``<table>`` whose ``<th>`` row contains
        a "Name" column. Column positions are detected from headers.
     3. **Card/div layout** — ``.s-person-card``, ``.roster-card``,
        ``.s-person`` containers with nested class selectors.
-    4. **Nuxt-based template** — ``.roster-card-item`` cards with
+    4. **Nuxt template** — ``.roster-card-item`` cards with
        ``roster-player-card-profile-field`` label/value rows. Used by
-       ~20 D1 programs (Stanford, Penn State, USC, etc.) whose sites
-       aren't SIDEARM.
+       ~20 D1 programs whose sites aren't SIDEARM (Stanford, USC, etc.).
     5. **Sidearm Vue-embedded JSON** — a classic-SIDEARM variant where
        the roster template is a Vue ``v-for`` and the full player list
        is shipped inline inside the Vue instance's ``data: () => ({
@@ -442,6 +441,12 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
        ramblinwreck.com (Georgia Tech) — the only WMT/WordPress athletics site
        in the current NCAA soccer directory. Fallback kept cheap so it doesn't
        cost anything when the page is a different platform.
+    7. **Sidearm list template (DOM)** — ``.sidearm-roster-list-item``
+       rows. DOM fallback for the same operator-toggled list display
+       that Strategy 5 targets via JSON — catches sites where the Vue
+       JSON blob is absent or malformed but the hydrated list renders
+       correctly under Playwright. Used by George Mason (when JSON
+       extraction misses), Richmond, etc.
     """
     soup = BeautifulSoup(html, "html.parser")
     players: List[RosterPlayer] = []
@@ -803,6 +808,78 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
             prev_club=None,  # not present in card; table has it
             jersey_number=jersey,
         ))
+
+    if players:
+        return players
+
+    # --- Strategy 7: SIDEARM list-template (DOM fallback) ---
+    # Catches the same operator-toggled list display Strategy 5 targets
+    # via JSON, but via post-hydration DOM instead — protection for
+    # sites where the Vue JSON blob is absent/malformed but the rendered
+    # <li class="sidearm-roster-list-item"> elements are populated.
+    # Playwright fallback (enabled via NCAA_PLAYWRIGHT_FALLBACK=true)
+    # is the typical source of hydrated HTML for these programs.
+    #
+    # Programs observed in this cluster (from PR-5 + PR-8 diagnostic
+    # runs): George Mason (when JSON extraction misses), Pepperdine mens,
+    # Richmond, USC mens, Virginia Tech, Minnesota mens, San Diego State,
+    # Tulane, Penn State womens. Georgia Tech now caught by Strategy 6
+    # (WMT) ahead of this.
+    #
+    # Structural signature:
+    #   <li class="sidearm-roster-list-item">
+    #     .sidearm-roster-list-item-name a       → player name
+    #     .sidearm-roster-list-item-photo-number → jersey (nested <span>)
+    #     .sidearm-roster-list-item-position     → position (GK/M/F/D)
+    #     .sidearm-roster-list-item-year         → class (Sr./Jr./Fr./So.)
+    #     .sidearm-roster-list-item-hometown     → hometown
+    #     .sidearm-roster-list-item-previous-school
+    #     .sidearm-roster-list-item-highschool
+    for el in soup.select("li.sidearm-roster-list-item, div.sidearm-roster-list-item"):
+        name_el = el.select_one(
+            ".sidearm-roster-list-item-name a, "
+            ".sidearm-roster-list-item-name"
+        )
+        name = name_el.get_text().strip() if name_el else ""
+        if not name or len(name) < 2:
+            continue
+
+        # Jersey lives inside .sidearm-roster-list-item-photo-number > span
+        # on list-template sites. Fall back to the standalone number
+        # class in case it's used as a sibling.
+        jersey_el = el.select_one(
+            ".sidearm-roster-list-item-photo-number span, "
+            ".sidearm-roster-list-item-photo-number, "
+            ".sidearm-roster-list-item-number"
+        )
+        jersey = jersey_el.get_text().strip() if jersey_el else None
+
+        pos_el = el.select_one(".sidearm-roster-list-item-position")
+        position = pos_el.get_text().strip() if pos_el else None
+
+        year_el = el.select_one(".sidearm-roster-list-item-year")
+        year = normalize_year(year_el.get_text().strip()) if year_el else None
+
+        hometown_el = el.select_one(".sidearm-roster-list-item-hometown")
+        hometown = hometown_el.get_text().rstrip(".").strip() if hometown_el else None
+
+        prev_el = el.select_one(
+            ".sidearm-roster-list-item-previous-school, "
+            ".sidearm-roster-list-item-highschool"
+        )
+        prev_club = prev_el.get_text().strip() if prev_el else None
+
+        players.append(RosterPlayer(
+            player_name=name,
+            position=position or None,
+            year=year,
+            hometown=hometown or None,
+            prev_club=prev_club or None,
+            jersey_number=jersey or None,
+        ))
+
+    if players:
+        return players
 
     return players
 
