@@ -123,6 +123,24 @@ RETURNING (xmax = 0) AS inserted
 """
 
 
+_UPSERT_COACH_TENURE_SQL = """
+INSERT INTO college_coach_tenures (
+    college_id, name, title, academic_year,
+    is_head_coach, source_url, scraped_at
+)
+VALUES (
+    %(college_id)s, %(name)s, %(title)s, %(academic_year)s,
+    %(is_head_coach)s, %(source_url)s, now()
+)
+ON CONFLICT ON CONSTRAINT college_coach_tenures_college_name_title_year_uq
+DO UPDATE SET
+    is_head_coach = EXCLUDED.is_head_coach,
+    source_url    = EXCLUDED.source_url,
+    scraped_at    = now()
+RETURNING (xmax = 0) AS inserted
+"""
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -281,6 +299,110 @@ def upsert_coaches(
                 except Exception as exc:
                     log.warning("[ncaa-roster-writer] coach upsert failed for %s: %s",
                                 row.get("name"), exc)
+                    counts["skipped"] += 1
+                    conn.rollback()
+                    continue
+                if result is None:
+                    continue
+                if bool(result[0]):
+                    counts["inserted"] += 1
+                else:
+                    counts["updated"] += 1
+        if own_conn:
+            conn.commit()
+    finally:
+        if own_conn and conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return counts
+
+
+def _normalize_coach_tenure(
+    row: Dict[str, Any],
+    *,
+    college_id: int,
+    academic_year: str,
+) -> Dict[str, Any]:
+    """Shape for ``_UPSERT_COACH_TENURE_SQL``.
+
+    Shares the upstream coach dict from ``extract_head_coach_from_html``
+    so PR-7's writer call can reuse the exact input the existing
+    ``upsert_coaches`` receives — guards against denormalization drift
+    within a single scrape.
+    """
+    if not row.get("name"):
+        raise ValueError("coach tenure row missing name")
+    if not re.match(r"^\d{4}-\d{2}$", academic_year or ""):
+        raise ValueError(
+            f"coach tenure row invalid academic_year: {academic_year!r}"
+        )
+    return {
+        "college_id": college_id,
+        "name": row["name"],
+        "title": row.get("title"),
+        "academic_year": academic_year,
+        "is_head_coach": bool(row.get("is_head_coach", False)),
+        "source_url": row.get("source_url"),
+    }
+
+
+def upsert_coach_tenures(
+    coaches: Sequence[Dict[str, Any]],
+    *,
+    college_id: int,
+    academic_year: str,
+    conn: Optional[Any] = None,
+    dry_run: bool = False,
+) -> Dict[str, int]:
+    """Upsert ``college_coach_tenures`` rows for one season at one college.
+
+    One row per (college_id, name, title, academic_year). Silent
+    idempotent on conflict — re-scrapes bump ``scraped_at`` and
+    ``source_url`` but don't change identity. Accepts the same coach-dict
+    shape that ``upsert_coaches`` receives so callers can feed both
+    writers from a single parsed list.
+    """
+    counts = {"inserted": 0, "updated": 0, "skipped": 0}
+    if not coaches:
+        return counts
+    if dry_run:
+        log.info(
+            "[ncaa-roster-writer] dry-run: would upsert %d coach tenure(s) for %s",
+            len(coaches), academic_year,
+        )
+        return counts
+
+    normalized: List[Dict[str, Any]] = []
+    for raw in coaches:
+        try:
+            normalized.append(
+                _normalize_coach_tenure(
+                    raw, college_id=college_id, academic_year=academic_year,
+                )
+            )
+        except ValueError as exc:
+            log.warning("[ncaa-roster-writer] bad coach tenure row: %s", exc)
+            counts["skipped"] += 1
+    if not normalized:
+        return counts
+
+    own_conn = conn is None
+    if own_conn:
+        conn = _get_connection()
+    try:
+        with conn.cursor() as cur:
+            for row in normalized:
+                try:
+                    cur.execute(_UPSERT_COACH_TENURE_SQL, row)
+                    result = cur.fetchone()
+                except Exception as exc:
+                    log.warning(
+                        "[ncaa-roster-writer] coach tenure upsert failed for "
+                        "%s (%s): %s",
+                        row.get("name"), row.get("academic_year"), exc,
+                    )
                     counts["skipped"] += 1
                     conn.rollback()
                     continue

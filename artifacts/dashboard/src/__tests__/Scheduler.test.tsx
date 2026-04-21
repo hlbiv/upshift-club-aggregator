@@ -2,13 +2,35 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import SchedulerPage from "../pages/Scheduler";
 
+/**
+ * SchedulerPage was migrated from `adminFetch()` to the Orval-generated
+ * `useListScraperScheduleRuns` / `useRunScraperScheduleNow` hooks. Those
+ * hooks still bottom out at `globalThis.fetch` via the `customFetch`
+ * mutator, so stubbing `fetch` per-test still works — we just need a
+ * per-test `QueryClient` wrapper (retries disabled).
+ */
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 function emptyRunsFor(): unknown {
@@ -42,11 +64,17 @@ function sampleRunsFor(jobKey: string): unknown {
  * are handled per-test.
  */
 function installFetch(
-  handler: (url: string, init: RequestInit | undefined) => Response | Promise<Response>,
+  handler: (
+    url: string,
+    init: RequestInit | undefined,
+  ) => Response | Promise<Response>,
 ): ReturnType<typeof vi.fn> {
-  const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-    return Promise.resolve(handler(url, init));
-  });
+  const fetchMock = vi
+    .fn()
+    .mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = typeof url === "string" ? url : url.toString();
+      return Promise.resolve(handler(u, init));
+    });
   (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(fetchMock);
   return fetchMock;
 }
@@ -75,11 +103,7 @@ describe("SchedulerPage", () => {
       throw new Error(`unexpected URL: ${url}`);
     });
 
-    render(
-      <MemoryRouter>
-        <SchedulerPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<SchedulerPage />);
 
     // All three job-key cards present.
     await waitFor(() => {
@@ -130,11 +154,7 @@ describe("SchedulerPage", () => {
     });
 
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <SchedulerPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<SchedulerPage />);
 
     await waitFor(() => {
       expect(screen.getByText("nightly_tier1")).toBeInTheDocument();
@@ -151,7 +171,10 @@ describe("SchedulerPage", () => {
     });
     const dialogRunButton = screen
       .getAllByRole("button", { name: /run now/i })
-      .find((btn) => btn.textContent === "Run now" && btn.closest("[role=alertdialog]"));
+      .find(
+        (btn) =>
+          btn.textContent === "Run now" && btn.closest("[role=alertdialog]"),
+      );
     expect(dialogRunButton).toBeDefined();
     await user.click(dialogRunButton!);
 
@@ -160,7 +183,9 @@ describe("SchedulerPage", () => {
       const alerts = screen.getAllByRole("alert");
       expect(alerts.length).toBeGreaterThan(0);
       expect(
-        alerts.some((el) => /super_admin role required/i.test(el.textContent ?? "")),
+        alerts.some((el) =>
+          /super_admin role required/i.test(el.textContent ?? ""),
+        ),
       ).toBe(true);
     });
 
@@ -173,7 +198,10 @@ describe("SchedulerPage", () => {
     let nightlyRunsCallCount = 0;
     const fetchMock = installFetch((url, init) => {
       const method = init?.method ?? "GET";
-      if (method === "GET" && url.includes("/scraper-schedules/nightly_tier1/runs")) {
+      if (
+        method === "GET" &&
+        url.includes("/scraper-schedules/nightly_tier1/runs")
+      ) {
         nightlyRunsCallCount += 1;
         // First call: empty. Subsequent calls (after POST refetch): one row.
         if (nightlyRunsCallCount === 1) {
@@ -202,11 +230,7 @@ describe("SchedulerPage", () => {
     });
 
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <SchedulerPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<SchedulerPage />);
 
     // Wait for initial mount fetches to settle.
     await waitFor(() => {
@@ -218,7 +242,9 @@ describe("SchedulerPage", () => {
 
     // Click the confirm action inside the dialog.
     const dialog = await screen.findByRole("alertdialog");
-    const dialogConfirm = within(dialog).getByRole("button", { name: /run now/i });
+    const dialogConfirm = within(dialog).getByRole("button", {
+      name: /run now/i,
+    });
     await user.click(dialogConfirm);
 
     // Success toast.

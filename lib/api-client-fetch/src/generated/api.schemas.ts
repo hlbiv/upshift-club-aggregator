@@ -508,6 +508,47 @@ export interface GaPremierOrphanCleanupResponse {
 }
 
 /**
+ * One canonical_clubs row with `staff_page_url` set and zero distinct coach discoveries recorded inside `windowDays`.
+
+ */
+export interface EmptyStaffPagesRow {
+  clubId: number;
+  clubNameCanonical: string;
+  staffPageUrl: string;
+  lastScrapedAt: string | null;
+  coachCountWindow: number;
+}
+
+export interface EmptyStaffPagesResponse {
+  rows: EmptyStaffPagesRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  windowDays: number;
+}
+
+/**
+ * One scrape_health row whose last_scraped_at is older than `thresholdDays` or NULL. `entityName` is a best-effort join label.
+
+ */
+export interface StaleScrapesRow {
+  entityType: string;
+  entityId: number;
+  entityName: string | null;
+  lastScrapedAt: string | null;
+  lastStatus: string | null;
+  consecutiveFailures: number;
+}
+
+export interface StaleScrapesResponse {
+  rows: StaleScrapesRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  thresholdDays: number;
+}
+
+/**
  * Records added across the five headline ingest tables since a point in time.
  */
 export interface ScrapedCountsDelta {
@@ -824,6 +865,40 @@ export const ListClubDuplicatesStatus = {
   rejected: "rejected",
   all: "all",
 } as const;
+
+export type GetEmptyStaffPagesParams = {
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  window_days?: number;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  page_size?: number;
+};
+
+export type GetStaleScrapesParams = {
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  threshold_days?: number;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  page_size?: number;
+};
 
 export type GetGrowthScrapedCountsParams = {
   /**

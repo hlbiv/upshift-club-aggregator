@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  ClubDuplicateList,
+  useListClubDuplicates,
   type ClubDuplicate,
-} from "@hlbiv/api-zod/admin";
-import { adminFetch } from "../lib/api";
+  type ClubDuplicateList,
+} from "@workspace/api-client-react";
 import AdminNav from "../components/AdminNav";
 
 /**
@@ -18,23 +18,18 @@ import AdminNav from "../components/AdminNav";
  * merged / rejected / all pairs. Pagination appears only when total
  * exceeds page size.
  *
- * API dependency: phase-C.3 `feat/admin-dedup-routes`. Until that ships,
- * the fetch will 404 live — tests mock fetch so CI still passes.
+ * Migrated from `adminFetch()` to the Orval-generated `useListClubDuplicates`
+ * hook (Workstream A). The hook encodes query params and routes through
+ * the shared customFetch mutator, so the session cookie still travels.
  */
 
 const PAGE_SIZE = 50;
 
 type StatusFilter = "pending" | "merged" | "rejected" | "all";
 
-type FetchState =
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "ok"; data: ClubDuplicateList };
-
 export default function DedupPage() {
   const [status, setStatus] = useState<StatusFilter>("pending");
   const [page, setPage] = useState(1);
-  const [state, setState] = useState<FetchState>({ kind: "loading" });
   const location = useLocation();
   const flash = readFlash(location.state);
   const [flashVisible, setFlashVisible] = useState<string | null>(flash);
@@ -43,45 +38,13 @@ export default function DedupPage() {
     if (flash) setFlashVisible(flash);
   }, [flash]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setState({ kind: "loading" });
-
-    const params = new URLSearchParams();
-    if (status !== "all") params.set("status", status);
-    params.set("limit", String(PAGE_SIZE));
-    params.set("page", String(page));
-
-    adminFetch(`/api/v1/admin/dedup/clubs?${params.toString()}`)
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          setState({ kind: "error", message: `HTTP ${res.status}` });
-          return;
-        }
-        const raw = await res.json();
-        const parsed = ClubDuplicateList.safeParse(raw);
-        if (!parsed.success) {
-          setState({
-            kind: "error",
-            message: `Invalid response: ${parsed.error.message}`,
-          });
-          return;
-        }
-        setState({ kind: "ok", data: parsed.data });
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setState({
-          kind: "error",
-          message: e instanceof Error ? e.message : "Network error",
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [status, page]);
+  // `status=all` is the server default — omit it so the URL matches the
+  // pre-migration shape (no `status` param at all).
+  const params =
+    status === "all"
+      ? { limit: PAGE_SIZE, page }
+      : { status, limit: PAGE_SIZE, page };
+  const query = useListClubDuplicates(params);
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
@@ -136,13 +99,17 @@ export default function DedupPage() {
         </select>
       </div>
 
-      <DedupTable state={state} />
+      <DedupTable
+        data={query.data}
+        isLoading={query.isLoading}
+        error={query.error}
+      />
 
-      {state.kind === "ok" && state.data.total > PAGE_SIZE ? (
+      {query.data && query.data.total > PAGE_SIZE ? (
         <Pagination
           page={page}
           pageSize={PAGE_SIZE}
-          total={state.data.total}
+          total={query.data.total}
           onChange={setPage}
         />
       ) : null}
@@ -150,14 +117,22 @@ export default function DedupPage() {
   );
 }
 
-function DedupTable({ state }: { state: FetchState }) {
+function DedupTable({
+  data,
+  isLoading,
+  error,
+}: {
+  data: ClubDuplicateList | undefined;
+  isLoading: boolean;
+  error: unknown;
+}) {
   const navigate = useNavigate();
 
-  if (state.kind === "loading") return <TablePlaceholder label="Loading…" />;
-  if (state.kind === "error")
-    return <TablePlaceholder label={`Failed to load: ${state.message}`} />;
+  if (isLoading) return <TablePlaceholder label="Loading…" />;
+  if (error)
+    return <TablePlaceholder label={`Failed to load: ${formatError(error)}`} />;
 
-  const pairs = state.data.pairs;
+  const pairs = data?.pairs ?? [];
   if (pairs.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-neutral-300 bg-white px-4 py-10 text-center text-sm text-neutral-500">
@@ -356,6 +331,16 @@ export function formatDate(iso: string | null): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString();
+}
+
+export function formatError(err: unknown): string {
+  if (!err) return "Network error";
+  if (err instanceof Error) {
+    const status = (err as unknown as { status?: unknown }).status;
+    if (typeof status === "number") return `HTTP ${status}`;
+    return err.message;
+  }
+  return String(err);
 }
 
 function readFlash(state: unknown): string | null {

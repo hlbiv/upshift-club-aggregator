@@ -158,6 +158,15 @@ assertTable(schema.collegeRosterHistory, "college_roster_history", {
   checks: ["college_roster_history_year_enum"],
 });
 
+assertTable(schema.collegeCoachTenures, "college_coach_tenures", {
+  cols: [
+    "college_id", "name", "title", "academic_year",
+    "is_head_coach", "source_url", "scraped_at",
+  ],
+  uniques: ["college_coach_tenures_college_name_title_year_uq"],
+  indexes: ["college_coach_tenures_college_year_idx"],
+});
+
 // ---------------------------------------------------------------------------
 // Domain 3 — Coaches
 // ---------------------------------------------------------------------------

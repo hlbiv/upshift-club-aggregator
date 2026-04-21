@@ -2,13 +2,35 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import GrowthPage from "../pages/Growth";
 
+/**
+ * GrowthPage was migrated from `adminFetch()` to the Orval-generated
+ * `useGetGrowthScrapedCounts` / `useGetGrowthCoverageTrend` hooks. Those
+ * hooks still bottom out at `globalThis.fetch` via the `customFetch`
+ * mutator, so stubbing `fetch` per-test still works — we just need a
+ * per-test `QueryClient` wrapper (retries disabled).
+ */
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 function buildFetchMock(options?: {
@@ -113,11 +135,7 @@ describe("GrowthPage", () => {
       buildFetchMock(),
     );
 
-    render(
-      <MemoryRouter>
-        <GrowthPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<GrowthPage />);
 
     await waitFor(() => {
       expect(screen.getByTestId("stat-clubs-added")).toHaveTextContent("12");
@@ -154,11 +172,7 @@ describe("GrowthPage", () => {
       buildFetchMock(),
     );
 
-    render(
-      <MemoryRouter>
-        <GrowthPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<GrowthPage />);
 
     await waitFor(() => {
       expect(screen.getByTestId("stat-clubs-added")).toHaveTextContent("12");
@@ -194,11 +208,7 @@ describe("GrowthPage", () => {
       }),
     );
 
-    render(
-      <MemoryRouter>
-        <GrowthPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<GrowthPage />);
 
     await waitFor(() => {
       expect(screen.getByText(/no runs in the last 30 days/i)).toBeInTheDocument();
