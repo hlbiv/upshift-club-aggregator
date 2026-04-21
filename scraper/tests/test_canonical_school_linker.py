@@ -15,9 +15,16 @@ from unittest import mock
 
 import pytest  # noqa: F401
 
-# Stub psycopg2 before importing so tests don't need a live Postgres.
-sys.modules.setdefault("psycopg2", mock.MagicMock())
-sys.modules.setdefault("psycopg2.extras", mock.MagicMock())
+# Stub psycopg2 ONLY if not installed, so tests don't need a live Postgres.
+# Unconditional stubs leak MagicMocks into later-collected test modules
+# (pytest imports all test files before any tests run) and break imports
+# like `from psycopg2.extras import Json`.
+try:
+    import psycopg2  # noqa: F401
+    import psycopg2.extras  # noqa: F401
+except ImportError:
+    sys.modules["psycopg2"] = mock.MagicMock()
+    sys.modules["psycopg2.extras"] = mock.MagicMock()
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 

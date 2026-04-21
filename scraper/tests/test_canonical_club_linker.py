@@ -13,9 +13,18 @@ from unittest import mock
 
 import pytest
 
-# Stub psycopg2 before importing so tests don't need a live Postgres.
-sys.modules.setdefault("psycopg2", mock.MagicMock())
-sys.modules.setdefault("psycopg2.extras", mock.MagicMock())
+# Stub psycopg2 ONLY if not installed, so tests don't need a live Postgres.
+# A plain `sys.modules.setdefault(..., MagicMock())` would leak the mock
+# into later test modules collected in the same run — e.g.
+# test_nav_leaked_names_detector.py resolves `Json` from psycopg2.extras at
+# import time, and a MagicMock Json round-trips metadata through `.adapted`
+# as a Mock instead of the real dict.
+try:
+    import psycopg2  # noqa: F401
+    import psycopg2.extras  # noqa: F401
+except ImportError:
+    sys.modules["psycopg2"] = mock.MagicMock()
+    sys.modules["psycopg2.extras"] = mock.MagicMock()
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
