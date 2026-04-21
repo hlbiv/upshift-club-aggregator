@@ -43,6 +43,19 @@ import psycopg2.extras
 import requests
 from bs4 import BeautifulSoup
 
+# Shared coach-name guard — every record appended to ``records`` must
+# pass ``looks_like_name`` before it reaches ``_upsert_discoveries``.
+# Rejections are recorded on ``_NAME_REJECT_COUNTER`` so the run
+# summary can print a per-reason breakdown (critical for spotting new
+# pollution sources introduced by CMS updates).
+_SCRAPER_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _SCRAPER_ROOT not in sys.path:
+    sys.path.insert(0, _SCRAPER_ROOT)
+from extractors._coach_name_guard import (  # noqa: E402
+    RejectCounter,
+    looks_like_name,
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -85,6 +98,10 @@ _STAFF_CONTENT_PATTERNS = re.compile(
 
 # Basic email regex
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+
+# Module-level counter — shared across every parser in this module so
+# the end-of-run summary reports a single per-reason total.
+_NAME_REJECT_COUNTER = RejectCounter()
 
 # ---------------------------------------------------------------------------
 # Platform detection
@@ -268,6 +285,10 @@ def _parse_sportsengine(soup: BeautifulSoup) -> List[Dict]:
         name = name_el.get_text(strip=True)
         if not name:
             return None
+        # Shared guard — filters out nav-menu, CTA, date, and
+        # all-caps-banner strings the card selector sometimes grabs.
+        if not looks_like_name(name, _NAME_REJECT_COUNTER):
+            return None
 
         title_el = (
             card.find(class_=re.compile(r"staff[-_]?title|person[-_]?title|role|position", re.I))
@@ -322,6 +343,8 @@ def _parse_leagueapps(soup: BeautifulSoup) -> List[Dict]:
             continue
         name = name_el.get_text(strip=True)
         if not name:
+            continue
+        if not looks_like_name(name, _NAME_REJECT_COUNTER):
             continue
 
         title = None
@@ -397,6 +420,8 @@ def _parse_wordpress(soup: BeautifulSoup) -> List[Dict]:
         name = _card_name(card)
         if not name:
             continue
+        if not looks_like_name(name, _NAME_REJECT_COUNTER):
+            continue
         title = _card_title(card, name)
         email = _card_email(card)
         records.append({"name": name, "title": title, "email": email})
@@ -421,6 +446,11 @@ def _parse_wordpress(soup: BeautifulSoup) -> List[Dict]:
                 continue
             # Heuristic: real person names rarely contain these
             if any(kw in name.lower() for kw in ["http", "©", "menu", "navigation"]):
+                continue
+            # Shared guard — WordPress h3 fallback was a major
+            # pollution source pre-guard ("Newsletter Sign-Up",
+            # "Related Articles", section titles, ...).
+            if not looks_like_name(name, _NAME_REJECT_COUNTER):
                 continue
 
             # Look for title in the very next sibling or within the same container
@@ -450,6 +480,11 @@ def _parse_generic(soup: BeautifulSoup) -> List[Dict]:
         if not name or len(name) > 80:
             continue
         if any(kw in name.lower() for kw in ["http", "©", "menu", "navigation", "copyright"]):
+            continue
+        # Shared guard — the generic fallback is the noisiest path in
+        # this module and must not leak section headers, CTA strings,
+        # or date fragments into coach_discoveries.
+        if not looks_like_name(name, _NAME_REJECT_COUNTER):
             continue
 
         title = None
@@ -721,6 +756,22 @@ def main():
                 res["platform"],
                 res["source_url"],
             )
+
+        # --- Name-guard rejection breakdown ---
+        reject_summary = _NAME_REJECT_COUNTER.summary()
+        if reject_summary:
+            logger.info("")
+            logger.info(
+                "Coach-name guard rejections (%d total):",
+                _NAME_REJECT_COUNTER.total(),
+            )
+            for reason, count in sorted(
+                reject_summary.items(), key=lambda x: -x[1]
+            ):
+                logger.info("  %-22s %d", reason, count)
+        else:
+            logger.info("")
+            logger.info("Coach-name guard rejections: 0 (nothing filtered)")
 
     finally:
         conn.close()

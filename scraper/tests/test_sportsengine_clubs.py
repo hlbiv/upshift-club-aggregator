@@ -262,7 +262,12 @@ def test_extract_top_level_and_nested_person_blocks_tagged_sportsengine():
     """Both top-level Person blocks AND Person dicts nested under
     ``member`` / ``coach`` must surface as coach rows. Every row must
     be tagged ``platform_family='sportsengine'`` (the enum already
-    enumerates this value)."""
+    enumerates this value).
+
+    Fixture names are real-looking Western names; earlier placeholder
+    names like "Coach Alpha" are now filtered by the shared
+    coach-name guard (token "coach" is blocklisted).
+    """
     payload = """
     {
       "@context":"https://schema.org",
@@ -271,11 +276,11 @@ def test_extract_top_level_and_nested_person_blocks_tagged_sportsengine():
          "email":"jane@example.com"},
         {"@type":"SportsOrganization","name":"Foley FC",
          "member":[
-           {"@type":"Person","name":"Coach Alpha","jobTitle":"Head Coach",
+           {"@type":"Person","name":"Maria Rodriguez","jobTitle":"Head Coach",
             "email":"alpha@example.com"},
-           {"@type":"Person","name":"Coach Beta","jobTitle":"Assistant"}
+           {"@type":"Person","name":"Kevin O'Brien","jobTitle":"Assistant"}
          ],
-         "coach":{"@type":"Person","name":"Coach Gamma","jobTitle":"Head Coach U12"}
+         "coach":{"@type":"Person","name":"Jean-Pierre Dubois","jobTitle":"Head Coach U12"}
         }
       ]
     }
@@ -292,21 +297,46 @@ def test_extract_top_level_and_nested_person_blocks_tagged_sportsengine():
             rows.append(row)
 
     names = {r["name"] for r in rows}
-    assert {"Jane Doe", "Coach Alpha", "Coach Beta", "Coach Gamma"}.issubset(names)
+    assert {"Jane Doe", "Maria Rodriguez", "Kevin O'Brien", "Jean-Pierre Dubois"}.issubset(names)
     by_name = {r["name"]: r for r in rows}
     assert by_name["Jane Doe"]["email"] == "jane@example.com"
     assert by_name["Jane Doe"]["title"] == "Director of Coaching"
-    assert by_name["Coach Alpha"]["club_id"] == 42
+    assert by_name["Maria Rodriguez"]["club_id"] == 42
     # Every row must be tagged sportsengine — distinguishes this from
     # the Squarespace extractor's 'unknown' tag.
     assert all(r["platform_family"] == "sportsengine" for r in rows)
     assert all(r["confidence"] == DISCOVERY_CONFIDENCE for r in rows)
 
 
+def test_person_row_rejects_polluted_name():
+    """Regression guard: the shared name guard MUST filter nav-menu
+    text, CTA strings, and blocklist-phrase values from JSON-LD
+    Person.name. This is the first line of defense against the
+    pollution category that accounted for ~90% of coach_discoveries
+    rows in the April-2026 audit."""
+    for polluted in (
+        "Newsletter Sign-Up",
+        "About Us",
+        "Head Coach",
+        "OPEN TRAINING & TRYOUTS",
+    ):
+        row = _person_to_coach_row(
+            {"@type": "Person", "name": polluted, "jobTitle": "X"},
+            club_id=1,
+            source_url="https://x.example.com/staff",
+        )
+        assert row is None, f"{polluted!r} should be filtered by the name guard"
+
+
 def test_person_row_strips_mailto_prefix():
     row = _person_to_coach_row(
-        {"@type": "Person", "name": "X", "email": "MAILTO:foo@BAR.com?cc=x"},
-        club_id=1, source_url="https://x/",
+        {
+            "@type": "Person",
+            "name": "John Smith",
+            "email": "MAILTO:foo@BAR.com?cc=x",
+        },
+        club_id=1,
+        source_url="https://x/",
     )
     assert row is not None
     assert row["email"] == "foo@bar.com"
@@ -502,7 +532,7 @@ def test_harvest_sportsengine_club_full_flow_with_mocked_session():
         {
           "@context":"https://schema.org",
           "@type":"Person",
-          "name":"Coach Z",
+          "name":"Anna Lee",
           "jobTitle":"Head Coach"
         }
         """
@@ -544,7 +574,7 @@ def test_harvest_sportsengine_club_full_flow_with_mocked_session():
     assert harvest.roster_rows[0]["player_name"] == "Player A"
     # Coaches: one row from /coaches, tagged sportsengine.
     assert len(harvest.coach_rows) == 1
-    assert harvest.coach_rows[0]["name"] == "Coach Z"
+    assert harvest.coach_rows[0]["name"] == "Anna Lee"
     assert harvest.coach_rows[0]["club_id"] == 42
     assert harvest.coach_rows[0]["platform_family"] == "sportsengine"
     # Tryouts: one row from the discovered /page/show/...-tryouts URL.
@@ -581,7 +611,7 @@ def test_harvest_skips_unparseable_website_url():
 
 def test_harvest_dedups_repeated_persons_across_pages():
     """Same coach surfaced on /staff and /coaches yields only one row."""
-    org_payload = '{"@context":"https://schema.org","@type":"Person","name":"Coach Z","jobTitle":"Head"}'
+    org_payload = '{"@context":"https://schema.org","@type":"Person","name":"Anna Lee","jobTitle":"Head"}'
     site = SportsEngineClubSite(
         club_id=1, club_name_canonical="X",
         website="https://x.example.com",
