@@ -1,0 +1,75 @@
+<!--
+  Fixture for Wikipedia's "List of NCAA Division II men's soccer programs".
+  Modeled on the real page's <table class="wikitable sortable">
+  structure. Four real D2 programs + one deliberate fixture for edge
+  cases:
+    - Footnote <sup>[1]</sup> marker (parser must strip)
+    - Row missing Location (parser must still accept)
+    - Garbage "Total" footer row (parser must skip)
+  Content is fictional enough to keep us from tying tests to Wikipedia's
+  rolling edits; structural markup matches what Wikipedia ships.
+-->
+<html>
+<head><title>List of NCAA Division II men's soccer programs - Wikipedia</title></head>
+<body>
+<main>
+  <h1>List of NCAA Division II men's soccer programs</h1>
+  <p>The following is a list of NCAA Division II men's soccer programs.</p>
+
+  <table class="wikitable sortable">
+    <thead>
+      <tr>
+        <th>Institution</th>
+        <th>Location</th>
+        <th>Conference</th>
+        <th>Nickname</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="/wiki/Adelphi_Panthers">Adelphi University</a><sup>[1]</sup></td>
+        <td>Garden City, New York</td>
+        <td><a href="/wiki/NE10">Northeast-10 Conference</a></td>
+        <td>Panthers</td>
+      </tr>
+      <tr>
+        <td><a href="/wiki/Barry_Buccaneers">Barry University</a></td>
+        <td>Miami Shores, Florida</td>
+        <td><a href="/wiki/SSC">Sunshine State Conference</a></td>
+        <td>Buccaneers</td>
+      </tr>
+      <tr>
+        <td><a href="/wiki/Cal_State_LA_Golden_Eagles">Cal State LA</a></td>
+        <td>Los Angeles, California</td>
+        <td>California Collegiate Athletic Association</td>
+        <td>Golden Eagles</td>
+      </tr>
+      <tr>
+        <td><a href="/wiki/Saint_Leo_Lions">Saint Leo University</a></td>
+        <td>St. Leo, FL</td>
+        <td>Sunshine State Conference</td>
+        <td>Lions</td>
+      </tr>
+      <!-- Duplicate row — parser dedupes by (name, gender) -->
+      <tr>
+        <td><a href="/wiki/Adelphi_Panthers">Adelphi University</a></td>
+        <td>Garden City, New York</td>
+        <td>Northeast-10 Conference</td>
+        <td>Panthers</td>
+      </tr>
+      <!-- Footer-ish artifact — should be skipped -->
+      <tr>
+        <td>Total</td><td></td><td></td><td></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- A random sidebar table that is NOT a program list (no "Institution" header).
+       Parser should skip. -->
+  <table class="wikitable">
+    <tr><th>Championship</th><th>Year</th></tr>
+    <tr><td>NCAA tournament</td><td>2023</td></tr>
+  </table>
+</main>
+</body>
+</html>
