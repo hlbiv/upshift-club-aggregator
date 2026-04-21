@@ -49,6 +49,7 @@ import type {
   ListScraperSchedulesParams,
   NavLeakedNamesResponse,
   OverlapResponse,
+  ResolveRosterQualityFlagRequest,
   RunNowRequest,
   RunNowResponse,
   SchedulerJob,
@@ -796,11 +797,18 @@ export const getNavLeakedNames = async (
 };
 
 /**
- * Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on the row. The underlying `club_roster_snapshots` row is NOT mutated — resolving a flag means "operator has triaged this leak", not "the data is fixed".
-API-key callers get `resolved_by = NULL` (no admin user identity); session callers get their admin user id stamped — same pattern as the dedup PATCH endpoints.
-Returns 400 if the flag is already resolved, and 404 if no `nav_leaked_name` flag exists with that id.
+ * Stamps `resolved_at = NOW()`, `resolved_by = <admin user id>`, and `resolution_reason = <reason>` on the row. The underlying `club_roster_snapshots` row is NOT mutated.
+The `reason` field splits the triage action into two operator intents:
+  * `resolved` — the flag was legitimate; the operator has cleaned
+    up the leak out of band (e.g. fixed the extractor, re-scraped
+    the club). Snapshot history stays immutable.
+  * `dismissed` — false positive; the detector flagged something
+    that wasn't actually a nav-menu leak.
 
- * @summary Mark a roster_quality_flags row as resolved
+API-key callers get `resolved_by = NULL` (no admin user identity); session callers get their admin user id stamped — same pattern as the dedup PATCH endpoints.
+Returns 400 if the body is missing / invalid, or if the flag is already resolved (either reason — second attempts always 400 regardless of whether the new reason matches the stored one). Returns 404 if no flag exists with that id.
+
+ * @summary Mark a roster_quality_flags row as resolved or dismissed
  */
 export const getResolveRosterQualityFlagUrl = (id: number) => {
   return `/api/v1/admin/data-quality/roster-quality-flags/${id}/resolve`;
@@ -808,11 +816,14 @@ export const getResolveRosterQualityFlagUrl = (id: number) => {
 
 export const resolveRosterQualityFlag = async (
   id: number,
+  resolveRosterQualityFlagRequest: ResolveRosterQualityFlagRequest,
   options?: RequestInit,
 ): Promise<void> => {
   return customFetch<void>(getResolveRosterQualityFlagUrl(id), {
     ...options,
     method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resolveRosterQualityFlagRequest),
   });
 };
 

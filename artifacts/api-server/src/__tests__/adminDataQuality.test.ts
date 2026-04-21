@@ -356,7 +356,7 @@ async function run() {
     const calls: Array<{
       page: number;
       pageSize: number;
-      includeResolved: boolean;
+      state: string;
     }> = [];
     const fakeRows: NavLeakedNamesRawRow[] = [
       {
@@ -371,6 +371,7 @@ async function run() {
         flaggedAt: new Date("2026-04-10T12:00:00Z"),
         resolvedAt: null,
         resolvedByEmail: null,
+        resolutionReason: null,
       },
       {
         id: 2,
@@ -385,6 +386,7 @@ async function run() {
         flaggedAt: "2026-04-11T09:00:00.000Z",
         resolvedAt: "2026-04-12T15:30:00.000Z",
         resolvedByEmail: "ops@upshift.test",
+        resolutionReason: "resolved",
       },
     ];
     const deps: NavLeakedNamesDeps = {
@@ -395,7 +397,7 @@ async function run() {
     };
     const handler = makeNavLeakedNamesHandler(deps);
     const req = makeReq({
-      query: { page: "1", page_size: "20", include_resolved: "true" },
+      query: { page: "1", page_size: "20", state: "all" },
     });
     const res = makeRes();
     await handler(req, res as unknown as Response, () => {});
@@ -409,9 +411,9 @@ async function run() {
       calls.length === 1 &&
         calls[0]?.page === 1 &&
         calls[0]?.pageSize === 20 &&
-        calls[0]?.includeResolved === true,
+        calls[0]?.state === "all",
       "nav-leaked",
-      `expected single call with page=1, pageSize=20, includeResolved=true; got ${JSON.stringify(calls)}`,
+      `expected single call with page=1, pageSize=20, state=all; got ${JSON.stringify(calls)}`,
     );
     const body = res.body as {
       total?: number;
@@ -427,6 +429,7 @@ async function run() {
         flaggedAt: string;
         resolvedAt: string | null;
         resolvedByEmail: string | null;
+        resolutionReason: "resolved" | "dismissed" | null;
       }>;
     };
     assert(body.total === 2, "nav-leaked", `total should be 2, got ${body.total}`);
@@ -488,6 +491,16 @@ async function run() {
       "nav-leaked",
       `row1 resolvedByEmail should pass through, got ${r1?.resolvedByEmail}`,
     );
+    assert(
+      r1?.resolutionReason === "resolved",
+      "nav-leaked",
+      `row1 resolutionReason should pass through as 'resolved', got ${r1?.resolutionReason}`,
+    );
+    assert(
+      r0?.resolutionReason === null,
+      "nav-leaked",
+      `row0 resolutionReason should be null for active flag, got ${r0?.resolutionReason}`,
+    );
   }
 
   // --- Nav-leaked-names: malformed metadata is tolerated -------------------
@@ -510,6 +523,7 @@ async function run() {
             flaggedAt: new Date("2026-04-13T00:00:00Z"),
             resolvedAt: null,
             resolvedByEmail: null,
+            resolutionReason: null,
           },
           {
             id: 11,
@@ -521,6 +535,7 @@ async function run() {
             flaggedAt: new Date("2026-04-13T01:00:00Z"),
             resolvedAt: null,
             resolvedByEmail: null,
+            resolutionReason: null,
           },
         ],
         total: 2,
@@ -558,7 +573,7 @@ async function run() {
     const calls: Array<{
       page: number;
       pageSize: number;
-      includeResolved: boolean;
+      state: string;
     }> = [];
     const deps: NavLeakedNamesDeps = {
       listNavLeakedNames: async (args) => {
@@ -579,15 +594,89 @@ async function run() {
     assert(
       calls[0]?.page === 1 &&
         calls[0]?.pageSize === 20 &&
-        calls[0]?.includeResolved === false,
+        calls[0]?.state === "open",
       "nav-leaked-defaults",
-      `empty query should apply page=1/pageSize=20/includeResolved=false, got ${JSON.stringify(calls[0])}`,
+      `empty query should apply page=1/pageSize=20/state=open, got ${JSON.stringify(calls[0])}`,
     );
     const body = res.body as { total?: number; rows?: unknown[] };
     assert(
       body.total === 0 && body.rows?.length === 0,
       "nav-leaked-defaults",
       `empty response should round-trip`,
+    );
+  }
+
+  // --- Nav-leaked-names: state=dismissed forwards to deps ---
+  {
+    const calls: Array<{
+      page: number;
+      pageSize: number;
+      state: string;
+    }> = [];
+    const deps: NavLeakedNamesDeps = {
+      listNavLeakedNames: async (args) => {
+        calls.push(args);
+        // Return a single dismissed row to sanity-check the filter path.
+        return {
+          rows: [
+            {
+              id: 500,
+              snapshotId: 5000,
+              clubId: 1,
+              clubNameCanonical: "Dismissed FC",
+              metadata: {
+                leaked_strings: ["HOME"],
+                snapshot_roster_size: 10,
+              },
+              flaggedAt: new Date("2026-04-01T00:00:00Z"),
+              resolvedAt: new Date("2026-04-02T00:00:00Z"),
+              resolvedByEmail: "ops@upshift.test",
+              resolutionReason: "dismissed",
+            },
+          ],
+          total: 1,
+        };
+      },
+    };
+    const handler = makeNavLeakedNamesHandler(deps);
+    const req = makeReq({ query: { state: "dismissed" } });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 200,
+      "nav-leaked-state-dismissed",
+      `expected 200, got ${res.statusCode}`,
+    );
+    assert(
+      calls[0]?.state === "dismissed",
+      "nav-leaked-state-dismissed",
+      `state=dismissed should plumb through, got ${calls[0]?.state}`,
+    );
+    const body = res.body as {
+      rows?: Array<{ resolutionReason: string | null }>;
+    };
+    assert(
+      body.rows?.[0]?.resolutionReason === "dismissed",
+      "nav-leaked-state-dismissed",
+      `dismissed row should round-trip resolutionReason, got ${body.rows?.[0]?.resolutionReason}`,
+    );
+  }
+
+  // --- Nav-leaked-names: invalid state → 400 ---
+  {
+    const deps: NavLeakedNamesDeps = {
+      listNavLeakedNames: async () => ({ rows: [], total: 0 }),
+    };
+    const handler = makeNavLeakedNamesHandler(deps);
+    const req = makeReq({ query: { state: "bogus" } });
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "nav-leaked-state-invalid",
+      `expected 400 for state=bogus, got ${res.statusCode}`,
     );
   }
 
@@ -612,17 +701,25 @@ async function run() {
   // Resolve roster_quality_flags PATCH endpoint scenarios.
   // -----------------------------------------------------------------------
 
-  // --- 1. 204 on first resolve; admin user id passed through ---
+  // --- 1a. 204 on first resolve with reason='resolved'; admin user id passed through ---
   {
-    const calls: Array<{ id: number; resolvedBy: number | null }> = [];
+    const calls: Array<{
+      id: number;
+      resolvedBy: number | null;
+      reason: string;
+    }> = [];
     const deps: ResolveRosterQualityFlagDeps = {
       resolveFlag: async (args) => {
-        calls.push({ id: args.id, resolvedBy: args.resolvedBy });
+        calls.push({
+          id: args.id,
+          resolvedBy: args.resolvedBy,
+          reason: args.reason,
+        });
         return { outcome: "resolved" };
       },
     };
     const handler = makeResolveRosterQualityFlagHandler(deps);
-    const req = makeReq();
+    const req = makeReq({ body: { reason: "resolved" } });
     (req as unknown as { params: Record<string, string> }).params = {
       id: "17",
     };
@@ -635,9 +732,81 @@ async function run() {
       `expected 204, got ${res.statusCode}`,
     );
     assert(
-      calls.length === 1 && calls[0]?.id === 17 && calls[0]?.resolvedBy === 42,
+      calls.length === 1 &&
+        calls[0]?.id === 17 &&
+        calls[0]?.resolvedBy === 42 &&
+        calls[0]?.reason === "resolved",
       "resolve-success",
-      `expected one call with id=17 resolvedBy=42, got ${JSON.stringify(calls)}`,
+      `expected one call with id=17 resolvedBy=42 reason=resolved, got ${JSON.stringify(calls)}`,
+    );
+  }
+
+  // --- 1b. 204 on first resolve with reason='dismissed' ---
+  {
+    const calls: Array<{ id: number; reason: string }> = [];
+    const deps: ResolveRosterQualityFlagDeps = {
+      resolveFlag: async (args) => {
+        calls.push({ id: args.id, reason: args.reason });
+        return { outcome: "resolved" };
+      },
+    };
+    const handler = makeResolveRosterQualityFlagHandler(deps);
+    const req = makeReq({ body: { reason: "dismissed" } });
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: "18",
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 204,
+      "resolve-dismiss",
+      `expected 204, got ${res.statusCode}`,
+    );
+    assert(
+      calls[0]?.reason === "dismissed",
+      "resolve-dismiss",
+      `expected reason=dismissed to plumb through, got ${calls[0]?.reason}`,
+    );
+  }
+
+  // --- 1c. 400 when body reason is missing ---
+  {
+    const deps: ResolveRosterQualityFlagDeps = {
+      resolveFlag: async () => ({ outcome: "resolved" }),
+    };
+    const handler = makeResolveRosterQualityFlagHandler(deps);
+    const req = makeReq({ body: {} });
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: "19",
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "resolve-body-empty",
+      `expected 400 for missing reason, got ${res.statusCode}`,
+    );
+  }
+
+  // --- 1d. 400 when body reason is an unknown value ---
+  {
+    const deps: ResolveRosterQualityFlagDeps = {
+      resolveFlag: async () => ({ outcome: "resolved" }),
+    };
+    const handler = makeResolveRosterQualityFlagHandler(deps);
+    const req = makeReq({ body: { reason: "bogus" } });
+    (req as unknown as { params: Record<string, string> }).params = {
+      id: "19",
+    };
+    const res = makeRes();
+    await handler(req, res as unknown as Response, () => {});
+
+    assert(
+      res.statusCode === 400,
+      "resolve-body-bad",
+      `expected 400 for reason=bogus, got ${res.statusCode}`,
     );
   }
 
@@ -647,7 +816,7 @@ async function run() {
       resolveFlag: async () => ({ outcome: "not_found" }),
     };
     const handler = makeResolveRosterQualityFlagHandler(deps);
-    const req = makeReq();
+    const req = makeReq({ body: { reason: "resolved" } });
     (req as unknown as { params: Record<string, string> }).params = {
       id: "99999",
     };
@@ -667,7 +836,7 @@ async function run() {
       resolveFlag: async () => ({ outcome: "resolved" }),
     };
     const handler = makeResolveRosterQualityFlagHandler(deps);
-    const req = makeReq();
+    const req = makeReq({ body: { reason: "resolved" } });
     (req as unknown as { params: Record<string, string> }).params = {
       id: badId,
     };
@@ -681,13 +850,15 @@ async function run() {
     );
   }
 
-  // --- 4. 400 when flag is already resolved ---
-  {
+  // --- 4. 400 when flag is already resolved (second PATCH attempt) ---
+  // Any prior resolution (either reason) → 400 regardless of what reason
+  // the new request carries.
+  for (const nextReason of ["resolved", "dismissed"]) {
     const deps: ResolveRosterQualityFlagDeps = {
       resolveFlag: async () => ({ outcome: "already_resolved" }),
     };
     const handler = makeResolveRosterQualityFlagHandler(deps);
-    const req = makeReq();
+    const req = makeReq({ body: { reason: nextReason } });
     (req as unknown as { params: Record<string, string> }).params = {
       id: "1",
     };
@@ -697,16 +868,24 @@ async function run() {
     assert(
       res.statusCode === 400,
       "resolve-400-already",
-      `expected 400 for already_resolved, got ${res.statusCode}`,
+      `expected 400 for already_resolved (second reason=${nextReason}), got ${res.statusCode}`,
     );
   }
 
   // --- 5. API-key caller (no session) → resolvedBy=null passthrough ---
   {
-    const calls: Array<{ id: number; resolvedBy: number | null }> = [];
+    const calls: Array<{
+      id: number;
+      resolvedBy: number | null;
+      reason: string;
+    }> = [];
     const deps: ResolveRosterQualityFlagDeps = {
       resolveFlag: async (args) => {
-        calls.push({ id: args.id, resolvedBy: args.resolvedBy });
+        calls.push({
+          id: args.id,
+          resolvedBy: args.resolvedBy,
+          reason: args.reason,
+        });
         return { outcome: "resolved" };
       },
     };
@@ -714,7 +893,7 @@ async function run() {
     const req = {
       params: { id: "5" },
       query: {},
-      body: {},
+      body: { reason: "resolved" },
       adminAuth: { kind: "apiKey" as const },
     } as unknown as Request;
     const res = makeRes();

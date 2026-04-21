@@ -527,8 +527,17 @@ export interface EmptyStaffPagesResponse {
   windowDays: number;
 }
 
+export type NavLeakedNamesRowResolutionReason =
+  | (typeof NavLeakedNamesRowResolutionReason)[keyof typeof NavLeakedNamesRowResolutionReason]
+  | null;
+
+export const NavLeakedNamesRowResolutionReason = {
+  resolved: "resolved",
+  dismissed: "dismissed",
+} as const;
+
 /**
- * One `roster_quality_flags` row joined to its `club_roster_snapshots` parent (and the snapshot's `canonical_clubs` resolution if the linker has run). `leakedStrings` and `snapshotRosterSize` are extracted from the jsonb `metadata` payload into typed columns at the API boundary — callers do not see raw jsonb. `clubId` / `clubNameCanonical` are nullable because the canonical-club linker may not have run yet. `resolvedByEmail` is joined from `admin_users` when the flag has been resolved.
+ * One `roster_quality_flags` row joined to its `club_roster_snapshots` parent (and the snapshot's `canonical_clubs` resolution if the linker has run). `leakedStrings` and `snapshotRosterSize` are extracted from the jsonb `metadata` payload into typed columns at the API boundary — callers do not see raw jsonb. `clubId` / `clubNameCanonical` are nullable because the canonical-club linker may not have run yet. `resolvedByEmail` is joined from `admin_users` when the flag has been resolved. `resolutionReason` is `'resolved'` (legitimate leak, cleaned up out of band), `'dismissed'` (false positive), or null while the flag is still open.
 
  */
 export interface NavLeakedNamesRow {
@@ -541,6 +550,23 @@ export interface NavLeakedNamesRow {
   flaggedAt: string;
   resolvedAt: string | null;
   resolvedByEmail: string | null;
+  resolutionReason: NavLeakedNamesRowResolutionReason;
+}
+
+export type ResolveRosterQualityFlagRequestReason =
+  (typeof ResolveRosterQualityFlagRequestReason)[keyof typeof ResolveRosterQualityFlagRequestReason];
+
+export const ResolveRosterQualityFlagRequestReason = {
+  resolved: "resolved",
+  dismissed: "dismissed",
+} as const;
+
+/**
+ * Body for PATCH /v1/admin/data-quality/roster-quality-flags/{id}/resolve. `reason` captures operator intent — see the endpoint description for the two-path semantics.
+
+ */
+export interface ResolveRosterQualityFlagRequest {
+  reason: ResolveRosterQualityFlagRequestReason;
 }
 
 export interface NavLeakedNamesResponse {
@@ -934,10 +960,21 @@ export type GetNavLeakedNamesParams = {
    */
   page_size?: number;
   /**
-   * If true, include rows whose `resolved_at` is set. Default false.
-   */
-  include_resolved?: boolean;
+ * Which flags to return. `open` surfaces unresolved flags only (default — the typical triage view); `resolved` returns flags closed with `resolution_reason='resolved'` (legitimate leaks that were cleaned up out of band); `dismissed` returns flags closed with `resolution_reason='dismissed'` (false positives); `all` returns every state. Replaces the previous boolean `include_resolved` param.
+
+ */
+  state?: GetNavLeakedNamesState;
 };
+
+export type GetNavLeakedNamesState =
+  (typeof GetNavLeakedNamesState)[keyof typeof GetNavLeakedNamesState];
+
+export const GetNavLeakedNamesState = {
+  open: "open",
+  resolved: "resolved",
+  dismissed: "dismissed",
+  all: "all",
+} as const;
 
 export type GetStaleScrapesParams = {
   /**

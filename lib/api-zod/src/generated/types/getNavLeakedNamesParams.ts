@@ -5,6 +5,7 @@
  * Upshift Data API — youth soccer club graph database
  * OpenAPI spec version: 0.2.0
  */
+import type { GetNavLeakedNamesState } from "./getNavLeakedNamesState";
 
 export type GetNavLeakedNamesParams = {
   /**
@@ -17,7 +18,8 @@ export type GetNavLeakedNamesParams = {
    */
   page_size?: number;
   /**
-   * If true, include rows whose `resolved_at` is set. Default false.
-   */
-  include_resolved?: boolean;
+ * Which flags to return. `open` surfaces unresolved flags only (default — the typical triage view); `resolved` returns flags closed with `resolution_reason='resolved'` (legitimate leaks that were cleaned up out of band); `dismissed` returns flags closed with `resolution_reason='dismissed'` (false positives); `all` returns every state. Replaces the previous boolean `include_resolved` param.
+
+ */
+  state?: GetNavLeakedNamesState;
 };
