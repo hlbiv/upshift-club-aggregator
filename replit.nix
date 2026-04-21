@@ -1,5 +1,7 @@
 {pkgs}: {
   deps = [
+    pkgs.run
+    pkgs.parallel-full
     pkgs.python312Packages.pytest
     pkgs.libGL
     pkgs.freetype
