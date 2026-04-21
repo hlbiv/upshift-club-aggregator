@@ -302,7 +302,7 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
     vi.restoreAllMocks();
   });
 
-  it("loads and renders rows with default include_resolved=false", async () => {
+  it("loads and renders rows with default state=open", async () => {
     const fetchMock = makeFetchMock({
       "nav-leaked-names": () =>
         jsonResponse({
@@ -317,6 +317,7 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
               flaggedAt: "2026-04-10T12:00:00Z",
               resolvedAt: null,
               resolvedByEmail: null,
+              resolutionReason: null,
             },
             {
               id: 2,
@@ -329,6 +330,7 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
               flaggedAt: "2026-04-11T09:00:00Z",
               resolvedAt: null,
               resolvedByEmail: null,
+              resolutionReason: null,
             },
           ],
           total: 2,
@@ -365,12 +367,12 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
     // Active status badge on unresolved rows (there are 2).
     expect(screen.getAllByText("Active").length).toBe(2);
 
-    // Request used the default include_resolved=false.
+    // Request used the default state=open.
     const call = fetchMock.mock.calls.find((c) =>
       String(c[0]).includes("nav-leaked-names"),
     );
     expect(call).toBeDefined();
-    expect(String(call?.[0])).toContain("include_resolved=false");
+    expect(String(call?.[0])).toContain("state=open");
     expect(String(call?.[0])).toContain("page=1");
     expect(String(call?.[0])).toContain("page_size=20");
   });
@@ -423,7 +425,7 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
     });
   });
 
-  it("re-queries with include_resolved=true when checkbox is toggled and refreshed", async () => {
+  it("tri-state filter switches the state query param to resolved", async () => {
     const fetchMock = makeFetchMock({
       "nav-leaked-names": () =>
         jsonResponse({ rows: [], total: 0, page: 1, pageSize: 20 }),
@@ -445,28 +447,61 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
       ).toBeInTheDocument();
     });
 
-    await user.click(
-      screen.getByRole("checkbox", { name: /include resolved flags/i }),
-    );
+    await user.click(screen.getByRole("radio", { name: /^resolved$/i }));
     await user.click(screen.getByRole("button", { name: /refresh/i }));
 
     await waitFor(() => {
       const withResolved = fetchMock.mock.calls.filter((c) =>
-        String(c[0]).includes("include_resolved=true"),
+        String(c[0]).includes("state=resolved"),
       );
       expect(withResolved.length).toBeGreaterThanOrEqual(1);
     });
   });
 
-  it("clicking Resolve issues PATCH and refreshes the list", async () => {
+  it("tri-state filter switches the state query param to dismissed", async () => {
+    const fetchMock = makeFetchMock({
+      "nav-leaked-names": () =>
+        jsonResponse({ rows: [], total: 0, page: 1, pageSize: 20 }),
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /nav-leaked names/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/no flagged snapshots/i),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("radio", { name: /^dismissed$/i }));
+    await user.click(screen.getByRole("button", { name: /refresh/i }));
+
+    await waitFor(() => {
+      const withDismissed = fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("state=dismissed"),
+      );
+      expect(withDismissed.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it("clicking Confirm fires PATCH with reason=resolved and refreshes the list", async () => {
     let listCalls = 0;
     let patchCalls = 0;
     let lastPatchedUrl = "";
+    let lastPatchedBody = "";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/roster-quality-flags/") && url.endsWith("/resolve")) {
         patchCalls += 1;
         lastPatchedUrl = url;
+        lastPatchedBody = typeof init?.body === "string" ? init.body : "";
         // PATCH returns 204 No Content.
         return new Response(null, { status: 204 });
       }
@@ -487,6 +522,7 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
                   flaggedAt: "2026-04-12T10:00:00Z",
                   resolvedAt: null,
                   resolvedByEmail: null,
+                  resolutionReason: null,
                 },
               ],
           total: showResolved ? 0 : 1,
@@ -512,13 +548,14 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
     });
 
     await user.click(
-      screen.getByRole("button", { name: /resolve flag 77/i }),
+      screen.getByRole("button", { name: /confirm flag 77/i }),
     );
 
     await waitFor(() => {
       expect(patchCalls).toBe(1);
     });
     expect(lastPatchedUrl).toContain("/roster-quality-flags/77/resolve");
+    expect(JSON.parse(lastPatchedBody)).toEqual({ reason: "resolved" });
 
     // After successful PATCH, the list invalidates and the row disappears.
     await waitFor(() => {
@@ -526,7 +563,77 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
     });
   });
 
-  it("renders resolved status with resolver email when resolvedAt is set", async () => {
+  it("clicking Dismiss fires PATCH with reason=dismissed and refreshes the list", async () => {
+    let listCalls = 0;
+    let patchCalls = 0;
+    let lastPatchedUrl = "";
+    let lastPatchedBody = "";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/roster-quality-flags/") && url.endsWith("/resolve")) {
+        patchCalls += 1;
+        lastPatchedUrl = url;
+        lastPatchedBody = typeof init?.body === "string" ? init.body : "";
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("nav-leaked-names")) {
+        listCalls += 1;
+        const showResolved = listCalls > 1;
+        return jsonResponse({
+          rows: showResolved
+            ? []
+            : [
+                {
+                  id: 88,
+                  snapshotId: 8800,
+                  clubId: 12,
+                  clubNameCanonical: "Dismiss Me FC",
+                  leakedStrings: ["ABOUT"],
+                  snapshotRosterSize: 9,
+                  flaggedAt: "2026-04-13T10:00:00Z",
+                  resolvedAt: null,
+                  resolvedByEmail: null,
+                  resolutionReason: null,
+                },
+              ],
+          total: showResolved ? 0 : 1,
+          page: 1,
+          pageSize: 20,
+        });
+      }
+      return new Response("not mocked", { status: 404 });
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock as unknown as typeof fetch,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /nav-leaked names/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Dismiss Me FC")).toBeInTheDocument();
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: /dismiss flag 88/i }),
+    );
+
+    await waitFor(() => {
+      expect(patchCalls).toBe(1);
+    });
+    expect(lastPatchedUrl).toContain("/roster-quality-flags/88/resolve");
+    expect(JSON.parse(lastPatchedBody)).toEqual({ reason: "dismissed" });
+
+    await waitFor(() => {
+      expect(screen.getByText(/no flagged snapshots/i)).toBeInTheDocument();
+    });
+  });
+
+  it("renders resolved status with resolver email when resolvedAt is set and reason=resolved", async () => {
     const fetchMock = makeFetchMock({
       "nav-leaked-names": () =>
         jsonResponse({
@@ -541,6 +648,7 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
               flaggedAt: "2026-04-01T00:00:00Z",
               resolvedAt: "2026-04-05T00:00:00Z",
               resolvedByEmail: "ops@upshift.test",
+              resolutionReason: "resolved",
             },
           ],
           total: 1,
@@ -565,6 +673,64 @@ describe("DataQualityPage — Nav-leaked names tab", () => {
     // The resolver email appears verbatim in the resolved badge copy.
     expect(screen.getByText(/ops@upshift\.test/)).toBeInTheDocument();
     // "Active" badge should NOT be present on a resolved row.
+    expect(screen.queryByText("Active")).not.toBeInTheDocument();
+    // Badge copy leads with "Resolved" (filter radio label also reads
+    // "Resolved" on its own — match the full badge string with its
+    // trailing space + locale date so we don't collide with the radio).
+    expect(
+      screen.getByText(/Resolved .+2026/, { selector: "span" }),
+    ).toBeInTheDocument();
+    // And the Dismissed alternative should not appear.
+    expect(
+      screen.queryByText(/Dismissed .+2026/, { selector: "span" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders Dismissed badge when resolutionReason=dismissed", async () => {
+    const fetchMock = makeFetchMock({
+      "nav-leaked-names": () =>
+        jsonResponse({
+          rows: [
+            {
+              id: 100,
+              snapshotId: 9100,
+              clubId: 8,
+              clubNameCanonical: "Dismissed FC",
+              leakedStrings: ["CONTACT"],
+              snapshotRosterSize: 12,
+              flaggedAt: "2026-04-02T00:00:00Z",
+              resolvedAt: "2026-04-06T00:00:00Z",
+              resolvedByEmail: "ops@upshift.test",
+              resolutionReason: "dismissed",
+            },
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        }),
+    });
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      fetchMock,
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DataQualityPage />);
+
+    await user.click(
+      screen.getByRole("tab", { name: /nav-leaked names/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Dismissed FC")).toBeInTheDocument();
+    });
+    // Match the full badge string (reason + date) so we don't collide
+    // with the tri-state filter radio labeled "Dismissed".
+    expect(
+      screen.getByText(/Dismissed .+2026/, { selector: "span" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Resolved .+2026/, { selector: "span" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Active")).not.toBeInTheDocument();
   });
 });

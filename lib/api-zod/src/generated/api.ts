@@ -1011,7 +1011,7 @@ export const getNavLeakedNamesQueryPageDefault = 1;
 export const getNavLeakedNamesQueryPageSizeDefault = 20;
 export const getNavLeakedNamesQueryPageSizeMax = 100;
 
-export const getNavLeakedNamesQueryIncludeResolvedDefault = false;
+export const getNavLeakedNamesQueryStateDefault = `open`;
 
 export const GetNavLeakedNamesQueryParams = zod.object({
   page: zod.coerce.number().min(1).default(getNavLeakedNamesQueryPageDefault),
@@ -1020,11 +1020,11 @@ export const GetNavLeakedNamesQueryParams = zod.object({
     .min(1)
     .max(getNavLeakedNamesQueryPageSizeMax)
     .default(getNavLeakedNamesQueryPageSizeDefault),
-  include_resolved: zod.coerce
-    .boolean()
-    .default(getNavLeakedNamesQueryIncludeResolvedDefault)
+  state: zod
+    .enum(["open", "resolved", "dismissed", "all"])
+    .default(getNavLeakedNamesQueryStateDefault)
     .describe(
-      "If true, include rows whose `resolved_at` is set. Default false.",
+      "Which flags to return. `open` surfaces unresolved flags only (default — the typical triage view); `resolved` returns flags closed with `resolution_reason='resolved'` (legitimate leaks that were cleaned up out of band); `dismissed` returns flags closed with `resolution_reason='dismissed'` (false positives); `all` returns every state. Replaces the previous boolean `include_resolved` param.\n",
     ),
 });
 
@@ -1041,9 +1041,10 @@ export const GetNavLeakedNamesResponse = zod.object({
         flaggedAt: zod.coerce.date(),
         resolvedAt: zod.coerce.date().nullable(),
         resolvedByEmail: zod.string().nullable(),
+        resolutionReason: zod.enum(["resolved", "dismissed"]).nullable(),
       })
       .describe(
-        "One `roster_quality_flags` row joined to its `club_roster_snapshots` parent (and the snapshot's `canonical_clubs` resolution if the linker has run). `leakedStrings` and `snapshotRosterSize` are extracted from the jsonb `metadata` payload into typed columns at the API boundary — callers do not see raw jsonb. `clubId` \/ `clubNameCanonical` are nullable because the canonical-club linker may not have run yet. `resolvedByEmail` is joined from `admin_users` when the flag has been resolved.\n",
+        "One `roster_quality_flags` row joined to its `club_roster_snapshots` parent (and the snapshot's `canonical_clubs` resolution if the linker has run). `leakedStrings` and `snapshotRosterSize` are extracted from the jsonb `metadata` payload into typed columns at the API boundary — callers do not see raw jsonb. `clubId` \/ `clubNameCanonical` are nullable because the canonical-club linker may not have run yet. `resolvedByEmail` is joined from `admin_users` when the flag has been resolved. `resolutionReason` is `'resolved'` (legitimate leak, cleaned up out of band), `'dismissed'` (false positive), or null while the flag is still open.\n",
       ),
   ),
   total: zod.number(),
@@ -1052,16 +1053,31 @@ export const GetNavLeakedNamesResponse = zod.object({
 });
 
 /**
- * Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on the row. The underlying `club_roster_snapshots` row is NOT mutated — resolving a flag means "operator has triaged this leak", not "the data is fixed".
-API-key callers get `resolved_by = NULL` (no admin user identity); session callers get their admin user id stamped — same pattern as the dedup PATCH endpoints.
-Returns 400 if the flag is already resolved, and 404 if no `nav_leaked_name` flag exists with that id.
+ * Stamps `resolved_at = NOW()`, `resolved_by = <admin user id>`, and `resolution_reason = <reason>` on the row. The underlying `club_roster_snapshots` row is NOT mutated.
+The `reason` field splits the triage action into two operator intents:
+  * `resolved` — the flag was legitimate; the operator has cleaned
+    up the leak out of band (e.g. fixed the extractor, re-scraped
+    the club). Snapshot history stays immutable.
+  * `dismissed` — false positive; the detector flagged something
+    that wasn't actually a nav-menu leak.
 
- * @summary Mark a roster_quality_flags row as resolved
+API-key callers get `resolved_by = NULL` (no admin user identity); session callers get their admin user id stamped — same pattern as the dedup PATCH endpoints.
+Returns 400 if the body is missing / invalid, or if the flag is already resolved (either reason — second attempts always 400 regardless of whether the new reason matches the stored one). Returns 404 if no flag exists with that id.
+
+ * @summary Mark a roster_quality_flags row as resolved or dismissed
  */
 
 export const ResolveRosterQualityFlagParams = zod.object({
   id: zod.coerce.number().min(1),
 });
+
+export const ResolveRosterQualityFlagBody = zod
+  .object({
+    reason: zod.enum(["resolved", "dismissed"]),
+  })
+  .describe(
+    "Body for PATCH \/v1\/admin\/data-quality\/roster-quality-flags\/{id}\/resolve. `reason` captures operator intent — see the endpoint description for the two-path semantics.\n",
+  );
 
 /**
  * Paginated list of `coach_quality_flags` rows, joined to the parent `coach_discoveries` (surfacing `coach_name`, `coach_email`, `club_name_raw`), the snapshot's `canonical_clubs` resolution (for a `club_display_name` when the discovery's `club_id` is set), and `admin_users` (for `resolved_by_email`). Callers never see raw jsonb — any typed metadata extraction happens at the API boundary on a per-flag-type basis (today the whole jsonb payload is returned verbatim in `metadata` as a `record<unknown>`; a future PR can promote per-flag fields into typed columns once the pollution investigation has settled on a stable contract).

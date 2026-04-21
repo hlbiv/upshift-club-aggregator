@@ -411,6 +411,115 @@ def _parse_sidearm_vue_embedded_json(html: str) -> List[RosterPlayer]:
     return parsed
 
 
+def _parse_sidearm_vue_embedded_head_coach(html: str) -> Optional[Dict[str, Optional[str]]]:
+    """Extract the head coach from the Sidearm Vue data factory JSON blob.
+
+    Sibling of ``_parse_sidearm_vue_embedded_json`` (players). Locates
+    the same ``data: () => ({ roster: {...} })`` prelude and reads a
+    ``coaches`` / ``coaching_staff`` / ``staff`` array instead of
+    ``players``. Filters to strict head coach via
+    ``_is_strict_head_coach``.
+
+    Recovers programs where DOM-based Strategy 4 (``.roster-card-item``)
+    missed because either (a) the site's Vue store has ``show_coaches_under_roster``
+    / ``display_coaches`` toggled off so the staff cards never render,
+    or (b) the coach data is in the JSON but rendered in a different
+    DOM subtree the parser doesn't reach.
+
+    Returns the same coach-dict shape as strategies 1-4 (plus the
+    ``_strategy`` tag for per-run instrumentation). Returns ``None``
+    when the blob is absent, malformed, or contains no strict head
+    coach.
+
+    Key-name tolerance: Sidearm's Rails backend is consistent on the
+    player side but the coach side has drifted across tenants. We try
+    multiple title + name keys and take the first non-empty hit.
+    Matches the resilience pattern used in ``_parse_sidearm_vue_embedded_json``
+    for player fields.
+    """
+    match = _SIDEARM_VUE_ROSTER_RE.search(html)
+    if not match:
+        return None
+    start = match.start(1)
+    end = _find_balanced_json_end(html, start)
+    if end is None:
+        return None
+    blob = html[start:end]
+    try:
+        roster_obj: Any = json.loads(blob)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(roster_obj, dict):
+        return None
+
+    # Likely coach-array keys (ordered by observed prevalence).
+    raw_coaches = None
+    for key in ("coaches", "coaching_staff", "staff"):
+        candidate = roster_obj.get(key)
+        if isinstance(candidate, list) and candidate:
+            raw_coaches = candidate
+            break
+    if raw_coaches is None:
+        return None
+
+    for rc in raw_coaches:
+        if not isinstance(rc, dict):
+            continue
+
+        # Title can live under multiple keys depending on CMS version.
+        title_raw: Any = (
+            rc.get("title")
+            or rc.get("position_long")
+            or rc.get("position_short")
+            or rc.get("position")
+            or ""
+        )
+        if not isinstance(title_raw, str):
+            continue
+        title = title_raw.strip()
+        if not _is_strict_head_coach(title):
+            continue
+
+        first = (rc.get("first_name") or "").strip() if isinstance(rc.get("first_name"), str) else ""
+        last = (rc.get("last_name") or "").strip() if isinstance(rc.get("last_name"), str) else ""
+        name = f"{first} {last}".strip()
+        if not name:
+            # Fall back to a single "name" / "full_name" / "display_name"
+            # field if first+last weren't populated.
+            for k in ("name", "full_name", "display_name"):
+                candidate = rc.get(k)
+                if isinstance(candidate, str) and candidate.strip():
+                    name = candidate.strip()
+                    break
+        if not name or len(name) < 3:
+            continue
+
+        email_raw = rc.get("email") or rc.get("email_address")
+        email = (
+            email_raw.strip().lower()
+            if isinstance(email_raw, str) and email_raw.strip()
+            else None
+        )
+
+        phone_raw = rc.get("phone") or rc.get("phone_number")
+        phone = (
+            phone_raw.strip()
+            if isinstance(phone_raw, str) and phone_raw.strip()
+            else None
+        )
+
+        return {
+            "name": name,
+            "title": title,
+            "email": email,
+            "phone": phone,
+            "is_head_coach": True,
+            "_strategy": "vue-embedded-json",
+        }
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # HTML parsing — five strategies, matching the TS scrapers
 # ---------------------------------------------------------------------------
@@ -1061,19 +1170,27 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
       4. ``.roster-staff-members-card-item`` / ``.roster-card-item``
          (WMT/Vue-style staff card layout used by Stanford and other
          non-SIDEARM CMSs).
+      5. Sidearm Vue-embedded JSON — the same ``data: () => ({
+         roster: {...} })`` factory that Strategy 5 of ``parse_roster_html``
+         reads for players also ships a ``coaches`` / ``coaching_staff``
+         / ``staff`` array on many tenants. Non-DOM fallback for sites
+         where the staff cards never render (Vue template flags hide
+         them, or the pre-hydration HTML omits staff even when the
+         JSON has it).
 
     Returns a dict ``{name, title, email, phone, is_head_coach, _strategy}`` or
     ``None`` if the page does not expose a head coach block (typical
     for roster-only pages — callers should fall back to fetching the
     coaches page).
 
-    The ``_strategy`` key names which of the four strategies fired
-    (``sidearm-staff-member`` / ``s-person-card`` /
-    ``sidearm-roster-coach`` / ``roster-staff-members-card-item``).
-    Not semantically part of the coach record — the bulk enumerator
-    uses it for per-run instrumentation + diagnostic logging; the
-    writers (``upsert_coaches`` / ``upsert_coach_tenures``) read only
-    the explicit named fields, so the tag passes through harmlessly.
+    The ``_strategy`` key names which of the five strategies fired:
+    ``sidearm-staff-member`` / ``s-person-card`` /
+    ``sidearm-roster-coach`` / ``roster-staff-members-card-item`` /
+    ``vue-embedded-json``. Not semantically part of the coach record —
+    the bulk enumerator uses it for per-run instrumentation + diagnostic
+    logging; the writers (``upsert_coaches`` / ``upsert_coach_tenures``)
+    read only the explicit named fields, so the tag passes through
+    harmlessly.
     """
     soup = BeautifulSoup(html, "html.parser")
 
@@ -1193,6 +1310,17 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
             "is_head_coach": True,
             "_strategy": "roster-staff-members-card-item",
         }
+
+    # --- Strategy 5: Sidearm Vue-embedded roster JSON -----------------
+    # Fallback for sites where DOM strategies all miss but the Vue
+    # ``data: () => ({ roster: {...} })`` factory carries a coaches
+    # array. Observed on Stanford (gostanford.com) and related Vue
+    # NextGen tenants where ``show_coaches_under_roster`` /
+    # ``display_coaches`` Vue flags can hide the staff section from the
+    # rendered DOM while the JSON still carries the data.
+    head_coach_from_json = _parse_sidearm_vue_embedded_head_coach(html)
+    if head_coach_from_json is not None:
+        return head_coach_from_json
 
     return None
 
@@ -1864,6 +1992,7 @@ def scrape_college_rosters(
         "s-person-card": 0,
         "sidearm-roster-coach": 0,
         "roster-staff-members-card-item": 0,
+        "vue-embedded-json": 0,
         "miss": 0,
     }
 
@@ -2076,11 +2205,12 @@ def scrape_college_rosters(
     logger.info(
         "coach extraction hits: sidearm-staff-member=%d s-person-card=%d "
         "sidearm-roster-coach=%d roster-staff-members-card-item=%d "
-        "misses=%d  (hit_rate=%.1f%% of %d pages)",
+        "vue-embedded-json=%d misses=%d  (hit_rate=%.1f%% of %d pages)",
         coach_strategy_hits["sidearm-staff-member"],
         coach_strategy_hits["s-person-card"],
         coach_strategy_hits["sidearm-roster-coach"],
         coach_strategy_hits["roster-staff-members-card-item"],
+        coach_strategy_hits["vue-embedded-json"],
         coach_strategy_hits["miss"],
         hit_pct,
         total_pages,

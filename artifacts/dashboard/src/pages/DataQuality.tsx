@@ -593,24 +593,26 @@ function StaleScrapesTable({
 }
 
 // ---------------------------------------------------------------------------
-// Nav-leaked names (Phase 1 — read-only)
+// Nav-leaked names
 // ---------------------------------------------------------------------------
 
+type NavLeakedState = "open" | "resolved" | "dismissed";
+
 function NavLeakedNamesPanel() {
-  const [includeResolved, setIncludeResolved] = useState(false);
-  const [appliedIncludeResolved, setAppliedIncludeResolved] = useState(false);
+  const [state, setState] = useState<NavLeakedState>("open");
+  const [appliedState, setAppliedState] = useState<NavLeakedState>("open");
   const [page, setPage] = useState(1);
 
   const query = useGetNavLeakedNames({
     page,
     page_size: PANEL_DEFAULT_PAGE_SIZE,
-    include_resolved: appliedIncludeResolved,
+    state: appliedState,
   });
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPage(1);
-    setAppliedIncludeResolved(includeResolved);
+    setAppliedState(state);
   }
 
   return (
@@ -618,23 +620,54 @@ function NavLeakedNamesPanel() {
       <p className="mb-4 text-sm text-neutral-500">
         Roster snapshots flagged as containing navigation-menu strings (e.g.{" "}
         <code>"HOME"</code>, <code>"CONTACT"</code>) instead of real player
-        names. Phase 1 read-only panel — detection ships in Phase 2 and the
-        table is empty until then.
+        names. Use <strong>Confirm</strong> when the flag was legitimate and
+        you've cleaned up the leak out of band; use <strong>Dismiss</strong>{" "}
+        for false positives.
       </p>
 
       <form
         onSubmit={onSubmit}
         className="mb-6 flex flex-wrap items-end gap-4 rounded-lg border border-neutral-200 bg-white p-4"
       >
-        <label className="flex items-center gap-2 text-sm text-neutral-800">
-          <input
-            type="checkbox"
-            checked={includeResolved}
-            onChange={(e) => setIncludeResolved(e.target.checked)}
-            className="h-4 w-4 rounded border-neutral-300"
-          />
-          Include resolved flags
-        </label>
+        <fieldset
+          className="flex items-center gap-4 text-sm text-neutral-800"
+          aria-label="State filter"
+        >
+          <legend className="sr-only">State filter</legend>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="nav-leaked-state"
+              value="open"
+              checked={state === "open"}
+              onChange={() => setState("open")}
+              className="h-4 w-4"
+            />
+            Open
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="nav-leaked-state"
+              value="resolved"
+              checked={state === "resolved"}
+              onChange={() => setState("resolved")}
+              className="h-4 w-4"
+            />
+            Resolved
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="nav-leaked-state"
+              value="dismissed"
+              checked={state === "dismissed"}
+              onChange={() => setState("dismissed")}
+              className="h-4 w-4"
+            />
+            Dismissed
+          </label>
+        </fieldset>
         <button
           type="submit"
           disabled={query.isFetching}
@@ -741,23 +774,53 @@ function NavLeakedNamesTable({
                   <ResolvedBadge
                     resolvedAt={row.resolvedAt}
                     resolvedByEmail={row.resolvedByEmail}
+                    resolutionReason={row.resolutionReason}
                   />
                 </TableCell>
                 <TableCell>
                   {row.resolvedAt === null ? (
-                    <button
-                      type="button"
-                      onClick={() => resolve.mutate({ id: row.id })}
-                      disabled={
-                        resolve.isPending && resolve.variables?.id === row.id
-                      }
-                      className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs font-medium text-neutral-800 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      aria-label={`Resolve flag ${row.id}`}
-                    >
-                      {resolve.isPending && resolve.variables?.id === row.id
-                        ? "Resolving…"
-                        : "Resolve"}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          resolve.mutate({
+                            id: row.id,
+                            data: { reason: "resolved" },
+                          })
+                        }
+                        disabled={
+                          resolve.isPending && resolve.variables?.id === row.id
+                        }
+                        className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Confirm flag ${row.id}`}
+                      >
+                        {resolve.isPending &&
+                        resolve.variables?.id === row.id &&
+                        resolve.variables?.data?.reason === "resolved"
+                          ? "Confirming…"
+                          : "Confirm"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          resolve.mutate({
+                            id: row.id,
+                            data: { reason: "dismissed" },
+                          })
+                        }
+                        disabled={
+                          resolve.isPending && resolve.variables?.id === row.id
+                        }
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs font-medium text-neutral-800 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Dismiss flag ${row.id}`}
+                      >
+                        {resolve.isPending &&
+                        resolve.variables?.id === row.id &&
+                        resolve.variables?.data?.reason === "dismissed"
+                          ? "Dismissing…"
+                          : "Dismiss"}
+                      </button>
+                    </div>
                   ) : (
                     <span className="text-xs text-neutral-400">—</span>
                   )}
@@ -780,9 +843,11 @@ function NavLeakedNamesTable({
 function ResolvedBadge({
   resolvedAt,
   resolvedByEmail,
+  resolutionReason,
 }: {
   resolvedAt: string | null;
   resolvedByEmail: string | null;
+  resolutionReason: "resolved" | "dismissed" | null;
 }) {
   if (resolvedAt === null) {
     return (
@@ -791,9 +856,14 @@ function ResolvedBadge({
       </span>
     );
   }
+  // `resolutionReason` should always be set when `resolvedAt` is set (the
+  // DB CHECK constraint enforces this), but fall back to "Resolved" so a
+  // legacy row that predates the column doesn't blow up the UI.
+  const label =
+    resolutionReason === "dismissed" ? "Dismissed" : "Resolved";
   return (
     <span className="text-xs text-neutral-600">
-      Resolved {formatDate(resolvedAt)}
+      {label} {formatDate(resolvedAt)}
       {resolvedByEmail && (
         <span className="ml-1 text-neutral-400">by {resolvedByEmail}</span>
       )}

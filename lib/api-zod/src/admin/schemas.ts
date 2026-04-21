@@ -258,17 +258,32 @@ export const StaleScrapesResponse = z.object({
 export type StaleScrapesResponse = z.infer<typeof StaleScrapesResponse>;
 
 /**
+ * State filter for GET /v1/admin/data-quality/nav-leaked-names — replaces
+ * the previous binary `includeResolved` boolean so reviewers can split the
+ * resolved queue into "legitimate leak cleaned up" vs "false positive
+ * dismissed" views without a second UI toggle. `open` (the default) is the
+ * triage queue. `all` is escape-hatch for cross-state comparisons.
+ */
+export const NavLeakedNamesState = z.enum([
+  "open",
+  "resolved",
+  "dismissed",
+  "all",
+]);
+export type NavLeakedNamesState = z.infer<typeof NavLeakedNamesState>;
+
+/**
  * Request for GET /v1/admin/data-quality/nav-leaked-names.
  *
- * Phase 1 panel for `roster_quality_flags` rows whose `flag_type =
- * 'nav_leaked_name'`. Default `includeResolved=false` surfaces only active
- * flags — operators almost always want to work the unresolved queue.
- * `page_size` capped at the repo-wide 100-row pagination ceiling.
+ * Panel for `roster_quality_flags` rows whose `flag_type =
+ * 'nav_leaked_name'`. Default `state='open'` surfaces only active flags —
+ * operators almost always want to work the unresolved queue. `page_size`
+ * capped at the repo-wide 100-row pagination ceiling.
  */
 export const NavLeakedNamesRequest = z.object({
   page: z.number().int().positive().default(1),
   pageSize: z.number().int().positive().max(100).default(20),
-  includeResolved: z.boolean().default(false),
+  state: NavLeakedNamesState.default("open"),
 });
 export type NavLeakedNamesRequest = z.infer<typeof NavLeakedNamesRequest>;
 
@@ -296,8 +311,23 @@ export const NavLeakedNamesRow = z.object({
   flaggedAt: z.string().datetime(),
   resolvedAt: z.string().datetime().nullable(),
   resolvedByEmail: z.string().nullable(),
+  // 'resolved' / 'dismissed' — null while the flag is still open. Matches
+  // `roster_quality_flags.resolution_reason` and mirrors the CHECK list.
+  resolutionReason: z.enum(["resolved", "dismissed"]).nullable(),
 });
 export type NavLeakedNamesRow = z.infer<typeof NavLeakedNamesRow>;
+
+/**
+ * Body for PATCH /v1/admin/data-quality/roster-quality-flags/:id/resolve.
+ * `reason` captures operator intent: `resolved` = legitimate leak cleaned
+ * up out of band; `dismissed` = false positive.
+ */
+export const ResolveRosterQualityFlagRequest = z.object({
+  reason: z.enum(["resolved", "dismissed"]),
+});
+export type ResolveRosterQualityFlagRequest = z.infer<
+  typeof ResolveRosterQualityFlagRequest
+>;
 
 /** Paginated envelope for the nav-leaked-names panel. */
 export const NavLeakedNamesResponse = z.object({
