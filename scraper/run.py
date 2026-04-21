@@ -1444,6 +1444,114 @@ def _handle_ncaa_seed_wikipedia(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_naia_seed_official(args: argparse.Namespace) -> None:
+    """Seed ``colleges`` from naia.org's 2021-22 soccer teams index.
+
+    Sibling of ``_handle_ncaa_seed_d1`` and ``_handle_ncaa_seed_wikipedia``.
+    Wikipedia has no "List of NAIA ... soccer programs" page; naia.org
+    is the authoritative source, but the current-season team index
+    endpoint broke after 2021-22 (redirects to the first team detail
+    page instead of rendering the listing). This handler parses the
+    2021-22 index, which still renders and covers ~95% of current
+    NAIA membership.
+
+    Optional flags:
+      --gender mens|womens  (default: both)
+      --dry-run             (parse only; no DB writes)
+    """
+    from extractors.naia_directory import (
+        fetch_naia_programs,
+        directory_url,
+    )
+    from ingest.ncaa_roster_writer import upsert_college
+
+    gender_arg = getattr(args, "gender", None) or "both"
+    gender_arg = {"boys": "mens", "girls": "womens"}.get(gender_arg, gender_arg)
+    if gender_arg == "both":
+        genders = ["mens", "womens"]
+    elif gender_arg in ("mens", "womens"):
+        genders = [gender_arg]
+    else:
+        logger.error(
+            "--source naia-seed-official: --gender must be mens|womens|both (got %r)",
+            gender_arg,
+        )
+        sys.exit(2)
+
+    dry_run = bool(getattr(args, "dry_run", False))
+    grand = {"fetched": 0, "inserted": 0, "updated": 0, "errors": 0}
+
+    for gender in genders:
+        scraper_key = f"naia-seed-official-{gender}"
+        run_log: Optional[ScrapeRunLogger] = None
+        if not dry_run:
+            run_log = ScrapeRunLogger(
+                scraper_key=scraper_key,
+                league_name=f"NAIA {gender}",
+            )
+            run_log.start(source_url=directory_url(gender))
+
+        try:
+            seeds = fetch_naia_programs(gender)
+        except Exception as exc:
+            kind = _classify_exception(exc)
+            logger.error(
+                "[naia-seed-official] %s fetch failed: %s", gender, exc,
+            )
+            if run_log is not None:
+                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+            alert_scraper_failure(
+                scraper_key=scraper_key,
+                failure_kind=kind.value,
+                error_message=str(exc),
+                source_url=directory_url(gender),
+                league_name=f"NAIA {gender}",
+            )
+            grand["errors"] += 1
+            continue
+
+        grand["fetched"] += len(seeds)
+        inserted = updated = errors = 0
+        for seed in seeds:
+            try:
+                _cid, was_inserted = upsert_college(seed.to_upsert_row(), dry_run=dry_run)
+            except Exception as exc:
+                logger.warning(
+                    "[naia-seed-official] upsert failed for %s (NAIA %s): %s",
+                    seed.name, gender, exc,
+                )
+                errors += 1
+                continue
+            if dry_run:
+                continue
+            if was_inserted:
+                inserted += 1
+            else:
+                updated += 1
+
+        logger.info(
+            "[naia-seed-official] %s: fetched=%d inserted=%d updated=%d errors=%d%s",
+            gender, len(seeds), inserted, updated, errors,
+            " (dry-run)" if dry_run else "",
+        )
+        grand["inserted"] += inserted
+        grand["updated"] += updated
+        grand["errors"] += errors
+
+        if run_log is not None:
+            run_log.finish_ok(
+                records_created=inserted,
+                records_updated=updated,
+                records_failed=errors,
+            )
+
+    logger.info(
+        "[naia-seed-official] done: fetched=%d inserted=%d updated=%d errors=%d%s",
+        grand["fetched"], grand["inserted"], grand["updated"], grand["errors"],
+        " (dry-run)" if dry_run else "",
+    )
+
+
 def _derive_school_name(url: str) -> str:
     """Last-resort school-name fallback if --school-name is missing.
 
@@ -1581,6 +1689,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_seed_d1": _handle_ncaa_seed_d1,
     "ncaa-seed-wikipedia": _handle_ncaa_seed_wikipedia,
     "ncaa_seed_wikipedia": _handle_ncaa_seed_wikipedia,
+    "naia-seed-official": _handle_naia_seed_official,
+    "naia_seed_official": _handle_naia_seed_official,
     "ncaa-resolve-urls": _handle_ncaa_resolve_urls,
     "ncaa_resolve_urls": _handle_ncaa_resolve_urls,
 }
@@ -1626,7 +1736,8 @@ SOURCE_HELP: dict[str, str] = {
     "mlsnext-video": "scrape the MLS NEXT video library (mlssoccer.com/mlsnext/video) Brightcove cards into video_sources (source_platform='mls_com')",
     "ncaa-rosters": "NCAA D1/D2/D3 soccer roster scrape (SIDEARM-first). Exactly one of --school-url (single) OR --all (bulk; --division + --gender required). Writes colleges + college_coaches + college_roster_history.",
     "ncaa-seed-d1": "seed colleges table from stats.ncaa.org D1 men's + women's soccer program lists. Optional --gender mens|womens (default: both); --dry-run.",
-    "ncaa-seed-wikipedia": "seed colleges table from Wikipedia's D2/D3/NAIA soccer-program lists. Requires --division {D2,D3,NAIA}. Optional --gender mens|womens (default: both); --dry-run. NJCAA not supported — Wikipedia coverage too fragmented.",
+    "ncaa-seed-wikipedia": "seed colleges table from Wikipedia's D2/D3 soccer-program lists. Requires --division {D2,D3}. Optional --gender mens|womens (default: both); --dry-run. NAIA uses --source naia-seed-official instead (Wikipedia pages don't exist). NJCAA not supported — Wikipedia coverage too fragmented.",
+    "naia-seed-official": "seed colleges table from naia.org's 2021-22 soccer teams index (last working listing endpoint — current-season listings 302-redirect to the first team). Covers ~95% of current NAIA membership; ~5-program/year churn means the rest comes in via manual entry. Optional --gender mens|womens (default: both); --dry-run.",
     "ncaa-resolve-urls": "resolve colleges.soccer_program_url by probing the canonical SIDEARM roster path for each college.website. Scoped by --division (default D1); --limit N for smoke-tests; --dry-run.",
 }
 
