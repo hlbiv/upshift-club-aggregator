@@ -1,0 +1,105 @@
+<!--
+  Fixture for the SIDEARM list-template (Strategy 5).
+  Modeled on the rendered DOM captured from gomason.com/sports/mens-soccer/roster
+  (2025-26 season). Player details fictional; structural markup
+  (class names, nesting, .sidearm-roster-list-item-* fields, comment
+  sentinels) matches what Playwright saw.
+
+  Three real-shape list items + one deliberately broken row (missing
+  name link) that the parser must skip. No staff section — the list
+  template doesn't mix players and staff in the same wrapper.
+-->
+<html>
+<head><title>Roster | Example Athletics</title></head>
+<body>
+<main class="sidearm-roster-content">
+  <ul class="sidearm-roster-list">
+
+    <!-- Player 1: all fields present, real-shape SIDEARM list item -->
+    <li class="sidearm-roster-list-item">
+      <div class="sidearm-roster-list-item-top-row">
+        <div class="sidearm-roster-list-item-link flex flex-align-center">
+          <div class="sidearm-roster-list-item-photo">
+            <img alt="Fernando Carreon Garcia" class="sidearm-roster-list-item-photo-img" src="/images/1.jpg"/>
+            <div class="sidearm-roster-list-item-photo-number">
+              <span>1</span>
+            </div>
+          </div>
+          <div class="sidearm-roster-list-item-info flex-item-1 flex flex-column medium-flex-row medium-flex-align-center">
+            <div class="flex-item-1">
+              <div class="sidearm-roster-list-item-name sidearm-roster-player-name">
+                <a href="/sports/mens-soccer/roster/fernando-carreon-garcia/9787">Fernando Carreon Garcia</a>
+              </div>
+              <div class="sidearm-roster-list-item-meta">
+                <span class="sidearm-roster-list-item-position">GK</span>
+                <!-- -->
+                <span class="sidearm-roster-list-item-year">Sr.</span>
+                <span class="sidearm-roster-list-item-height">6' 0"</span>
+                <span class="sidearm-roster-list-item-weight">180</span>
+                <!-- -->
+              </div>
+            </div>
+            <div class="flex-item-1">
+              <div class="sidearm-roster-list-item-hometown">Saltillo, Mexico</div>
+              <div class="sidearm-roster-list-item-previous-school">CF Monterrey</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </li>
+
+    <!-- Player 2: uses the 'highschool' field variant and has minimal meta -->
+    <li class="sidearm-roster-list-item">
+      <div class="sidearm-roster-list-item-top-row">
+        <div class="sidearm-roster-list-item-link">
+          <div class="sidearm-roster-list-item-photo">
+            <div class="sidearm-roster-list-item-photo-number"><span>12</span></div>
+          </div>
+          <div class="sidearm-roster-list-item-info">
+            <div class="sidearm-roster-list-item-name">
+              <a href="/sports/mens-soccer/roster/juan-alvarez/9788">Juan Alvarez</a>
+            </div>
+            <div class="sidearm-roster-list-item-meta">
+              <span class="sidearm-roster-list-item-position">M</span>
+              <span class="sidearm-roster-list-item-year">Fr.</span>
+            </div>
+            <div class="sidearm-roster-list-item-hometown">Madrid, Spain</div>
+            <div class="sidearm-roster-list-item-highschool">Colegio San Jose</div>
+          </div>
+        </div>
+      </div>
+    </li>
+
+    <!-- Player 3: redshirt-sophomore, no prev-school field populated -->
+    <li class="sidearm-roster-list-item">
+      <div class="sidearm-roster-list-item-link">
+        <div class="sidearm-roster-list-item-photo">
+          <div class="sidearm-roster-list-item-photo-number"><span>22</span></div>
+        </div>
+        <div class="sidearm-roster-list-item-info">
+          <div class="sidearm-roster-list-item-name">
+            <a href="/sports/mens-soccer/roster/taylor-kim/9789">Taylor Kim</a>
+          </div>
+          <div class="sidearm-roster-list-item-meta">
+            <span class="sidearm-roster-list-item-position">F</span>
+            <span class="sidearm-roster-list-item-year">R-So.</span>
+          </div>
+          <div class="sidearm-roster-list-item-hometown">Seattle, Wash.</div>
+        </div>
+      </div>
+    </li>
+
+    <!-- Broken row: missing name — parser must skip without raising -->
+    <li class="sidearm-roster-list-item">
+      <div class="sidearm-roster-list-item-photo">
+        <div class="sidearm-roster-list-item-photo-number"><span>99</span></div>
+      </div>
+      <div class="sidearm-roster-list-item-meta">
+        <span class="sidearm-roster-list-item-position">M</span>
+      </div>
+    </li>
+
+  </ul>
+</main>
+</body>
+</html>
