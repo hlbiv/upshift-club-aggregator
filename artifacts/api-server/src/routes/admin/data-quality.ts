@@ -466,6 +466,14 @@ export function makeResolveRosterQualityFlagHandler(
   };
 }
 
+/**
+ * Production wiring for the roster-quality-flag resolve endpoint. Flag-type
+ * agnostic by design: the URL is scoped to `roster_quality_flags` as a whole,
+ * so any row whose id matches can be resolved regardless of `flag_type`. The
+ * CHECK constraint on `flag_type` is currently a singleton, but we avoid
+ * baking that assumption into the query so Phase 3+ flag types resolve
+ * correctly the moment the CHECK list is extended.
+ */
 export const prodResolveRosterQualityFlagDeps: ResolveRosterQualityFlagDeps = {
   resolveFlag: async ({ id, resolvedBy }) => {
     const updated = await defaultDb.execute<{ id: number }>(sql`
@@ -473,7 +481,6 @@ export const prodResolveRosterQualityFlagDeps: ResolveRosterQualityFlagDeps = {
       SET resolved_at = NOW(),
           resolved_by = ${resolvedBy}
       WHERE id = ${id}
-        AND flag_type = 'nav_leaked_name'
         AND resolved_at IS NULL
       RETURNING id
     `);
@@ -484,7 +491,6 @@ export const prodResolveRosterQualityFlagDeps: ResolveRosterQualityFlagDeps = {
       SELECT id
       FROM ${rosterQualityFlags}
       WHERE id = ${id}
-        AND flag_type = 'nav_leaked_name'
       LIMIT 1
     `);
     return {
