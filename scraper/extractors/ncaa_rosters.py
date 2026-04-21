@@ -436,6 +436,12 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
        roster: {...} })`` factory. Non-DOM strategy — delegates to
        ``_parse_sidearm_vue_embedded_json`` which extracts + parses the
        JSON blob directly.
+    6. **WMT Digital / WordPress** — ``.roster__list_item`` figure/figcaption
+       cards. Paired with a ``.roster__table`` on desktop (caught by Strategy 2
+       first) but a standalone fallback when the table is absent. Observed on
+       ramblinwreck.com (Georgia Tech) — the only WMT/WordPress athletics site
+       in the current NCAA soccer directory. Fallback kept cheap so it doesn't
+       cost anything when the page is a different platform.
     """
     soup = BeautifulSoup(html, "html.parser")
     players: List[RosterPlayer] = []
@@ -696,6 +702,107 @@ def parse_roster_html(html: str) -> List[RosterPlayer]:
     players = _parse_sidearm_vue_embedded_json(html)
     if players:
         return players
+
+    # --- Strategy 6: WMT Digital / WordPress roster cards ---
+    # Ramblinwreck.com (Georgia Tech) and other WMT Digital themes ship a
+    # roster template with two sibling containers:
+    #
+    #   <section class="wrapper roster">
+    #     <ul class="roster__list">
+    #       <li class="roster__list_item">   <!-- or div.roster__list_item -->
+    #         <figure>
+    #           <a href="/sports/.../roster/season/YYYY-YY/firstname-lastname/">
+    #             <div class="thumb" title="First Last">...
+    #               <div class="icon"><span>#12</span></div>
+    #             </div>
+    #           </a>
+    #           <figcaption>
+    #             <span>INF</span>
+    #             <a href="...">First Last</a>
+    #             <ul>
+    #               <li>6-2</li>          <!-- height -->
+    #               <li>174 lbs.</li>     <!-- weight -->
+    #               <li>Freshman</li>     <!-- class year -->
+    #               <li>Business Administration</li>  <!-- major -->
+    #             </ul>
+    #           </figcaption>
+    #         </figure>
+    #       </li>
+    #     </ul>
+    #     <section class="roster__table"><table>...</table></section>  <!-- Strategy 2 -->
+    #   </section>
+    #
+    # Strategy 2 normally wins because the sibling ``<table class="roster__table">``
+    # has a proper ``<th>Name</th>`` header row. Strategy 6 is the belt-and-
+    # suspenders fallback for WMT variants that ship only the card list (e.g.
+    # mobile-first themes or sports pages that suppress the table). It also
+    # keeps the scraper resilient to ramblinwreck.com DOM churn — if the
+    # WordPress theme drops the table, cards still work.
+    #
+    # Hometown and prev_club are not in the card — only the table exposes them,
+    # so when the fallback runs the row is jersey+name+position+year only. That
+    # still satisfies the roster_diffs contract (``player_name`` is required;
+    # all others are optional) and keeps future-season head-count tracking
+    # working even in degraded mode.
+    for card in soup.select(
+        "li.roster__list_item, div.roster__list_item, .roster__list_item"
+    ):
+        figcaption = card.select_one("figcaption")
+        if not figcaption:
+            continue
+
+        # Player name: first <a> inside the figcaption (not the figure's image
+        # link — that one has no visible text, just an <img>). Fall back to
+        # figure anchor title attribute if text-only anchor missing.
+        name: Optional[str] = None
+        for anchor in figcaption.find_all("a"):
+            txt = anchor.get_text().strip()
+            if txt and len(txt) >= 2:
+                name = txt
+                break
+        if not name:
+            # Some themes put the name only as the image `title=` attribute
+            thumb = card.select_one(".thumb[title]")
+            if thumb:
+                name = thumb.get("title", "").strip() or None
+        if not name or len(name) < 2:
+            continue
+
+        # Position: first <span> child of figcaption that isn't nested inside
+        # the social-wrapper. WMT Digital ships it as a bare <span> sibling
+        # of the name anchor.
+        position: Optional[str] = None
+        for span in figcaption.find_all("span", recursive=False):
+            txt = span.get_text().strip()
+            if txt:
+                position = txt
+                break
+
+        # Jersey number: lives in .icon > span on the figure (with leading #)
+        jersey: Optional[str] = None
+        icon_span = card.select_one(".icon span")
+        if icon_span:
+            jersey_raw = icon_span.get_text().strip()
+            jersey = jersey_raw.lstrip("#").strip() or None
+
+        # Class year: scan each <li> inside figcaption and try normalize_year.
+        # The list is an unlabeled mix of height/weight/year/major; year wins
+        # on the first match.
+        year_val: Optional[str] = None
+        for li in figcaption.select("ul li"):
+            normalized = normalize_year(li.get_text().strip())
+            if normalized:
+                year_val = normalized
+                break
+
+        players.append(RosterPlayer(
+            player_name=name,
+            position=position,
+            year=year_val,
+            hometown=None,  # not present in card; table has it
+            prev_club=None,  # not present in card; table has it
+            jersey_number=jersey,
+        ))
 
     return players
 
