@@ -447,6 +447,21 @@ def _handle_numeric_only_names_detect(args: argparse.Namespace) -> None:
     sys.exit(rc)
 
 
+def _handle_coach_pollution_detect(args: argparse.Namespace) -> None:
+    from coach_pollution_detector import run_cli as _run_detector
+    # NOTE: unlike the other *-detect sources this one uses `--commit`
+    # (default False = dry-run) instead of `--dry-run` (default False =
+    # commit). Historical scans of every coach_discoveries row are a
+    # higher-blast-radius operation than the nightly incremental-window
+    # detectors, so the default is "just show me what you'd do".
+    rc = _run_detector(
+        commit=getattr(args, "commit", False),
+        limit=args.limit,
+        window_days=getattr(args, "window_days", None),
+    )
+    sys.exit(rc)
+
+
 def _handle_sincsports_rosters(args: argparse.Namespace) -> None:
     from rosters_runner import run_sincsports_rosters, print_summary
     outcomes = run_sincsports_rosters(dry_run=args.dry_run, only_tid=args.tid)
@@ -1503,6 +1518,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "nav_leaked_names_detect": _handle_nav_leaked_names_detect,
     "numeric-only-names-detect": _handle_numeric_only_names_detect,
     "numeric_only_names_detect": _handle_numeric_only_names_detect,
+    "coach-pollution-detect": _handle_coach_pollution_detect,
+    "coach_pollution_detect": _handle_coach_pollution_detect,
     "maxpreps-rosters": _handle_maxpreps_rosters,
     "maxpreps_rosters": _handle_maxpreps_rosters,
     "odp-rosters": _handle_odp_rosters,
@@ -1594,6 +1611,7 @@ SOURCE_HELP: dict[str, str] = {
     "link-canonical-schools": "resolves hs_rosters.school_id via state-scoped 4-pass resolver against canonical_schools + school_aliases",
     "nav-leaked-names-detect": "scans club_roster_snapshots for nav-menu strings ('Home', 'Contact', etc.) leaking into player_name and writes roster_quality_flags rows of type 'nav_leaked_name'. Defaults to a 7-day scraped_at incremental window; pass --full-scan to re-scan every row.",
     "numeric-only-names-detect": "scans club_roster_snapshots for player_name values that are entirely digits/dates/whitespace (e.g. '14', '2024-05-15') and writes roster_quality_flags rows of type 'numeric_only_name'. Defaults to a 7-day scraped_at incremental window; pass --full-scan to re-scan every row.",
+    "coach-pollution-detect": "scans coach_discoveries, runs each row's `name` through the shared looks_like_name guard, and writes coach_quality_flags rows of type 'looks_like_name_reject' for every failing row. DRY-RUN BY DEFAULT (pass --commit to actually write). Scope: FLAG ONLY — deletion is a separate follow-up PR so the audit trail survives. Supports --limit N and --window-days N.",
     "maxpreps-rosters": "populates hs_rosters from MaxPreps HS soccer roster pages (framework; default --limit 20; expect 403s without proxy creds)",
     "odp-rosters": "scrapes state-association Olympic Development Program rosters (top-5 states; 49 follow-ups)",
     "replay-html": "replay archived HTML from raw_html_archive through extractors (requires --run-id; defaults to dry-run, --no-dry-run to commit)",
@@ -1938,6 +1956,15 @@ def main() -> None:
                              "club_roster_snapshots row. Use for one-off re-scans after a "
                              "detector heuristic change or historical-bug investigation. "
                              "Ignored by other sources.")
+    parser.add_argument("--commit", action="store_true", dest="commit",
+                        help="For --source coach-pollution-detect: actually write flag rows. "
+                             "Without this flag the detector runs dry-run and prints the "
+                             "would-be flags. Ignored by other sources.")
+    parser.add_argument("--window-days", type=int, metavar="N", dest="window_days",
+                        default=None,
+                        help="For --source coach-pollution-detect: restrict the scan to "
+                             "coach_discoveries rows whose first_seen_at is within the last "
+                             "N days. Omit to scan every row. Ignored by other sources.")
     args = parser.parse_args()
 
     # ------------------------------------------------------------------
