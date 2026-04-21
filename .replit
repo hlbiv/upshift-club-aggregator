@@ -46,6 +46,11 @@ cron = "35 3 * * *"
 command = "cd scraper && python3 run.py --source nav-leaked-names-detect"
 
 [[deployment.scheduledJobs]]
+name = "nightly-numeric-only-names-detect"
+cron = "40 3 * * *"
+command = "cd scraper && python3 run.py --source numeric-only-names-detect"
+
+[[deployment.scheduledJobs]]
 name = "daily-club-results-rollup"
 cron = "0 4 * * *"
 command = "cd scraper && python3 run.py --rollup club-results"

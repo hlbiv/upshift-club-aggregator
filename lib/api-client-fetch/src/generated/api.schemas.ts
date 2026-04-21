@@ -615,6 +615,39 @@ export interface CoachQualityFlagsResponse {
   pageSize: number;
 }
 
+export type NumericOnlyNamesRowResolutionReason =
+  | (typeof NumericOnlyNamesRowResolutionReason)[keyof typeof NumericOnlyNamesRowResolutionReason]
+  | null;
+
+export const NumericOnlyNamesRowResolutionReason = {
+  resolved: "resolved",
+  dismissed: "dismissed",
+} as const;
+
+/**
+ * One `roster_quality_flags` row of type `numeric_only_name` joined to its `club_roster_snapshots` parent (and the snapshot's `canonical_clubs` resolution if the linker has run). `numericStrings` and `snapshotRosterSize` are extracted from the jsonb `metadata` payload into typed columns at the API boundary — callers do not see raw jsonb. `clubId` / `clubNameCanonical` are nullable because the canonical-club linker may not have run yet. `resolvedByEmail` is joined from `admin_users` when the flag has been resolved. `resolutionReason` is `'resolved'`, `'dismissed'`, or null while the flag is still open.
+
+ */
+export interface NumericOnlyNamesRow {
+  id: number;
+  snapshotId: number;
+  clubId: number | null;
+  clubNameCanonical: string | null;
+  numericStrings: string[];
+  snapshotRosterSize: number;
+  flaggedAt: string;
+  resolvedAt: string | null;
+  resolvedByEmail: string | null;
+  resolutionReason: NumericOnlyNamesRowResolutionReason;
+}
+
+export interface NumericOnlyNamesResponse {
+  rows: NumericOnlyNamesRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /**
  * One scrape_health row whose last_scraped_at is older than `thresholdDays` or NULL. `entityName` is a best-effort join label.
 
@@ -1062,6 +1095,33 @@ export type GetNavLeakedNamesState =
   (typeof GetNavLeakedNamesState)[keyof typeof GetNavLeakedNamesState];
 
 export const GetNavLeakedNamesState = {
+  open: "open",
+  resolved: "resolved",
+  dismissed: "dismissed",
+  all: "all",
+} as const;
+
+export type GetNumericOnlyNamesParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  page_size?: number;
+  /**
+ * Which flags to return. Semantics identical to the nav-leaked-names endpoint — `open` surfaces unresolved flags only (default), `resolved` / `dismissed` surface closed flags by resolution reason, `all` drops the filter.
+
+ */
+  state?: GetNumericOnlyNamesState;
+};
+
+export type GetNumericOnlyNamesState =
+  (typeof GetNumericOnlyNamesState)[keyof typeof GetNumericOnlyNamesState];
+
+export const GetNumericOnlyNamesState = {
   open: "open",
   resolved: "resolved",
   dismissed: "dismissed",
