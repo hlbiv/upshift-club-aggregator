@@ -29,9 +29,16 @@
  * Hard timeout: 30 minutes per job. If exceeded, the child is SIGKILLed
  * and the row is marked `failed` with stderr noting the timeout.
  *
- * Crash semantics: if the worker process dies while a job is at
- * status='running', the row is left there. Admin must manually flip it.
- * Acceptable for v1; future work may add a reaper.
+ * Crash semantics: if the worker process dies (deploy, OOM, crash) while a
+ * job is at status='running', no process owns the row anymore. On the next
+ * `startSchedulerWorker()` call, a one-shot reconciliation sweep runs
+ * before the poll loop starts: rows still at status='running' whose
+ * `started_at` is older than `JOB_TIMEOUT_MS` (30min — longer than any job
+ * the worker would actually allow) are flipped to 'failed' with
+ * `stderr_tail = 'orphaned (worker restart)'` and `exit_code = -1`. The
+ * threshold guarantees a legitimately in-flight job on a sibling replica
+ * is never reconciled out from under its owner. Errors in the sweep are
+ * logged but do not block worker startup.
  *
  * This module is wired into app.ts by S.3 — until then it's dead code.
  */
@@ -71,6 +78,17 @@ export interface WorkerDb {
   claimNextJob: () => Promise<ClaimedJob | null>;
   /** Mark a job terminal (`success` or `failed`) with tails + exit code. */
   finishJob: (id: number, result: JobResult) => Promise<void>;
+  /**
+   * One-shot sweep run at worker startup: flip any row still at
+   * `status='running'` whose `started_at` is older than `olderThanMs`
+   * into `status='failed'` with `stderr_tail = 'orphaned (worker
+   * restart)'` and `exit_code = -1`. Returns the number of rows updated.
+   *
+   * Invariant: `olderThanMs` MUST be >= the worker's hard job timeout,
+   * so any job legitimately running on a sibling replica (or the
+   * current process, in a re-entry edge case) is never swept.
+   */
+  reconcileOrphanedJobs: (olderThanMs: number) => Promise<number>;
 }
 
 export interface JobResult {
@@ -242,6 +260,25 @@ export function startSchedulerWorker(deps: StartSchedulerWorkerDeps): void {
   const pollIntervalMs = deps.pollIntervalMs ?? POLL_INTERVAL_MS;
   const jobTimeoutMs = deps.jobTimeoutMs ?? JOB_TIMEOUT_MS;
 
+  // One-shot orphan sweep. Any row still at status='running' whose
+  // started_at predates the hard job timeout is definitionally abandoned
+  // — a live worker would have killed + marked it failed by now. The
+  // sweep must not block startup: if it throws (e.g. transient DB
+  // outage), log and continue. The poll loop itself will retry the DB on
+  // its next tick.
+  void (async () => {
+    try {
+      const swept = await deps.db.reconcileOrphanedJobs(jobTimeoutMs);
+      if (swept > 0) {
+        console.log(
+          `[scheduler] reconciled ${swept} orphaned job${swept === 1 ? "" : "s"} on startup`,
+        );
+      }
+    } catch (err) {
+      console.error("[scheduler] orphan reconciliation failed on startup:", err);
+    }
+  })();
+
   const tick = async () => {
     if (tickInFlight) return; // single-flight — don't overlap ticks.
     tickInFlight = true;
@@ -355,6 +392,24 @@ export function makeWorkerDb(db: NodePgDatabase<Record<string, never>>): WorkerD
           WHERE id = $1`,
         [id, result.status, result.exitCode, result.stdoutTail, result.stderrTail],
       );
+    },
+    async reconcileOrphanedJobs(olderThanMs) {
+      // Parameterize the interval argument rather than interpolating
+      // into the SQL string — `olderThanMs` is a number (not user
+      // input today) but keeping the boundary clean is cheap insurance.
+      // Postgres accepts `($1 || ' milliseconds')::interval` against a
+      // numeric parameter.
+      const result = await client.query(
+        `UPDATE scheduler_jobs
+            SET status = 'failed',
+                completed_at = NOW(),
+                stderr_tail = 'orphaned (worker restart)',
+                exit_code = -1
+          WHERE status = 'running'
+            AND started_at < NOW() - ($1 || ' milliseconds')::interval`,
+        [olderThanMs],
+      );
+      return result.rowCount ?? 0;
     },
   };
 }

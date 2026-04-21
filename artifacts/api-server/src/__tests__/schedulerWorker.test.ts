@@ -13,6 +13,12 @@
  *  4. Full cycle: spawn exits 1 → status becomes `failed`, stderr captured.
  *  5. Empty queue → no spawn, worker loops quietly.
  *  6. Timeout path: spawn never exits → killed + marked `failed`.
+ *  7. Startup sweep — reconcileOrphanedJobs returns 3, count is logged
+ *     and the poll loop still runs.
+ *  8. Startup sweep — reconcileOrphanedJobs returns 0, no log emitted
+ *     and the poll loop still runs.
+ *  9. Startup sweep — reconcileOrphanedJobs throws, error is logged
+ *     and the poll loop still runs (error is not propagated).
  */
 import { EventEmitter } from "node:events";
 import {
@@ -140,6 +146,9 @@ async function run() {
       async finishJob(id, result) {
         finishCalls.push({ id, result });
       },
+      async reconcileOrphanedJobs() {
+        return 0;
+      },
     };
     const { spawnFn, calls } = makeFakeSpawn((child) => {
       child.fakeStdout("line1\nline2\n");
@@ -184,6 +193,9 @@ async function run() {
       async finishJob(id, result) {
         finishCalls.push({ id, result });
       },
+      async reconcileOrphanedJobs() {
+        return 0;
+      },
     };
     const { spawnFn } = makeFakeSpawn((child) => {
       child.fakeStderr("boom: something failed\n");
@@ -212,6 +224,9 @@ async function run() {
       },
       async finishJob() {
         failures.push({ name: "empty-finish", issue: "finishJob should not run on empty queue" });
+      },
+      async reconcileOrphanedJobs() {
+        return 0;
       },
     };
     const { spawnFn, calls } = makeFakeSpawn(() => {
@@ -246,6 +261,161 @@ async function run() {
       result.stdoutTail.includes("partial"),
       "timeout",
       "captured stdout should still be in tail",
+    );
+  }
+
+  // --- 7. Startup sweep: 3 orphans reconciled, logged, poll loop still runs ---
+  {
+    let reconcileCalls = 0;
+    let reconcileOlderThanMs: number | null = null;
+    let claimCalls = 0;
+    const db: WorkerDb = {
+      async claimNextJob() {
+        claimCalls += 1;
+        return null;
+      },
+      async finishJob() {
+        /* no-op */
+      },
+      async reconcileOrphanedJobs(olderThanMs) {
+        reconcileCalls += 1;
+        reconcileOlderThanMs = olderThanMs;
+        return 3;
+      },
+    };
+    const logLines: string[] = [];
+    const origLog = console.log;
+    const origErr = console.error;
+    console.log = (...args: unknown[]) => {
+      logLines.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+    };
+    console.error = (...args: unknown[]) => {
+      logLines.push(
+        "[ERR] " + args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "),
+      );
+    };
+    try {
+      const { spawnFn } = makeFakeSpawn(() => {
+        failures.push({
+          name: "reconcile-3-spawn",
+          issue: "spawn should not run on empty queue",
+        });
+      });
+      startSchedulerWorker({ db, spawnFn, pollIntervalMs: 5, jobTimeoutMs: 10_000 });
+      // Allow the microtask-queued reconcile + at least one tick to complete.
+      await new Promise((r) => setTimeout(r, 30));
+      stopSchedulerWorker();
+    } finally {
+      console.log = origLog;
+      console.error = origErr;
+    }
+    eq(reconcileCalls, 1, "reconcile-3", "reconcileOrphanedJobs called exactly once on startup");
+    eq(
+      reconcileOlderThanMs,
+      10_000,
+      "reconcile-3",
+      "threshold should be the worker's jobTimeoutMs",
+    );
+    assert(
+      logLines.some((l) => l.includes("reconciled 3 orphaned")),
+      "reconcile-3",
+      `expected a 'reconciled 3 orphaned' log line, saw: ${JSON.stringify(logLines)}`,
+    );
+    assert(
+      claimCalls >= 1,
+      "reconcile-3",
+      `poll loop should still tick after sweep (claimCalls=${claimCalls})`,
+    );
+  }
+
+  // --- 8. Startup sweep: 0 orphans, no log emitted, poll loop still runs ---
+  {
+    let claimCalls = 0;
+    const db: WorkerDb = {
+      async claimNextJob() {
+        claimCalls += 1;
+        return null;
+      },
+      async finishJob() {
+        /* no-op */
+      },
+      async reconcileOrphanedJobs() {
+        return 0;
+      },
+    };
+    const logLines: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logLines.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+    };
+    try {
+      const { spawnFn } = makeFakeSpawn(() => {
+        failures.push({
+          name: "reconcile-0-spawn",
+          issue: "spawn should not run on empty queue",
+        });
+      });
+      startSchedulerWorker({ db, spawnFn, pollIntervalMs: 5, jobTimeoutMs: 10_000 });
+      await new Promise((r) => setTimeout(r, 30));
+      stopSchedulerWorker();
+    } finally {
+      console.log = origLog;
+    }
+    assert(
+      !logLines.some((l) => l.includes("reconciled")),
+      "reconcile-0",
+      `no 'reconciled' log line expected, saw: ${JSON.stringify(logLines)}`,
+    );
+    assert(
+      claimCalls >= 1,
+      "reconcile-0",
+      `poll loop should still tick after sweep (claimCalls=${claimCalls})`,
+    );
+  }
+
+  // --- 9. Startup sweep: reconciliation throws, error logged, poll loop still runs ---
+  {
+    let claimCalls = 0;
+    const db: WorkerDb = {
+      async claimNextJob() {
+        claimCalls += 1;
+        return null;
+      },
+      async finishJob() {
+        /* no-op */
+      },
+      async reconcileOrphanedJobs() {
+        throw new Error("db unavailable");
+      },
+    };
+    const errLines: string[] = [];
+    const origErr = console.error;
+    console.error = (...args: unknown[]) => {
+      errLines.push(args.map((a) => (typeof a === "string" ? a : String(a))).join(" "));
+    };
+    try {
+      const { spawnFn } = makeFakeSpawn(() => {
+        failures.push({
+          name: "reconcile-throws-spawn",
+          issue: "spawn should not run on empty queue",
+        });
+      });
+      // If startup propagated the error, this next line would throw.
+      startSchedulerWorker({ db, spawnFn, pollIntervalMs: 5, jobTimeoutMs: 10_000 });
+      await new Promise((r) => setTimeout(r, 30));
+      stopSchedulerWorker();
+    } finally {
+      console.error = origErr;
+    }
+    assert(
+      errLines.some((l) => l.includes("orphan reconciliation failed")),
+      "reconcile-throws",
+      `expected error log to mention 'orphan reconciliation failed', saw: ${JSON.stringify(errLines)}`,
+    );
+    assert(
+      claimCalls >= 1,
+      "reconcile-throws",
+      `poll loop should still tick even when sweep throws (claimCalls=${claimCalls})`,
     );
   }
 
