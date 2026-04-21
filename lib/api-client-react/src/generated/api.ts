@@ -40,12 +40,15 @@ import type {
   DuplicateReviewDecision,
   DuplicateReviewRequest,
   DuplicatesResponse,
+  EmptyStaffPagesResponse,
   ErrorResponse,
   EventSearchResponse,
   GaPremierOrphanCleanupRequest,
   GaPremierOrphanCleanupResponse,
+  GetEmptyStaffPagesParams,
   GetGrowthCoverageTrendParams,
   GetGrowthScrapedCountsParams,
+  GetStaleScrapesParams,
   HealthStatus,
   LeagueClubsResponse,
   LeagueListResponse,
@@ -69,6 +72,7 @@ import type {
   SearchCoachesParams,
   SearchEventsParams,
   SearchResponse,
+  StaleScrapesResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -2537,6 +2541,210 @@ export const useGaPremierOrphanCleanup = <
 > => {
   return useMutation(getGaPremierOrphanCleanupMutationOptions(options));
 };
+
+/**
+ * Paginated list of `canonical_clubs` rows whose `staff_page_url` is populated but have zero distinct `coach_discoveries` rows in the last `window_days` days. Good candidates for a re-scrape or a broken-extractor fix.
+
+ * @summary Clubs with a staff_page_url set but no recent coach discoveries
+ */
+export const getGetEmptyStaffPagesUrl = (params?: GetEmptyStaffPagesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/empty-staff-pages?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/empty-staff-pages`;
+};
+
+export const getEmptyStaffPages = async (
+  params?: GetEmptyStaffPagesParams,
+  options?: RequestInit,
+): Promise<EmptyStaffPagesResponse> => {
+  return customFetch<EmptyStaffPagesResponse>(
+    getGetEmptyStaffPagesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetEmptyStaffPagesQueryKey = (
+  params?: GetEmptyStaffPagesParams,
+) => {
+  return [
+    `/api/v1/admin/data-quality/empty-staff-pages`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetEmptyStaffPagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEmptyStaffPages>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetEmptyStaffPagesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEmptyStaffPages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEmptyStaffPagesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEmptyStaffPages>>
+  > = ({ signal }) => getEmptyStaffPages(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEmptyStaffPages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEmptyStaffPagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEmptyStaffPages>>
+>;
+export type GetEmptyStaffPagesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Clubs with a staff_page_url set but no recent coach discoveries
+ */
+
+export function useGetEmptyStaffPages<
+  TData = Awaited<ReturnType<typeof getEmptyStaffPages>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetEmptyStaffPagesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEmptyStaffPages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEmptyStaffPagesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Paginated list of `scrape_health` rows whose `last_scraped_at` is older than `threshold_days` days or NULL. `entityName` is a best-effort human label joined from `canonical_clubs` / `leagues_master` / `colleges` / `coaches` per `entity_type`; when the join fails (deleted entity, unjoinable type) it is null.
+
+ * @summary scrape_health entities whose last_scraped_at exceeds a threshold
+ */
+export const getGetStaleScrapesUrl = (params?: GetStaleScrapesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/stale-scrapes?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/stale-scrapes`;
+};
+
+export const getStaleScrapes = async (
+  params?: GetStaleScrapesParams,
+  options?: RequestInit,
+): Promise<StaleScrapesResponse> => {
+  return customFetch<StaleScrapesResponse>(getGetStaleScrapesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStaleScrapesQueryKey = (params?: GetStaleScrapesParams) => {
+  return [
+    `/api/v1/admin/data-quality/stale-scrapes`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetStaleScrapesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStaleScrapes>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetStaleScrapesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStaleScrapes>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetStaleScrapesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getStaleScrapes>>> = ({
+    signal,
+  }) => getStaleScrapes(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStaleScrapes>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStaleScrapesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStaleScrapes>>
+>;
+export type GetStaleScrapesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary scrape_health entities whose last_scraped_at exceeds a threshold
+ */
+
+export function useGetStaleScrapes<
+  TData = Awaited<ReturnType<typeof getStaleScrapes>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetStaleScrapesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStaleScrapes>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStaleScrapesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Per-table `count(*) WHERE <timestamp_col> > since`. Timestamp column differs per table — `canonical_clubs.last_scraped_at`, `coaches.first_seen_at`, `events.last_scraped_at`, `club_roster_snapshots.snapshot_date`, `matches.scraped_at`.

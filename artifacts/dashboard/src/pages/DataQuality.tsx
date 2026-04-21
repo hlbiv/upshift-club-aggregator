@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  GaPremierOrphanCleanupResponse,
-  type GaPremierOrphanCleanupResponse as GaPremierOrphanCleanupResponseType,
-  EmptyStaffPagesResponse,
-  type EmptyStaffPagesResponse as EmptyStaffPagesResponseType,
-  StaleScrapesResponse,
-  type StaleScrapesResponse as StaleScrapesResponseType,
-} from "@hlbiv/api-zod/admin";
+  useGaPremierOrphanCleanup,
+  useGetEmptyStaffPages,
+  useGetStaleScrapes,
+  type EmptyStaffPagesResponse,
+  type GaPremierOrphanCleanupResponse,
+  type StaleScrapesResponse,
+} from "@workspace/api-client-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +31,6 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
-import { adminFetch } from "../lib/api";
 import AdminNav from "../components/AdminNav";
 
 /**
@@ -40,7 +39,6 @@ import AdminNav from "../components/AdminNav";
  * Three panels surfaced as tabs:
  *
  *   1. GA Premier orphans — POST /api/v1/admin/data-quality/ga-premier-orphans
- *      (existing; unchanged).
  *   2. Empty staff pages — GET /api/v1/admin/data-quality/empty-staff-pages
  *      Clubs with staff_page_url set but zero distinct coach discoveries in
  *      the last `window_days` days. Default 30.
@@ -48,27 +46,16 @@ import AdminNav from "../components/AdminNav";
  *      scrape_health rows whose last_scraped_at is older than
  *      `threshold_days` days or never scraped. Default 14.
  *
- * Each panel owns its own fetch state; tabs stay lazy-rendered so the
- * read-only panels don't fire until operator clicks them.
+ * All three panels drive off Orval-generated React Query hooks
+ * (`useGaPremierOrphanCleanup`, `useGetEmptyStaffPages`, `useGetStaleScrapes`).
+ * Radix Tabs unmount inactive TabsContent by default, so the read-only
+ * panels don't fire until the operator clicks their tab.
  */
 
 const MAX_LIMIT = 10_000;
-
-type SubmitState =
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | {
-      kind: "ok";
-      response: GaPremierOrphanCleanupResponseType;
-      dryRun: boolean;
-    };
-
-type PanelState<T> =
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "ok"; data: T };
+const PANEL_DEFAULT_PAGE_SIZE = 20;
+const EMPTY_STAFF_DEFAULT_WINDOW_DAYS = 30;
+const STALE_SCRAPES_DEFAULT_THRESHOLD_DAYS = 14;
 
 export default function DataQualityPage() {
   return (
@@ -106,51 +93,36 @@ export default function DataQualityPage() {
 }
 
 // ---------------------------------------------------------------------------
-// GA Premier orphan cleanup (existing)
+// GA Premier orphan cleanup
 // ---------------------------------------------------------------------------
 
 function GaPremierPanel() {
   const [dryRun, setDryRun] = useState(true);
   const [limit, setLimit] = useState(500);
-  const [state, setState] = useState<SubmitState>({ kind: "idle" });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [lastResult, setLastResult] = useState<{
+    response: GaPremierOrphanCleanupResponse;
+    dryRun: boolean;
+  } | null>(null);
+
+  const mutation = useGaPremierOrphanCleanup();
 
   async function runSweep(nextDryRun: boolean, nextLimit: number) {
-    setState({ kind: "loading" });
     try {
-      const res = await adminFetch(
-        "/api/v1/admin/data-quality/ga-premier-orphans",
-        {
-          method: "POST",
-          body: JSON.stringify({ dryRun: nextDryRun, limit: nextLimit }),
-        },
-      );
-      if (!res.ok) {
-        setState({ kind: "error", message: `HTTP ${res.status}` });
-        return;
-      }
-      const body = (await res.json()) as unknown;
-      const parsed = GaPremierOrphanCleanupResponse.safeParse(body);
-      if (!parsed.success) {
-        setState({
-          kind: "error",
-          message: "Invalid response from server",
-        });
-        return;
-      }
-      setState({ kind: "ok", response: parsed.data, dryRun: nextDryRun });
+      const response = await mutation.mutateAsync({
+        data: { dryRun: nextDryRun, limit: nextLimit },
+      });
+      setLastResult({ response, dryRun: nextDryRun });
       if (!nextDryRun) {
-        setToast(`Deleted ${parsed.data.deleted} rows`);
+        setToast(`Deleted ${response.deleted} rows`);
         // Reset form back to dry-run mode so the next click can't re-delete.
         setDryRun(true);
         window.setTimeout(() => setToast(null), 4000);
       }
-    } catch (e: unknown) {
-      setState({
-        kind: "error",
-        message: e instanceof Error ? e.message : "Network error",
-      });
+    } catch {
+      // The mutation's error state is surfaced via `mutation.error` below —
+      // no further action needed here. `mutateAsync` re-throws so we swallow.
     }
   }
 
@@ -161,15 +133,14 @@ function GaPremierPanel() {
 
   async function confirmDelete() {
     setConfirmOpen(false);
-    if (state.kind === "ok") {
+    if (lastResult) {
       await runSweep(false, limit);
     }
   }
 
   const canCommit =
-    state.kind === "ok" && state.dryRun && state.response.flagged > 0;
-  const flaggedForDialog =
-    state.kind === "ok" ? state.response.flagged : 0;
+    lastResult !== null && lastResult.dryRun && lastResult.response.flagged > 0;
+  const flaggedForDialog = lastResult?.response.flagged ?? 0;
 
   return (
     <>
@@ -215,24 +186,24 @@ function GaPremierPanel() {
           </label>
           <button
             type="submit"
-            disabled={state.kind === "loading"}
+            disabled={mutation.isPending}
             className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
           >
-            {state.kind === "loading" ? "Running…" : "Run sweep"}
+            {mutation.isPending ? "Running…" : "Run sweep"}
           </button>
         </form>
       </section>
 
-      {state.kind === "error" && (
+      {mutation.isError && (
         <div
           role="alert"
           className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
         >
-          Failed: {state.message}
+          Failed: {formatError(mutation.error)}
         </div>
       )}
 
-      {state.kind === "ok" && (
+      {lastResult && (
         <section aria-labelledby="results-heading" className="mb-8">
           <h2
             id="results-heading"
@@ -242,12 +213,12 @@ function GaPremierPanel() {
           </h2>
 
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <StatCard label="Scanned" value={state.response.scanned} />
-            <StatCard label="Flagged" value={state.response.flagged} />
+            <StatCard label="Scanned" value={lastResult.response.scanned} />
+            <StatCard label="Flagged" value={lastResult.response.flagged} />
             <StatCard
               label="Deleted"
-              value={state.response.deleted}
-              emphasize={state.response.deleted > 0}
+              value={lastResult.response.deleted}
+              emphasize={lastResult.response.deleted > 0}
             />
           </div>
 
@@ -255,14 +226,14 @@ function GaPremierPanel() {
             <h3 className="mb-2 text-sm font-semibold text-neutral-900">
               Sample flagged names{" "}
               <span className="font-normal text-neutral-500">
-                ({state.response.sampleNames.length})
+                ({lastResult.response.sampleNames.length})
               </span>
             </h3>
-            {state.response.sampleNames.length === 0 ? (
+            {lastResult.response.sampleNames.length === 0 ? (
               <p className="text-sm text-neutral-500">No samples returned.</p>
             ) : (
               <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-800">
-                {state.response.sampleNames.map((name, i) => (
+                {lastResult.response.sampleNames.map((name, i) => (
                   <li key={`${i}-${name}`} className="font-mono">
                     {name}
                   </li>
@@ -323,65 +294,33 @@ function GaPremierPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Empty staff pages (new)
+// Empty staff pages
 // ---------------------------------------------------------------------------
-
-const EMPTY_STAFF_DEFAULT_WINDOW_DAYS = 30;
-const PANEL_DEFAULT_PAGE_SIZE = 20;
 
 function EmptyStaffPanel() {
   const [windowDays, setWindowDays] = useState(EMPTY_STAFF_DEFAULT_WINDOW_DAYS);
+  const [appliedWindowDays, setAppliedWindowDays] = useState(
+    EMPTY_STAFF_DEFAULT_WINDOW_DAYS,
+  );
   const [page, setPage] = useState(1);
-  const [state, setState] = useState<PanelState<EmptyStaffPagesResponseType>>({
-    kind: "idle",
+
+  const query = useGetEmptyStaffPages({
+    window_days: appliedWindowDays,
+    page,
+    page_size: PANEL_DEFAULT_PAGE_SIZE,
   });
-
-  async function load(nextWindow: number, nextPage: number) {
-    setState({ kind: "loading" });
-    try {
-      const qs = new URLSearchParams({
-        window_days: String(nextWindow),
-        page: String(nextPage),
-        page_size: String(PANEL_DEFAULT_PAGE_SIZE),
-      });
-      const res = await adminFetch(
-        `/api/v1/admin/data-quality/empty-staff-pages?${qs.toString()}`,
-      );
-      if (!res.ok) {
-        setState({ kind: "error", message: `HTTP ${res.status}` });
-        return;
-      }
-      const body = (await res.json()) as unknown;
-      const parsed = EmptyStaffPagesResponse.safeParse(body);
-      if (!parsed.success) {
-        setState({ kind: "error", message: "Invalid response from server" });
-        return;
-      }
-      setState({ kind: "ok", data: parsed.data });
-    } catch (e: unknown) {
-      setState({
-        kind: "error",
-        message: e instanceof Error ? e.message : "Network error",
-      });
-    }
-  }
-
-  useEffect(() => {
-    void load(windowDays, page);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPage(1);
-    void load(windowDays, 1);
+    setAppliedWindowDays(windowDays);
   }
 
   return (
     <section aria-labelledby="empty-staff-heading">
       <p className="mb-4 text-sm text-neutral-500">
         Clubs with a <code>staff_page_url</code> set but zero distinct coach
-        discoveries in the last <strong>{windowDays}</strong> days. Good
+        discoveries in the last <strong>{appliedWindowDays}</strong> days. Good
         candidates for a re-scrape or extractor fix.
       </p>
 
@@ -405,140 +344,116 @@ function EmptyStaffPanel() {
         </label>
         <button
           type="submit"
-          disabled={state.kind === "loading"}
+          disabled={query.isFetching}
           className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
         >
-          {state.kind === "loading" ? "Loading…" : "Refresh"}
+          {query.isFetching ? "Loading…" : "Refresh"}
         </button>
       </form>
 
-      {state.kind === "error" && (
+      {query.isError && (
         <div
           role="alert"
           className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
         >
-          Failed: {state.message}
+          Failed: {formatError(query.error)}
         </div>
       )}
 
-      {state.kind === "loading" && (
-        <TablePlaceholder label="Loading…" />
-      )}
+      {query.isLoading && <TablePlaceholder label="Loading…" />}
 
-      {state.kind === "ok" && state.data.rows.length === 0 && (
+      {query.isSuccess && query.data.rows.length === 0 && (
         <TablePlaceholder label="No clubs matched." />
       )}
 
-      {state.kind === "ok" && state.data.rows.length > 0 && (
-        <>
-          <p className="mb-2 text-sm text-neutral-500">
-            {state.data.total.toLocaleString()} matching clubs
-          </p>
-          <div className="overflow-hidden rounded-lg border border-neutral-200">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Club</TableHead>
-                  <TableHead>Staff page</TableHead>
-                  <TableHead>Last scraped</TableHead>
-                  <TableHead>Coaches in window</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {state.data.rows.map((row) => (
-                  <TableRow key={row.clubId}>
-                    <TableCell className="font-medium">
-                      {row.clubNameCanonical}
-                      <span className="ml-2 text-xs text-neutral-400">
-                        #{row.clubId}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <a
-                        href={row.staffPageUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-blue-600 underline break-all"
-                      >
-                        {row.staffPageUrl}
-                      </a>
-                    </TableCell>
-                    <TableCell>{formatDate(row.lastScrapedAt)}</TableCell>
-                    <TableCell>{row.coachCountWindow}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <Pager
-            page={state.data.page}
-            pageSize={state.data.pageSize}
-            total={state.data.total}
-            onPage={(p) => {
-              setPage(p);
-              void load(windowDays, p);
-            }}
-          />
-        </>
+      {query.isSuccess && query.data.rows.length > 0 && (
+        <EmptyStaffTable data={query.data} onPage={(p) => setPage(p)} />
       )}
     </section>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Stale scrapes (new)
-// ---------------------------------------------------------------------------
+function EmptyStaffTable({
+  data,
+  onPage,
+}: {
+  data: EmptyStaffPagesResponse;
+  onPage: (p: number) => void;
+}) {
+  return (
+    <>
+      <p className="mb-2 text-sm text-neutral-500">
+        {data.total.toLocaleString()} matching clubs
+      </p>
+      <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Club</TableHead>
+              <TableHead>Staff page</TableHead>
+              <TableHead>Last scraped</TableHead>
+              <TableHead>Coaches in window</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.rows.map((row) => (
+              <TableRow key={row.clubId}>
+                <TableCell className="font-medium">
+                  {row.clubNameCanonical}
+                  <span className="ml-2 text-xs text-neutral-400">
+                    #{row.clubId}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <a
+                    href={row.staffPageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 underline break-all"
+                  >
+                    {row.staffPageUrl}
+                  </a>
+                </TableCell>
+                <TableCell>{formatDate(row.lastScrapedAt)}</TableCell>
+                <TableCell>{row.coachCountWindow}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <Pager
+        page={data.page}
+        pageSize={data.pageSize}
+        total={data.total}
+        onPage={onPage}
+      />
+    </>
+  );
+}
 
-const STALE_SCRAPES_DEFAULT_THRESHOLD_DAYS = 14;
+// ---------------------------------------------------------------------------
+// Stale scrapes
+// ---------------------------------------------------------------------------
 
 function StaleScrapesPanel() {
   const [thresholdDays, setThresholdDays] = useState(
     STALE_SCRAPES_DEFAULT_THRESHOLD_DAYS,
   );
+  const [appliedThresholdDays, setAppliedThresholdDays] = useState(
+    STALE_SCRAPES_DEFAULT_THRESHOLD_DAYS,
+  );
   const [page, setPage] = useState(1);
-  const [state, setState] = useState<PanelState<StaleScrapesResponseType>>({
-    kind: "idle",
+
+  const query = useGetStaleScrapes({
+    threshold_days: appliedThresholdDays,
+    page,
+    page_size: PANEL_DEFAULT_PAGE_SIZE,
   });
-
-  async function load(nextThreshold: number, nextPage: number) {
-    setState({ kind: "loading" });
-    try {
-      const qs = new URLSearchParams({
-        threshold_days: String(nextThreshold),
-        page: String(nextPage),
-        page_size: String(PANEL_DEFAULT_PAGE_SIZE),
-      });
-      const res = await adminFetch(
-        `/api/v1/admin/data-quality/stale-scrapes?${qs.toString()}`,
-      );
-      if (!res.ok) {
-        setState({ kind: "error", message: `HTTP ${res.status}` });
-        return;
-      }
-      const body = (await res.json()) as unknown;
-      const parsed = StaleScrapesResponse.safeParse(body);
-      if (!parsed.success) {
-        setState({ kind: "error", message: "Invalid response from server" });
-        return;
-      }
-      setState({ kind: "ok", data: parsed.data });
-    } catch (e: unknown) {
-      setState({
-        kind: "error",
-        message: e instanceof Error ? e.message : "Network error",
-      });
-    }
-  }
-
-  useEffect(() => {
-    void load(thresholdDays, page);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPage(1);
-    void load(thresholdDays, 1);
+    setAppliedThresholdDays(thresholdDays);
   }
 
   return (
@@ -546,7 +461,8 @@ function StaleScrapesPanel() {
       <p className="mb-4 text-sm text-neutral-500">
         Entities in <code>scrape_health</code> whose{" "}
         <code>last_scraped_at</code> is older than{" "}
-        <strong>{thresholdDays}</strong> days or have never been scraped.
+        <strong>{appliedThresholdDays}</strong> days or have never been
+        scraped.
       </p>
 
       <form
@@ -569,88 +485,95 @@ function StaleScrapesPanel() {
         </label>
         <button
           type="submit"
-          disabled={state.kind === "loading"}
+          disabled={query.isFetching}
           className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
         >
-          {state.kind === "loading" ? "Loading…" : "Refresh"}
+          {query.isFetching ? "Loading…" : "Refresh"}
         </button>
       </form>
 
-      {state.kind === "error" && (
+      {query.isError && (
         <div
           role="alert"
           className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
         >
-          Failed: {state.message}
+          Failed: {formatError(query.error)}
         </div>
       )}
 
-      {state.kind === "loading" && (
-        <TablePlaceholder label="Loading…" />
-      )}
+      {query.isLoading && <TablePlaceholder label="Loading…" />}
 
-      {state.kind === "ok" && state.data.rows.length === 0 && (
+      {query.isSuccess && query.data.rows.length === 0 && (
         <TablePlaceholder label="No stale entities." />
       )}
 
-      {state.kind === "ok" && state.data.rows.length > 0 && (
-        <>
-          <p className="mb-2 text-sm text-neutral-500">
-            {state.data.total.toLocaleString()} stale entities
-          </p>
-          <div className="overflow-hidden rounded-lg border border-neutral-200">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Entity</TableHead>
-                  <TableHead>Last scraped</TableHead>
-                  <TableHead>Last status</TableHead>
-                  <TableHead>Consecutive failures</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {state.data.rows.map((row) => (
-                  <TableRow key={`${row.entityType}-${row.entityId}`}>
-                    <TableCell className="font-mono text-xs">
-                      {row.entityType}
-                    </TableCell>
-                    <TableCell>
-                      {row.entityName ?? (
-                        <span className="text-neutral-400">
-                          (id {row.entityId})
-                        </span>
-                      )}
-                      <span className="ml-2 text-xs text-neutral-400">
-                        #{row.entityId}
-                      </span>
-                    </TableCell>
-                    <TableCell>{formatDate(row.lastScrapedAt)}</TableCell>
-                    <TableCell>
-                      <span className="text-xs text-neutral-700">
-                        {row.lastStatus ?? "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <FailureBadge count={row.consecutiveFailures} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <Pager
-            page={state.data.page}
-            pageSize={state.data.pageSize}
-            total={state.data.total}
-            onPage={(p) => {
-              setPage(p);
-              void load(thresholdDays, p);
-            }}
-          />
-        </>
+      {query.isSuccess && query.data.rows.length > 0 && (
+        <StaleScrapesTable data={query.data} onPage={(p) => setPage(p)} />
       )}
     </section>
+  );
+}
+
+function StaleScrapesTable({
+  data,
+  onPage,
+}: {
+  data: StaleScrapesResponse;
+  onPage: (p: number) => void;
+}) {
+  return (
+    <>
+      <p className="mb-2 text-sm text-neutral-500">
+        {data.total.toLocaleString()} stale entities
+      </p>
+      <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Type</TableHead>
+              <TableHead>Entity</TableHead>
+              <TableHead>Last scraped</TableHead>
+              <TableHead>Last status</TableHead>
+              <TableHead>Consecutive failures</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.rows.map((row) => (
+              <TableRow key={`${row.entityType}-${row.entityId}`}>
+                <TableCell className="font-mono text-xs">
+                  {row.entityType}
+                </TableCell>
+                <TableCell>
+                  {row.entityName ?? (
+                    <span className="text-neutral-400">
+                      (id {row.entityId})
+                    </span>
+                  )}
+                  <span className="ml-2 text-xs text-neutral-400">
+                    #{row.entityId}
+                  </span>
+                </TableCell>
+                <TableCell>{formatDate(row.lastScrapedAt)}</TableCell>
+                <TableCell>
+                  <span className="text-xs text-neutral-700">
+                    {row.lastStatus ?? "—"}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <FailureBadge count={row.consecutiveFailures} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <Pager
+        page={data.page}
+        pageSize={data.pageSize}
+        total={data.total}
+        onPage={onPage}
+      />
+    </>
   );
 }
 
@@ -749,4 +672,16 @@ function formatDate(iso: string | null): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString();
+}
+
+function formatError(err: unknown): string {
+  if (!err) return "Network error";
+  if (err instanceof Error) {
+    // The customFetch ApiError class attaches a numeric `status` — surface
+    // that verbatim so operators can grep the log lines.
+    const status = (err as unknown as { status?: unknown }).status;
+    if (typeof status === "number") return `HTTP ${status}`;
+    return err.message;
+  }
+  return String(err);
 }

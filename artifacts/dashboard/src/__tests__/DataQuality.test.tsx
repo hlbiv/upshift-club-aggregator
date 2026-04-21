@@ -2,8 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DataQualityPage from "../pages/DataQuality";
 
+/**
+ * DataQualityPage was migrated from `adminFetch()` to the Orval-generated
+ * React Query hooks (`useGaPremierOrphanCleanup`, `useGetEmptyStaffPages`,
+ * `useGetStaleScrapes`). Those hooks still bottom out at `globalThis.fetch`
+ * via the `customFetch` mutator, so stubbing `fetch` per-test still works —
+ * we just need a per-test `QueryClient` wrapper (retries disabled so error
+ * tests don't hang on React Query's default 3x retry behaviour).
+ */
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -11,18 +20,31 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function renderWithProviders(ui: React.ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 /**
  * Fetch dispatcher keyed by URL substring. Each panel loads its own
- * endpoint, and the GA Premier tab posts on demand. Using a dispatcher
- * keeps tab-specific tests independent of the default-tab eager-load
- * behaviour from other panels.
+ * endpoint, and the GA Premier tab posts on demand.
  */
 function makeFetchMock(
   routes: Record<string, (init: RequestInit) => Response | Promise<Response>>,
 ) {
-  return vi.fn((url: string, init: RequestInit = {}) => {
+  return vi.fn((url: RequestInfo | URL, init: RequestInit = {}) => {
+    const u = typeof url === "string" ? url : url.toString();
     for (const [needle, handler] of Object.entries(routes)) {
-      if (url.includes(needle)) return Promise.resolve(handler(init));
+      if (u.includes(needle)) return Promise.resolve(handler(init));
     }
     return Promise.resolve(
       new Response(JSON.stringify({ error: "no route" }), { status: 500 }),
@@ -55,11 +77,7 @@ describe("DataQualityPage — GA Premier tab", () => {
     );
 
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <DataQualityPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<DataQualityPage />);
 
     await user.click(screen.getByRole("button", { name: /run sweep/i }));
 
@@ -107,24 +125,23 @@ describe("DataQualityPage — GA Premier tab", () => {
           sampleNames: [],
         }),
       );
-    const fetchMock = vi.fn((url: string, init: RequestInit = {}) => {
-      if (String(url).includes("ga-premier-orphans")) {
-        return ga(url, init);
-      }
-      return Promise.resolve(
-        new Response(JSON.stringify({ error: "no route" }), { status: 500 }),
-      );
-    });
+    const fetchMock = vi.fn(
+      (url: RequestInfo | URL, init: RequestInit = {}) => {
+        const u = typeof url === "string" ? url : url.toString();
+        if (u.includes("ga-premier-orphans")) {
+          return ga(u, init);
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "no route" }), { status: 500 }),
+        );
+      },
+    );
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
       fetchMock,
     );
 
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <DataQualityPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<DataQualityPage />);
 
     await user.click(screen.getByRole("button", { name: /run sweep/i }));
 
@@ -205,11 +222,7 @@ describe("DataQualityPage — Empty staff pages tab", () => {
     );
 
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <DataQualityPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<DataQualityPage />);
 
     await user.click(
       screen.getByRole("tab", { name: /empty staff pages/i }),
@@ -245,11 +258,7 @@ describe("DataQualityPage — Empty staff pages tab", () => {
     );
 
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <DataQualityPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<DataQualityPage />);
 
     await user.click(
       screen.getByRole("tab", { name: /empty staff pages/i }),
@@ -270,11 +279,7 @@ describe("DataQualityPage — Empty staff pages tab", () => {
     );
 
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <DataQualityPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<DataQualityPage />);
 
     await user.click(
       screen.getByRole("tab", { name: /empty staff pages/i }),
@@ -330,11 +335,7 @@ describe("DataQualityPage — Stale scrapes tab", () => {
     );
 
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <DataQualityPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<DataQualityPage />);
 
     await user.click(screen.getByRole("tab", { name: /stale scrapes/i }));
 
@@ -370,11 +371,7 @@ describe("DataQualityPage — Stale scrapes tab", () => {
     );
 
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <DataQualityPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<DataQualityPage />);
 
     await user.click(screen.getByRole("tab", { name: /stale scrapes/i }));
 
@@ -393,11 +390,7 @@ describe("DataQualityPage — Stale scrapes tab", () => {
     );
 
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <DataQualityPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<DataQualityPage />);
 
     await user.click(screen.getByRole("tab", { name: /stale scrapes/i }));
 

@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  SchedulerJob as SchedulerJobSchema,
-  SchedulerJobList as SchedulerJobListSchema,
-  RunNowResponse as RunNowResponseSchema,
+  useListScraperScheduleRuns,
+  useRunScraperScheduleNow,
   type SchedulerJob,
-} from "@hlbiv/api-zod/admin";
+} from "@workspace/api-client-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
-import { adminFetch } from "../lib/api";
 import AdminNav from "../components/AdminNav";
 
 /**
@@ -30,21 +28,32 @@ import AdminNav from "../components/AdminNav";
  *
  *   GET  /api/v1/admin/scraper-schedules/:jobKey/runs?limit=10
  *   POST /api/v1/admin/scraper-schedules/:jobKey/run   (super_admin only)
+ *   GET  /api/v1/admin/scheduler-jobs/:id              (available; not
+ *                                                       currently needed —
+ *                                                       detail dialog reuses
+ *                                                       the list row's data.)
  *
  * Three hardcoded job-key cards match the API's allow-list in
  * artifacts/api-server/src/routes/admin/scheduler.ts (ALLOWED_JOB_KEYS).
- * Cron-editing, cancel, and "run all" are intentionally out of scope — cron
- * edits stay in the Replit console and workers don't support cancellation.
+ * Cron-editing, cancel, and "run all" are intentionally out of scope.
  *
  * 403 handling for plain-admin role: the "Run now" mutation is gated by
  * requireSuperAdmin on the server; if a plain admin clicks it, the inline
- * error banner for that job card sticks until they dismiss it (click anywhere
- * on the card header). A toast would disappear too quickly to signal the
- * "you don't have permission" nuance.
+ * error banner for that job card sticks until they dismiss it (click
+ * anywhere on the card header).
+ *
+ * Implementation note: driven off Orval-generated React Query hooks
+ * (`useListScraperScheduleRuns` / `useRunScraperScheduleNow`). Three
+ * `useListScraperScheduleRuns` invocations — one per allow-listed jobKey —
+ * fire in parallel on mount. The query hook expects a jobKey literal, so
+ * we unroll the three calls at the component root rather than looping
+ * JOBS.map.
  */
 
+type JobKey = "nightly_tier1" | "weekly_state" | "hourly_linker";
+
 const JOBS: ReadonlyArray<{
-  readonly jobKey: "nightly_tier1" | "weekly_state" | "hourly_linker";
+  readonly jobKey: JobKey;
   readonly description: string;
 }> = [
   {
@@ -61,68 +70,36 @@ const JOBS: ReadonlyArray<{
   },
 ] as const;
 
-type JobKey = (typeof JOBS)[number]["jobKey"];
-
-type RunsState =
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "ok"; jobs: SchedulerJob[] };
-
 type RunNowError =
   | { kind: "forbidden" }
   | { kind: "other"; message: string };
 
 export default function SchedulerPage() {
-  const [runsByKey, setRunsByKey] = useState<Record<JobKey, RunsState>>({
-    nightly_tier1: { kind: "loading" },
-    weekly_state: { kind: "loading" },
-    hourly_linker: { kind: "loading" },
-  });
   const [confirmFor, setConfirmFor] = useState<JobKey | null>(null);
   const [submittingKey, setSubmittingKey] = useState<JobKey | null>(null);
-  const [runErrors, setRunErrors] = useState<Partial<Record<JobKey, RunNowError>>>({});
+  const [runErrors, setRunErrors] = useState<
+    Partial<Record<JobKey, RunNowError>>
+  >({});
   const [toast, setToast] = useState<string | null>(null);
   const [detailJob, setDetailJob] = useState<SchedulerJob | null>(null);
 
-  const fetchRuns = useCallback(async (jobKey: JobKey) => {
-    try {
-      const res = await adminFetch(
-        `/api/v1/admin/scraper-schedules/${jobKey}/runs?limit=10`,
-      );
-      if (!res.ok) {
-        setRunsByKey((prev) => ({
-          ...prev,
-          [jobKey]: { kind: "error", message: `HTTP ${res.status}` },
-        }));
-        return;
-      }
-      const body = (await res.json()) as unknown;
-      const parsed = SchedulerJobListSchema.safeParse(body);
-      if (!parsed.success) {
-        setRunsByKey((prev) => ({
-          ...prev,
-          [jobKey]: { kind: "error", message: "Invalid response from server" },
-        }));
-        return;
-      }
-      setRunsByKey((prev) => ({
-        ...prev,
-        [jobKey]: { kind: "ok", jobs: parsed.data.jobs },
-      }));
-    } catch (e: unknown) {
-      setRunsByKey((prev) => ({
-        ...prev,
-        [jobKey]: {
-          kind: "error",
-          message: e instanceof Error ? e.message : "Network error",
-        },
-      }));
-    }
-  }, []);
+  // One `useListScraperScheduleRuns` per allow-listed jobKey. Radix makes
+  // us unroll these because hooks can't be called inside `.map()`.
+  const nightlyQuery = useListScraperScheduleRuns("nightly_tier1", {
+    limit: 10,
+  });
+  const weeklyQuery = useListScraperScheduleRuns("weekly_state", { limit: 10 });
+  const hourlyQuery = useListScraperScheduleRuns("hourly_linker", {
+    limit: 10,
+  });
 
-  useEffect(() => {
-    void Promise.all(JOBS.map((j) => fetchRuns(j.jobKey)));
-  }, [fetchRuns]);
+  const queryByKey: Record<JobKey, typeof nightlyQuery> = {
+    nightly_tier1: nightlyQuery,
+    weekly_state: weeklyQuery,
+    hourly_linker: hourlyQuery,
+  };
+
+  const mutation = useRunScraperScheduleNow();
 
   async function onConfirmRun(jobKey: JobKey) {
     setConfirmFor(null);
@@ -133,45 +110,35 @@ export default function SchedulerPage() {
       return next;
     });
     try {
-      const res = await adminFetch(
-        `/api/v1/admin/scraper-schedules/${jobKey}/run`,
-        {
-          method: "POST",
-          body: JSON.stringify({ jobKey, args: {} }),
-        },
-      );
-      if (res.status === 403) {
-        setRunErrors((prev) => ({ ...prev, [jobKey]: { kind: "forbidden" } }));
-        return;
-      }
-      if (!res.ok) {
-        setRunErrors((prev) => ({
-          ...prev,
-          [jobKey]: { kind: "other", message: `HTTP ${res.status}` },
-        }));
-        return;
-      }
-      const body = (await res.json()) as unknown;
-      const parsed = RunNowResponseSchema.safeParse(body);
-      if (!parsed.success) {
-        setRunErrors((prev) => ({
-          ...prev,
-          [jobKey]: { kind: "other", message: "Invalid response from server" },
-        }));
-        return;
-      }
-      setToast(`Job queued: #${parsed.data.id}`);
+      const result = await mutation.mutateAsync({
+        jobKey,
+        data: { jobKey, args: {} },
+      });
+      setToast(`Job queued: #${result.id}`);
       window.setTimeout(() => setToast(null), 4000);
       // Re-fetch runs so the new pending row shows up.
-      await fetchRuns(jobKey);
+      await queryByKey[jobKey].refetch();
     } catch (e: unknown) {
-      setRunErrors((prev) => ({
-        ...prev,
-        [jobKey]: {
-          kind: "other",
-          message: e instanceof Error ? e.message : "Network error",
-        },
-      }));
+      const status =
+        e instanceof Error
+          ? (e as unknown as { status?: unknown }).status
+          : undefined;
+      if (status === 403) {
+        setRunErrors((prev) => ({ ...prev, [jobKey]: { kind: "forbidden" } }));
+      } else if (typeof status === "number") {
+        setRunErrors((prev) => ({
+          ...prev,
+          [jobKey]: { kind: "other", message: `HTTP ${status}` },
+        }));
+      } else {
+        setRunErrors((prev) => ({
+          ...prev,
+          [jobKey]: {
+            kind: "other",
+            message: e instanceof Error ? e.message : "Network error",
+          },
+        }));
+      }
     } finally {
       setSubmittingKey(null);
     }
@@ -198,63 +165,68 @@ export default function SchedulerPage() {
       </header>
 
       <div className="space-y-8">
-        {JOBS.map((job) => (
-          <section
-            key={job.jobKey}
-            aria-labelledby={`job-${job.jobKey}-heading`}
-            className="rounded-lg border border-neutral-200 bg-white p-6"
-            onClick={() => dismissError(job.jobKey)}
-          >
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <h2
-                  id={`job-${job.jobKey}-heading`}
-                  className="text-lg font-semibold text-neutral-900"
+        {JOBS.map((job) => {
+          const q = queryByKey[job.jobKey];
+          return (
+            <section
+              key={job.jobKey}
+              aria-labelledby={`job-${job.jobKey}-heading`}
+              className="rounded-lg border border-neutral-200 bg-white p-6"
+              onClick={() => dismissError(job.jobKey)}
+            >
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <h2
+                    id={`job-${job.jobKey}-heading`}
+                    className="text-lg font-semibold text-neutral-900"
+                  >
+                    <code className="font-mono">{job.jobKey}</code>
+                  </h2>
+                  <p className="text-sm text-neutral-500">{job.description}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={submittingKey === job.jobKey}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmFor(job.jobKey);
+                  }}
+                  className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
                 >
-                  <code className="font-mono">{job.jobKey}</code>
-                </h2>
-                <p className="text-sm text-neutral-500">{job.description}</p>
+                  {submittingKey === job.jobKey ? "Queuing…" : "Run now"}
+                </button>
               </div>
-              <button
-                type="button"
-                disabled={submittingKey === job.jobKey}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setConfirmFor(job.jobKey);
-                }}
-                className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-400"
-              >
-                {submittingKey === job.jobKey ? "Queuing…" : "Run now"}
-              </button>
-            </div>
 
-            {runErrors[job.jobKey] && (
-              <div
-                role="alert"
-                className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-              >
-                {runErrors[job.jobKey]!.kind === "forbidden" ? (
-                  <>
-                    <strong>super_admin role required.</strong> Your account
-                    is plain <code>admin</code>; only <code>super_admin</code>{" "}
-                    can trigger scheduler jobs. Ask an owner to promote you or
-                    run this from a super_admin session.
-                  </>
-                ) : (
-                  <>
-                    Run failed:{" "}
-                    {(runErrors[job.jobKey] as { message: string }).message}
-                  </>
-                )}
-              </div>
-            )}
+              {runErrors[job.jobKey] && (
+                <div
+                  role="alert"
+                  className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                >
+                  {runErrors[job.jobKey]!.kind === "forbidden" ? (
+                    <>
+                      <strong>super_admin role required.</strong> Your account
+                      is plain <code>admin</code>; only <code>super_admin</code>{" "}
+                      can trigger scheduler jobs. Ask an owner to promote you
+                      or run this from a super_admin session.
+                    </>
+                  ) : (
+                    <>
+                      Run failed:{" "}
+                      {(runErrors[job.jobKey] as { message: string }).message}
+                    </>
+                  )}
+                </div>
+              )}
 
-            <RunsTable
-              state={runsByKey[job.jobKey]}
-              onRowClick={(jobRow) => setDetailJob(jobRow)}
-            />
-          </section>
-        ))}
+              <RunsTable
+                isLoading={q.isLoading}
+                error={q.error}
+                jobs={q.data?.jobs}
+                onRowClick={(jobRow) => setDetailJob(jobRow)}
+              />
+            </section>
+          );
+        })}
       </div>
 
       <AlertDialog
@@ -349,27 +321,31 @@ export default function SchedulerPage() {
 }
 
 function RunsTable({
-  state,
+  isLoading,
+  error,
+  jobs,
   onRowClick,
 }: {
-  state: RunsState;
+  isLoading: boolean;
+  error: unknown;
+  jobs: SchedulerJob[] | undefined;
   onRowClick: (job: SchedulerJob) => void;
 }) {
-  if (state.kind === "loading") {
+  if (isLoading) {
     return (
       <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
         Loading runs…
       </div>
     );
   }
-  if (state.kind === "error") {
+  if (error) {
     return (
       <div className="rounded border border-dashed border-red-300 bg-red-50 px-3 py-6 text-center text-sm text-red-700">
-        Failed to load runs: {state.message}
+        Failed to load runs: {formatError(error)}
       </div>
     );
   }
-  if (state.jobs.length === 0) {
+  if (!jobs || jobs.length === 0) {
     return (
       <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
         No runs yet.
@@ -391,7 +367,7 @@ function RunsTable({
           </tr>
         </thead>
         <tbody>
-          {state.jobs.map((job, i) => (
+          {jobs.map((job, i) => (
             <tr
               key={job.id}
               className={`cursor-pointer hover:bg-neutral-100 ${
@@ -467,6 +443,12 @@ function formatDate(iso: string | null): string {
   return d.toLocaleString();
 }
 
-// Silence "imported but not used" errors for schema runtime Zod imports when
-// treeshaking is aggressive — they're used via safeParse above.
-void SchedulerJobSchema;
+function formatError(err: unknown): string {
+  if (!err) return "Network error";
+  if (err instanceof Error) {
+    const status = (err as unknown as { status?: unknown }).status;
+    if (typeof status === "number") return `HTTP ${status}`;
+    return err.message;
+  }
+  return String(err);
+}

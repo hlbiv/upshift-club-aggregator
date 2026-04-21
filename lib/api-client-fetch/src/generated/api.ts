@@ -29,11 +29,14 @@ import type {
   DuplicateReviewDecision,
   DuplicateReviewRequest,
   DuplicatesResponse,
+  EmptyStaffPagesResponse,
   EventSearchResponse,
   GaPremierOrphanCleanupRequest,
   GaPremierOrphanCleanupResponse,
+  GetEmptyStaffPagesParams,
   GetGrowthCoverageTrendParams,
   GetGrowthScrapedCountsParams,
+  GetStaleScrapesParams,
   HealthStatus,
   LeagueClubsResponse,
   LeagueListResponse,
@@ -57,6 +60,7 @@ import type {
   SearchCoachesParams,
   SearchEventsParams,
   SearchResponse,
+  StaleScrapesResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -719,6 +723,71 @@ export const gaPremierOrphanCleanup = async (
       body: JSON.stringify(gaPremierOrphanCleanupRequest),
     },
   );
+};
+
+/**
+ * Paginated list of `canonical_clubs` rows whose `staff_page_url` is populated but have zero distinct `coach_discoveries` rows in the last `window_days` days. Good candidates for a re-scrape or a broken-extractor fix.
+
+ * @summary Clubs with a staff_page_url set but no recent coach discoveries
+ */
+export const getGetEmptyStaffPagesUrl = (params?: GetEmptyStaffPagesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/empty-staff-pages?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/empty-staff-pages`;
+};
+
+export const getEmptyStaffPages = async (
+  params?: GetEmptyStaffPagesParams,
+  options?: RequestInit,
+): Promise<EmptyStaffPagesResponse> => {
+  return customFetch<EmptyStaffPagesResponse>(
+    getGetEmptyStaffPagesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * Paginated list of `scrape_health` rows whose `last_scraped_at` is older than `threshold_days` days or NULL. `entityName` is a best-effort human label joined from `canonical_clubs` / `leagues_master` / `colleges` / `coaches` per `entity_type`; when the join fails (deleted entity, unjoinable type) it is null.
+
+ * @summary scrape_health entities whose last_scraped_at exceeds a threshold
+ */
+export const getGetStaleScrapesUrl = (params?: GetStaleScrapesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/stale-scrapes?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/stale-scrapes`;
+};
+
+export const getStaleScrapes = async (
+  params?: GetStaleScrapesParams,
+  options?: RequestInit,
+): Promise<StaleScrapesResponse> => {
+  return customFetch<StaleScrapesResponse>(getGetStaleScrapesUrl(params), {
+    ...options,
+    method: "GET",
+  });
 };
 
 /**
