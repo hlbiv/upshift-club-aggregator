@@ -1062,10 +1062,18 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
          (WMT/Vue-style staff card layout used by Stanford and other
          non-SIDEARM CMSs).
 
-    Returns a dict ``{name, title, email, phone, is_head_coach}`` or
+    Returns a dict ``{name, title, email, phone, is_head_coach, _strategy}`` or
     ``None`` if the page does not expose a head coach block (typical
     for roster-only pages — callers should fall back to fetching the
     coaches page).
+
+    The ``_strategy`` key names which of the four strategies fired
+    (``sidearm-staff-member`` / ``s-person-card`` /
+    ``sidearm-roster-coach`` / ``roster-staff-members-card-item``).
+    Not semantically part of the coach record — the bulk enumerator
+    uses it for per-run instrumentation + diagnostic logging; the
+    writers (``upsert_coaches`` / ``upsert_coach_tenures``) read only
+    the explicit named fields, so the tag passes through harmlessly.
     """
     soup = BeautifulSoup(html, "html.parser")
 
@@ -1094,6 +1102,7 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
             "email": _extract_email_from_el(el),
             "phone": _extract_phone_from_el(el),
             "is_head_coach": True,
+            "_strategy": "sidearm-staff-member",
         }
 
     # --- Strategy 2: modern SIDEARM ``.s-person-card`` ----------------
@@ -1135,6 +1144,7 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
             "email": _extract_email_from_el(el),
             "phone": _extract_phone_from_el(el),
             "is_head_coach": True,
+            "_strategy": "s-person-card",
         }
 
     # --- Strategy 3: legacy ``.sidearm-roster-coach`` (inline list) ---
@@ -1155,6 +1165,7 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
             "email": _extract_email_from_el(el),
             "phone": _extract_phone_from_el(el),
             "is_head_coach": True,
+            "_strategy": "sidearm-roster-coach",
         }
 
     # --- Strategy 4: WMT/Vue ``.roster-staff-members-card-item`` ------
@@ -1180,6 +1191,7 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
             "email": _extract_email_from_el(el),
             "phone": _extract_phone_from_el(el),
             "is_head_coach": True,
+            "_strategy": "roster-staff-members-card-item",
         }
 
     return None
@@ -1839,6 +1851,22 @@ def scrape_college_rosters(
     total_errors = 0
     total_scraped = 0
 
+    # Per-strategy instrumentation for ``extract_head_coach_from_html``.
+    # Tracks which of the four strategies produced the hit (or "miss" for
+    # pages that returned None). End-of-run logline surfaces the
+    # distribution so we can tell whether the 82% probe-set hit rate
+    # generalizes to production. Bias sharp: if one strategy accounts
+    # for >90% of hits, the others add marginal coverage; if misses
+    # dominate, the extractor isn't the right tool for the remaining
+    # pages and a separate staff-page scraper (PR-9) may be warranted.
+    coach_strategy_hits: Dict[str, int] = {
+        "sidearm-staff-member": 0,
+        "s-person-card": 0,
+        "sidearm-roster-coach": 0,
+        "roster-staff-members-card-item": 0,
+        "miss": 0,
+    }
+
     # Set up per-division run loggers
     divisions_seen: set = set()
 
@@ -1928,6 +1956,10 @@ def scrape_college_rosters(
                     head_coach = extract_head_coach_from_html(html)
                     if head_coach:
                         head_coach = dict(head_coach)
+                        strategy_hit = head_coach.pop("_strategy", "unknown")
+                        coach_strategy_hits[strategy_hit] = (
+                            coach_strategy_hits.get(strategy_hit, 0) + 1
+                        )
                         head_coach.setdefault("source_url", target_url)
                         head_coach.setdefault("source", "ncaa_roster_page")
                         try:
@@ -1963,6 +1995,11 @@ def scrape_college_rosters(
                                     conn.rollback()
                                 except Exception:
                                     pass
+                    else:
+                        # No head coach extracted from this page — track so
+                        # the end-of-run breakdown accurately reflects
+                        # production hit rate.
+                        coach_strategy_hits["miss"] += 1
 
                     # Only bump last_scraped_at on the current-season pass —
                     # historical pulls shouldn't make an 8-year-old roster
@@ -2028,6 +2065,28 @@ def scrape_college_rosters(
         "errors": total_errors,
     }
     logger.info("NCAA roster scrape complete: %s", summary)
+
+    # Strategy-hit breakdown for ``extract_head_coach_from_html``. Grep
+    # friendly one-liner so the operator can pipe through ``grep 'coach
+    # extraction hits'`` to get the production hit distribution post-run.
+    # See the plan's "Diagnostic SQL" section for the decision logic.
+    total_hits = sum(v for k, v in coach_strategy_hits.items() if k != "miss")
+    total_pages = total_hits + coach_strategy_hits["miss"]
+    hit_pct = (100.0 * total_hits / total_pages) if total_pages else 0.0
+    logger.info(
+        "coach extraction hits: sidearm-staff-member=%d s-person-card=%d "
+        "sidearm-roster-coach=%d roster-staff-members-card-item=%d "
+        "misses=%d  (hit_rate=%.1f%% of %d pages)",
+        coach_strategy_hits["sidearm-staff-member"],
+        coach_strategy_hits["s-person-card"],
+        coach_strategy_hits["sidearm-roster-coach"],
+        coach_strategy_hits["roster-staff-members-card-item"],
+        coach_strategy_hits["miss"],
+        hit_pct,
+        total_pages,
+    )
+    summary["coach_strategy_hits"] = dict(coach_strategy_hits)
+
     return summary
 
 
