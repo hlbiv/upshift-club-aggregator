@@ -405,6 +405,8 @@ Idempotent — only touches rows where the FK is currently NULL.
 
 The analogous `link-canonical-schools` job (resolves `hs_rosters.school_id` via `canonical_schools` + `school_aliases`) is scheduled via `.replit` as `nightly-canonical-school-linker` at `30 3 * * *` UTC; it runs nightly and picks up whatever the operator-invoked MaxPreps scraper wrote since the last pass.
 
+The Phase 2 nav-leaked-names detector (`scraper/nav_leaked_names_detector.py`) is scheduled via `.replit` as `nightly-nav-leaked-names-detect` at `35 3 * * *` UTC (5 minutes after the canonical-school linker). It scans `club_roster_snapshots` grouped by `(club_name_raw, season, age_group, gender)` for `player_name` values whose case-folded full string exactly matches one of the 39 nav tokens (e.g. "Home", "Contact", "Sitemap"), and upserts one `roster_quality_flags` row of type `nav_leaked_name` per offending group. Idempotent via `roster_quality_flags_snapshot_type_uq` + a `metadata IS DISTINCT FROM` no-op guard; `resolved_at`/`resolved_by` are preserved across re-runs so an operator's prior triage is not undone by the nightly pass.
+
 See `docs/path-a-data-model.md` for the full domain-by-domain spec + changelog.
 
 ---

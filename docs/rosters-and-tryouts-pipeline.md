@@ -159,9 +159,9 @@ change) adds:
   `roster_quality_flags_snapshot_type_uq` unique constraint plus the
   `WHERE metadata IS DISTINCT FROM EXCLUDED.metadata` clause means a
   re-run on unchanged data writes nothing.
-- Nightly cron — `nightly-nav-leaked-names-detect` at `30 3 * * *`.
-  Add this block to `.replit` `[[deployment.scheduledJobs]]` manually
-  — the agent cannot edit `.replit`.
+- Nightly cron — `nightly-nav-leaked-names-detect` at `35 3 * * *`,
+  five minutes after the canonical-school linker. Wired in `.replit`
+  under `[[deployment.scheduledJobs]]`.
 - `PATCH /api/v1/admin/data-quality/roster-quality-flags/:id/resolve`
   — operator triage endpoint. Stamps `resolved_at = NOW()` and
   `resolved_by = <admin user id>` (NULL for API-key callers). Returns
