@@ -75,6 +75,7 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
+from extractors._coach_name_guard import RejectCounter, looks_like_name
 from extractors.cms_detect import detect_cms
 from extractors.jsonld_parser import (
     extract_athletes,
@@ -85,6 +86,11 @@ from extractors.jsonld_parser import (
 from utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
+
+# Module-level rejection counter. Shared across every
+# ``harvest_squarespace_club`` call in a run so the summary line
+# printed from ``harvest_squarespace_clubs`` covers the whole batch.
+_NAME_REJECT_COUNTER = RejectCounter()
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +371,13 @@ def _person_to_coach_row(
     """
     name = person.get("name")
     if not isinstance(name, str) or not name.strip():
+        return None
+    # Shared coach-name guard. Squarespace JSON-LD is self-published
+    # so most Person.name values are real, but CMS templates
+    # occasionally drop a block like ``{"@type":"Person","name":"About
+    # Us"}`` or copy a nav string into a schema block. Filter those
+    # before they land in coach_discoveries.
+    if not looks_like_name(name.strip(), _NAME_REJECT_COUNTER):
         return None
     title = person.get("jobTitle")
     if title is not None:
@@ -664,6 +677,30 @@ def harvest_squarespace_club(
                 pass
 
 
+def _log_name_reject_summary(site_count: int) -> None:
+    """Emit an INFO-level breakdown of coach-name guard rejections.
+
+    Called once at the end of a batch. Split out as a helper so
+    tests can assert it doesn't touch I/O outside logging.
+    """
+    summary = _NAME_REJECT_COUNTER.summary()
+    if not summary:
+        logger.info(
+            "[squarespace-clubs] coach-name guard rejections: 0 "
+            "across %d site(s)",
+            site_count,
+        )
+        return
+    logger.info(
+        "[squarespace-clubs] coach-name guard rejections: %d total "
+        "across %d site(s)",
+        _NAME_REJECT_COUNTER.total(),
+        site_count,
+    )
+    for reason, count in sorted(summary.items(), key=lambda x: -x[1]):
+        logger.info("  %-22s %d", reason, count)
+
+
 def harvest_squarespace_clubs(
     sites: Iterable[SquarespaceClubSite],
     *,
@@ -695,4 +732,5 @@ def harvest_squarespace_clubs(
                 session.close()
             except Exception:
                 pass
+    _log_name_reject_summary(len(out))
     return out

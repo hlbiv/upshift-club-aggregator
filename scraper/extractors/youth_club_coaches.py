@@ -58,6 +58,25 @@ try:
 except ImportError:
     psycopg2 = None  # type: ignore
 
+# ---------------------------------------------------------------------------
+# Shared coach-name guard — re-exported so existing imports keep working
+# ---------------------------------------------------------------------------
+
+# The guard was originally defined inline in this module. It has since
+# been lifted into ``extractors._coach_name_guard`` so the same rules
+# can gate ``scrape_staff``, ``sportsengine_clubs`` and
+# ``squarespace_clubs`` (the three extractors that were responsible for
+# ~90% of ``coach_discoveries`` pollution prior to PR #184). We
+# re-export under the original names so existing import sites and the
+# 40 tests in ``test_youth_club_coaches.py`` don't have to change.
+from extractors._coach_name_guard import (  # noqa: F401,E402 — re-export
+    PARSE_COUNT_GUARD,
+    RejectCounter,
+    _BLOCKLIST_TOKENS,
+    _NAME_BLOCKLIST,
+    looks_like_name,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -74,7 +93,9 @@ RETRY_ATTEMPTS = 2
 RETRY_DELAY = 1.0  # seconds between retries
 RATE_LIMIT_DELAY = 1.5  # seconds between clubs
 
-PARSE_COUNT_GUARD = 15  # strategies returning more are false positives
+# PARSE_COUNT_GUARD, _NAME_BLOCKLIST, _BLOCKLIST_TOKENS, RejectCounter,
+# and looks_like_name are re-exported above from
+# ``extractors._coach_name_guard``. Do NOT re-declare them here.
 
 SCRAPER_KEY = "youth-club-coaches"
 
@@ -153,35 +174,11 @@ _BLOCKLIST_RE = re.compile(
 )
 
 # ---------------------------------------------------------------------------
-# Name validation — ported from TS looksLikeName()
+# Name validation — re-exported at module top from
+# extractors._coach_name_guard. The inline _NAME_BLOCKLIST /
+# _BLOCKLIST_TOKENS sets used to live here; the canonical copies now
+# live in the shared module (imported above).
 # ---------------------------------------------------------------------------
-
-_NAME_BLOCKLIST = {
-    "about us", "contact us", "click here", "read more", "learn more",
-    "meet the", "meet our", "our staff", "our team", "coaching staff",
-    "support staff", "athletic staff", "staff directory",
-    "head coach", "assistant coach", "associate head", "associate coach",
-    "volunteer coach", "graduate assistant", "director of coaching",
-    "director of operations", "athletic director", "technical director",
-    "club director", "club president", "executive director",
-    "men soccer", "women soccer", "mens soccer", "womens soccer",
-    "soccer coaches", "coaching team", "soccer team",
-    "social media", "quick links", "campus map", "office hours",
-    "follow us", "connect with", "stay connected", "more information",
-    "sign up", "log in", "new member", "member login",
-}
-
-_BLOCKLIST_TOKENS = {
-    "soccer", "football", "basketball", "baseball", "softball", "volleyball",
-    "lacrosse", "swimming", "tennis", "golf", "track", "wrestling",
-    "coach", "coaching", "staff", "director", "athletic", "athletics",
-    "university", "college", "school", "program", "department", "club",
-    "email", "phone", "fax", "office", "contact", "bio",
-    "schedule", "roster", "recruiting", "camps", "news", "media",
-    "facebook", "twitter", "instagram", "youtube", "tiktok",
-    "home", "about", "menu", "search", "login", "signup", "register",
-    "calendar", "events", "tournament", "league", "division",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -232,37 +229,6 @@ def fetch_with_retry(
                 return None
             time.sleep(RETRY_DELAY * (attempt + 1))
     return None
-
-
-# ---------------------------------------------------------------------------
-# Name validation — ported from TS looksLikeName()
-# ---------------------------------------------------------------------------
-
-def looks_like_name(text: str) -> bool:
-    """Return True if *text* looks like a person name (2-4 Title-case tokens,
-    no digits, not all-caps, not a blocklisted phrase/token)."""
-    t = text.strip()
-    if len(t) < 4 or len(t) > 50:
-        return False
-    parts = t.split()
-    if len(parts) < 2 or len(parts) > 4:
-        return False
-    if not parts[0][0].isupper():
-        return False
-    if t == t.upper():
-        return False
-    if not all(p[0].isalpha() for p in parts):
-        return False
-    if re.search(r"\d", t):
-        return False
-    normalized = re.sub(r"[^a-z ]", "", t.lower()).strip()
-    normalized = re.sub(r"\s+", " ", normalized)
-    if normalized in _NAME_BLOCKLIST:
-        return False
-    lower_parts = [re.sub(r"[^a-z]", "", p.lower()) for p in parts]
-    if any(p in _BLOCKLIST_TOKENS for p in lower_parts):
-        return False
-    return True
 
 
 # ---------------------------------------------------------------------------
