@@ -258,6 +258,57 @@ export const StaleScrapesResponse = z.object({
 export type StaleScrapesResponse = z.infer<typeof StaleScrapesResponse>;
 
 /**
+ * Request for GET /v1/admin/data-quality/nav-leaked-names.
+ *
+ * Phase 1 panel for `roster_quality_flags` rows whose `flag_type =
+ * 'nav_leaked_name'`. Default `includeResolved=false` surfaces only active
+ * flags — operators almost always want to work the unresolved queue.
+ * `page_size` capped at the repo-wide 100-row pagination ceiling.
+ */
+export const NavLeakedNamesRequest = z.object({
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(100).default(20),
+  includeResolved: z.boolean().default(false),
+});
+export type NavLeakedNamesRequest = z.infer<typeof NavLeakedNamesRequest>;
+
+/**
+ * One row of the nav-leaked-names panel — a `roster_quality_flags` row
+ * joined to its `club_roster_snapshots` parent and the snapshot's
+ * `canonical_clubs` resolution (if any).
+ *
+ * Typed fields are extracted from `roster_quality_flags.metadata` at the
+ * API boundary — callers never see the raw jsonb payload. The shape is
+ * fixed for `flag_type='nav_leaked_name'`:
+ *   metadata.leaked_strings → leakedStrings
+ *   metadata.snapshot_roster_size → snapshotRosterSize
+ *
+ * `resolvedByEmail` is joined from `admin_users.email` if the flag has
+ * been resolved; null otherwise.
+ */
+export const NavLeakedNamesRow = z.object({
+  id: z.number().int(),
+  snapshotId: z.number().int(),
+  clubId: z.number().int().nullable(),
+  clubNameCanonical: z.string().nullable(),
+  leakedStrings: z.array(z.string()),
+  snapshotRosterSize: z.number().int(),
+  flaggedAt: z.string().datetime(),
+  resolvedAt: z.string().datetime().nullable(),
+  resolvedByEmail: z.string().nullable(),
+});
+export type NavLeakedNamesRow = z.infer<typeof NavLeakedNamesRow>;
+
+/** Paginated envelope for the nav-leaked-names panel. */
+export const NavLeakedNamesResponse = z.object({
+  rows: z.array(NavLeakedNamesRow),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export type NavLeakedNamesResponse = z.infer<typeof NavLeakedNamesResponse>;
+
+/**
  * Growth dashboard — "records added since X" counts across the five
  * headline ingest tables. Timestamps used per table:
  *   canonical_clubs → last_scraped_at      (no first_seen column today)

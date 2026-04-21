@@ -308,6 +308,24 @@ assertTable(schema.tryouts, "tryouts", {
   checks: ["tryouts_source_enum", "tryouts_status_enum"],
 });
 
+assertTable(schema.rosterQualityFlags, "roster_quality_flags", {
+  cols: [
+    "id",
+    "snapshot_id",
+    "flag_type",
+    "metadata",
+    "created_at",
+    "resolved_at",
+    "resolved_by",
+  ],
+  uniques: ["roster_quality_flags_snapshot_type_uq"],
+  checks: ["roster_quality_flags_flag_type_enum"],
+  indexes: [
+    "roster_quality_flags_snapshot_id_idx",
+    "roster_quality_flags_flag_type_active_idx",
+  ],
+});
+
 // ---------------------------------------------------------------------------
 // Domain 8 — Scrape health
 // ---------------------------------------------------------------------------
