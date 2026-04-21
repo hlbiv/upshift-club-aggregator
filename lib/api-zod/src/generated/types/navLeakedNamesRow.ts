@@ -5,9 +5,10 @@
  * Upshift Data API — youth soccer club graph database
  * OpenAPI spec version: 0.2.0
  */
+import type { NavLeakedNamesRowResolutionReason } from "./navLeakedNamesRowResolutionReason";
 
 /**
- * One `roster_quality_flags` row joined to its `club_roster_snapshots` parent (and the snapshot's `canonical_clubs` resolution if the linker has run). `leakedStrings` and `snapshotRosterSize` are extracted from the jsonb `metadata` payload into typed columns at the API boundary — callers do not see raw jsonb. `clubId` / `clubNameCanonical` are nullable because the canonical-club linker may not have run yet. `resolvedByEmail` is joined from `admin_users` when the flag has been resolved.
+ * One `roster_quality_flags` row joined to its `club_roster_snapshots` parent (and the snapshot's `canonical_clubs` resolution if the linker has run). `leakedStrings` and `snapshotRosterSize` are extracted from the jsonb `metadata` payload into typed columns at the API boundary — callers do not see raw jsonb. `clubId` / `clubNameCanonical` are nullable because the canonical-club linker may not have run yet. `resolvedByEmail` is joined from `admin_users` when the flag has been resolved. `resolutionReason` is `'resolved'` (legitimate leak, cleaned up out of band), `'dismissed'` (false positive), or null while the flag is still open.
 
  */
 export interface NavLeakedNamesRow {
@@ -20,4 +21,5 @@ export interface NavLeakedNamesRow {
   flaggedAt: Date;
   resolvedAt: Date | null;
   resolvedByEmail: string | null;
+  resolutionReason: NavLeakedNamesRowResolutionReason;
 }

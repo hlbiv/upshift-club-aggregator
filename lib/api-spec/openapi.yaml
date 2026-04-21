@@ -1082,12 +1082,20 @@ paths:
             default: 20
             minimum: 1
             maximum: 100
-        - name: include_resolved
+        - name: state
           in: query
-          description: If true, include rows whose `resolved_at` is set. Default false.
+          description: >
+            Which flags to return. `open` surfaces unresolved flags only
+            (default — the typical triage view); `resolved` returns flags
+            closed with `resolution_reason='resolved'` (legitimate leaks
+            that were cleaned up out of band); `dismissed` returns flags
+            closed with `resolution_reason='dismissed'` (false positives);
+            `all` returns every state. Replaces the previous boolean
+            `include_resolved` param.
           schema:
-            type: boolean
-            default: false
+            type: string
+            enum: [open, resolved, dismissed, all]
+            default: open
       responses:
         "200":
           description: Paginated list of nav-leaked-name rows
@@ -1106,19 +1114,28 @@ paths:
     patch:
       operationId: resolveRosterQualityFlag
       tags: [admin]
-      summary: Mark a roster_quality_flags row as resolved
+      summary: Mark a roster_quality_flags row as resolved or dismissed
       description: >
-        Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>`
-        on the row. The underlying `club_roster_snapshots` row is NOT
-        mutated — resolving a flag means "operator has triaged this
-        leak", not "the data is fixed".
+        Stamps `resolved_at = NOW()`, `resolved_by = <admin user id>`, and
+        `resolution_reason = <reason>` on the row. The underlying
+        `club_roster_snapshots` row is NOT mutated.
+
+        The `reason` field splits the triage action into two operator
+        intents:
+          * `resolved` — the flag was legitimate; the operator has cleaned
+            up the leak out of band (e.g. fixed the extractor, re-scraped
+            the club). Snapshot history stays immutable.
+          * `dismissed` — false positive; the detector flagged something
+            that wasn't actually a nav-menu leak.
 
         API-key callers get `resolved_by = NULL` (no admin user identity);
         session callers get their admin user id stamped — same pattern as
         the dedup PATCH endpoints.
 
-        Returns 400 if the flag is already resolved, and 404 if no
-        `nav_leaked_name` flag exists with that id.
+        Returns 400 if the body is missing / invalid, or if the flag is
+        already resolved (either reason — second attempts always 400
+        regardless of whether the new reason matches the stored one).
+        Returns 404 if no flag exists with that id.
       security:
         - sessionAuth: []
         - apiKey: []
@@ -1129,11 +1146,17 @@ paths:
           schema:
             type: integer
             minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveRosterQualityFlagRequest"
       responses:
         "204":
           description: Flag resolved
         "400":
-          description: Invalid id or flag already resolved
+          description: Invalid id, invalid body, or flag already resolved
           content:
             application/json:
               schema:
@@ -2511,7 +2534,9 @@ components:
         callers do not see raw jsonb. `clubId` / `clubNameCanonical` are
         nullable because the canonical-club linker may not have run yet.
         `resolvedByEmail` is joined from `admin_users` when the flag has
-        been resolved.
+        been resolved. `resolutionReason` is `'resolved'` (legitimate
+        leak, cleaned up out of band), `'dismissed'` (false positive), or
+        null while the flag is still open.
       properties:
         id:
           type: integer
@@ -2539,6 +2564,10 @@ components:
         resolvedByEmail:
           type: string
           nullable: true
+        resolutionReason:
+          type: string
+          enum: [resolved, dismissed]
+          nullable: true
       required:
         - id
         - snapshotId
@@ -2549,6 +2578,20 @@ components:
         - flaggedAt
         - resolvedAt
         - resolvedByEmail
+        - resolutionReason
+
+    ResolveRosterQualityFlagRequest:
+      type: object
+      description: >
+        Body for PATCH /v1/admin/data-quality/roster-quality-flags/{id}/resolve.
+        `reason` captures operator intent — see the endpoint description
+        for the two-path semantics.
+      properties:
+        reason:
+          type: string
+          enum: [resolved, dismissed]
+      required:
+        - reason
 
     NavLeakedNamesResponse:
       type: object

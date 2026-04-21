@@ -179,6 +179,20 @@ export const tryoutsRelations = relations(tryouts, ({ one }) => ({
  * resolved_by is an FK to admin_users.id (not a string) so the panel can
  * join and show the resolver's real email.
  *
+ * resolution_reason splits the single legacy "Resolve" action into two
+ * operator intents, matching the same text + CHECK-list pattern as
+ * flag_type (not a pgEnum — see the note above on extensibility):
+ *   'resolved'  — the flag was legitimate and the operator cleaned the
+ *                 leak out of band (e.g. fixed the extractor, requeued a
+ *                 scrape). Snapshot rows themselves are NOT mutated.
+ *   'dismissed' — false positive; the detector flagged something that
+ *                 wasn't actually a nav-leak.
+ * A partial CHECK constraint enforces the two-field invariant: when
+ * `resolved_at IS NULL` the column must also be NULL (flag is open); when
+ * `resolved_at IS NOT NULL` the column must be one of the two allowed
+ * values. This keeps the "resolved with no recorded reason" shape out of
+ * the table entirely — the API layer cannot write an ambiguous row.
+ *
  * Per-(snapshot_id, flag_type) uniqueness prevents the detector re-inserting
  * duplicates if it runs twice on the same snapshot — it should upsert into
  * the existing row instead.
@@ -206,11 +220,27 @@ export const rosterQualityFlags = pgTable(
     resolvedBy: integer("resolved_by").references(() => adminUsers.id, {
       onDelete: "set null",
     }),
+    // See the docstring above for the full rationale. Operator intent when
+    // the flag was closed — NULL while the flag is still open.
+    resolutionReason: text("resolution_reason"),
   },
   (t) => [
     check(
       "roster_quality_flags_flag_type_enum",
       sql`${t.flagType} IN ('nav_leaked_name')`,
+    ),
+    // Two-field invariant: resolution_reason must be NULL iff resolved_at
+    // is NULL; otherwise it must be one of the two allowed values. This
+    // keeps "resolved with no reason" and "dismissed without closing" out
+    // of the table at the SQL boundary, not just the API layer.
+    check(
+      "roster_quality_flags_resolution_reason_enum",
+      sql`(
+        ${t.resolvedAt} IS NULL AND ${t.resolutionReason} IS NULL
+      ) OR (
+        ${t.resolvedAt} IS NOT NULL
+        AND ${t.resolutionReason} IN ('resolved', 'dismissed')
+      )`,
     ),
     unique("roster_quality_flags_snapshot_type_uq").on(
       t.snapshotId,

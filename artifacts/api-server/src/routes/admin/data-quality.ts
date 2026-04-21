@@ -54,15 +54,24 @@
  *
  * Nav-leaked-names
  * ----------------
- * Phase 1 read-only panel for `roster_quality_flags` rows with
- * `flag_type = 'nav_leaked_name'`. Joins the flag to its snapshot, the
- * snapshot's canonical club (nullable — linker pattern), and the resolver
- * admin (if resolved). `leakedStrings` and `snapshotRosterSize` are
- * extracted from the jsonb `metadata` into typed response fields at the
- * API boundary — the caller never sees raw jsonb. Phase 2 (scraper
- * detection) ships separately; the table is empty at Phase-1 merge time
- * and this endpoint is the regression guard for the jsonb → typed
- * extraction shape.
+ * Read + resolve surface for `roster_quality_flags` rows with
+ * `flag_type = 'nav_leaked_name'`. The GET handler joins the flag to its
+ * snapshot, the snapshot's canonical club (nullable — linker pattern),
+ * and the resolver admin (if resolved). `leakedStrings` and
+ * `snapshotRosterSize` are extracted from the jsonb `metadata` into typed
+ * response fields at the API boundary — the caller never sees raw jsonb.
+ *
+ * The `state` query param is a tri-state + escape hatch:
+ *   open       (default) — resolved_at IS NULL
+ *   resolved              — resolution_reason = 'resolved'
+ *   dismissed             — resolution_reason = 'dismissed'
+ *   all                   — no filter
+ *
+ * The PATCH `/roster-quality-flags/:id/resolve` endpoint accepts a
+ * required body `{ reason: "resolved" | "dismissed" }` — "resolved" means
+ * the flag was legitimate and the leak was cleaned up out of band;
+ * "dismissed" means the detector flagged a false positive. Snapshot rows
+ * are never mutated by this endpoint.
  */
 import { Router, type IRouter, type RequestHandler } from "express";
 import { sql } from "drizzle-orm";
@@ -87,6 +96,7 @@ import {
   StaleScrapesResponse,
   NavLeakedNamesRequest,
   NavLeakedNamesResponse,
+  ResolveRosterQualityFlagRequest,
 } from "@hlbiv/api-zod/admin";
 
 // ---------------------------------------------------------------------------
@@ -247,13 +257,16 @@ export interface NavLeakedNamesRawRow {
   flaggedAt: Date | string;
   resolvedAt: Date | string | null;
   resolvedByEmail: string | null;
+  resolutionReason: "resolved" | "dismissed" | null;
 }
+
+export type NavLeakedNamesState = "open" | "resolved" | "dismissed" | "all";
 
 export interface NavLeakedNamesDeps {
   listNavLeakedNames: (args: {
     page: number;
     pageSize: number;
-    includeResolved: boolean;
+    state: NavLeakedNamesState;
   }) => Promise<{ rows: NavLeakedNamesRawRow[]; total: number }>;
 }
 
@@ -293,20 +306,18 @@ export function makeNavLeakedNamesHandler(
           toNumberOrUndefined(req.query.page_size) ??
           toNumberOrUndefined(req.query.pageSize) ??
           toNumberOrUndefined(req.query.limit),
-        includeResolved:
-          toBooleanOrUndefined(req.query.include_resolved) ??
-          toBooleanOrUndefined(req.query.includeResolved),
+        state: toStringOrUndefined(req.query.state),
       });
       if (!parsed.success) {
         res.status(400).json({ error: "Invalid query params" });
         return;
       }
-      const { page, pageSize, includeResolved } = parsed.data;
+      const { page, pageSize, state } = parsed.data;
 
       const { rows, total } = await deps.listNavLeakedNames({
         page,
         pageSize,
-        includeResolved,
+        state,
       });
 
       const mapped = rows.map((r) => {
@@ -323,6 +334,7 @@ export function makeNavLeakedNamesHandler(
           flaggedAt: toIsoRequired(r.flaggedAt),
           resolvedAt: toIsoOrNull(r.resolvedAt),
           resolvedByEmail: r.resolvedByEmail,
+          resolutionReason: r.resolutionReason,
         };
       });
 
@@ -343,13 +355,26 @@ export function makeNavLeakedNamesHandler(
 /**
  * Production DB-backed dep. Single SQL query with a COUNT(*) OVER () window
  * to avoid a separate round-trip for the total. Orders unresolved flags
- * oldest-first (so the worst-aged offenders bubble up on page 1); when
- * `includeResolved=true`, resolved rows sort after unresolved.
+ * oldest-first (so the worst-aged offenders bubble up on page 1); when the
+ * state filter includes resolved rows, resolved rows sort after unresolved.
+ *
+ * `state` maps to a SQL predicate:
+ *   open       → resolved_at IS NULL
+ *   resolved   → resolved_at IS NOT NULL AND resolution_reason = 'resolved'
+ *   dismissed  → resolved_at IS NOT NULL AND resolution_reason = 'dismissed'
+ *   all        → (no extra predicate)
  */
 export const prodNavLeakedNamesDeps: NavLeakedNamesDeps = {
-  listNavLeakedNames: async ({ page, pageSize, includeResolved }) => {
+  listNavLeakedNames: async ({ page, pageSize, state }) => {
     const offset = (page - 1) * pageSize;
-    const includeResolvedLit = includeResolved ? sql`true` : sql`false`;
+    const statePredicate =
+      state === "open"
+        ? sql`rqf.resolved_at IS NULL`
+        : state === "resolved"
+          ? sql`rqf.resolved_at IS NOT NULL AND rqf.resolution_reason = 'resolved'`
+          : state === "dismissed"
+            ? sql`rqf.resolved_at IS NOT NULL AND rqf.resolution_reason = 'dismissed'`
+            : sql`TRUE`;
 
     const result = await defaultDb.execute<{
       id: number;
@@ -360,6 +385,7 @@ export const prodNavLeakedNamesDeps: NavLeakedNamesDeps = {
       flagged_at: Date | string;
       resolved_at: Date | string | null;
       resolved_by_email: string | null;
+      resolution_reason: "resolved" | "dismissed" | null;
       total: string;
     }>(sql`
       SELECT
@@ -371,13 +397,14 @@ export const prodNavLeakedNamesDeps: NavLeakedNamesDeps = {
         rqf.created_at AS flagged_at,
         rqf.resolved_at,
         au.email AS resolved_by_email,
+        rqf.resolution_reason,
         COUNT(*) OVER () AS total
       FROM ${rosterQualityFlags} rqf
       JOIN ${clubRosterSnapshots} crs ON crs.id = rqf.snapshot_id
       LEFT JOIN ${canonicalClubs} cc ON cc.id = crs.club_id
       LEFT JOIN ${adminUsers} au ON au.id = rqf.resolved_by
       WHERE rqf.flag_type = 'nav_leaked_name'
-        AND (${includeResolvedLit} OR rqf.resolved_at IS NULL)
+        AND (${statePredicate})
       ORDER BY
         (rqf.resolved_at IS NOT NULL) ASC,
         rqf.created_at ASC,
@@ -395,6 +422,7 @@ export const prodNavLeakedNamesDeps: NavLeakedNamesDeps = {
         flagged_at: Date | string;
         resolved_at: Date | string | null;
         resolved_by_email: string | null;
+        resolution_reason: "resolved" | "dismissed" | null;
         total: string;
       }>,
     );
@@ -409,6 +437,7 @@ export const prodNavLeakedNamesDeps: NavLeakedNamesDeps = {
       flaggedAt: r.flagged_at,
       resolvedAt: r.resolved_at,
       resolvedByEmail: r.resolved_by_email,
+      resolutionReason: r.resolution_reason,
     }));
 
     return { rows, total };
@@ -421,16 +450,25 @@ export const prodNavLeakedNamesDeps: NavLeakedNamesDeps = {
 
 export type ResolveOutcome = "resolved" | "already_resolved" | "not_found";
 
+export type ResolutionReason = "resolved" | "dismissed";
+
 export interface ResolveRosterQualityFlagDeps {
   resolveFlag: (args: {
     id: number;
     resolvedBy: number | null;
+    reason: ResolutionReason;
   }) => Promise<{ outcome: ResolveOutcome }>;
 }
 
 /**
  * PATCH /api/v1/admin/data-quality/roster-quality-flags/:id/resolve
- * 204 on first resolve, 400 if already resolved, 404 if id unknown.
+ *
+ * Body: { reason: "resolved" | "dismissed" } — required.
+ *   resolved  — legitimate leak, operator cleaned it up out of band.
+ *   dismissed — false positive.
+ *
+ * 204 on first resolve, 400 if body is missing/invalid or the flag is
+ * already resolved (either reason), 404 if id unknown.
  */
 export function makeResolveRosterQualityFlagHandler(
   deps: ResolveRosterQualityFlagDeps,
@@ -443,12 +481,22 @@ export function makeResolveRosterQualityFlagHandler(
         return;
       }
 
+      const parsedBody = ResolveRosterQualityFlagRequest.safeParse(
+        req.body ?? {},
+      );
+      if (!parsedBody.success) {
+        res.status(400).json({ error: "Invalid request body" });
+        return;
+      }
+      const { reason } = parsedBody.data;
+
       const adminUserId =
         req.adminAuth?.kind === "session" ? req.adminAuth.userId : null;
 
       const { outcome } = await deps.resolveFlag({
         id,
         resolvedBy: adminUserId,
+        reason,
       });
 
       if (outcome === "not_found") {
@@ -475,11 +523,12 @@ export function makeResolveRosterQualityFlagHandler(
  * correctly the moment the CHECK list is extended.
  */
 export const prodResolveRosterQualityFlagDeps: ResolveRosterQualityFlagDeps = {
-  resolveFlag: async ({ id, resolvedBy }) => {
+  resolveFlag: async ({ id, resolvedBy, reason }) => {
     const updated = await defaultDb.execute<{ id: number }>(sql`
       UPDATE ${rosterQualityFlags}
       SET resolved_at = NOW(),
-          resolved_by = ${resolvedBy}
+          resolved_by = ${resolvedBy},
+          resolution_reason = ${reason}
       WHERE id = ${id}
         AND resolved_at IS NULL
       RETURNING id
@@ -850,13 +899,9 @@ function toNumberOrUndefined(raw: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function toBooleanOrUndefined(raw: unknown): boolean | undefined {
+function toStringOrUndefined(raw: unknown): string | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
-  if (typeof raw === "boolean") return raw;
-  const s = String(raw).toLowerCase();
-  if (s === "true" || s === "1") return true;
-  if (s === "false" || s === "0") return false;
-  return undefined;
+  return String(raw);
 }
 
 function toIsoOrNull(value: Date | string | null): string | null {
