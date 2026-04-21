@@ -74,6 +74,7 @@ if _SCRAPER_ROOT not in sys.path:
 
 from scrape_run_logger import ScrapeRunLogger, FailureKind, classify_exception  # noqa: E402
 from alerts import alert_scraper_failure  # noqa: E402
+from ingest import ncaa_roster_writer as _ncaa_roster_writer  # noqa: E402
 
 try:
     import psycopg2  # type: ignore
@@ -1217,6 +1218,52 @@ def scrape_college_rosters(
                             conn.rollback()
                             continue
                     conn.commit()
+
+                    # Head-coach capture (PR-7). Uses the already-fetched
+                    # roster HTML — no extra HTTP hit. Writes to
+                    # college_coach_tenures always; writes to
+                    # college_coaches ONLY on the current-season pass so
+                    # out-of-order historical runs can't regress the
+                    # current-directory view.
+                    head_coach = extract_head_coach_from_html(html)
+                    if head_coach:
+                        head_coach = dict(head_coach)
+                        head_coach.setdefault("source_url", target_url)
+                        head_coach.setdefault("source", "ncaa_roster_page")
+                        try:
+                            _ncaa_roster_writer.upsert_coach_tenures(
+                                [head_coach],
+                                college_id=college["id"],
+                                academic_year=season,
+                                conn=conn,
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "  coach tenure upsert failed for %s (%s): %s",
+                                college["name"], season, exc,
+                            )
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
+
+                        if is_current:
+                            try:
+                                _ncaa_roster_writer.upsert_coaches(
+                                    [head_coach],
+                                    college_id=college["id"],
+                                    conn=conn,
+                                )
+                            except Exception as exc:
+                                logger.warning(
+                                    "  coach directory upsert failed for %s: %s",
+                                    college["name"], exc,
+                                )
+                                try:
+                                    conn.rollback()
+                                except Exception:
+                                    pass
+
                     # Only bump last_scraped_at on the current-season pass —
                     # historical pulls shouldn't make an 8-year-old roster
                     # look like it was just refreshed.

@@ -92,6 +92,39 @@ export const collegeCoaches = pgTable(
   ],
 );
 
+export const collegeCoachTenures = pgTable(
+  "college_coach_tenures",
+  {
+    id: serial("id").primaryKey(),
+    collegeId: integer("college_id")
+      .notNull()
+      .references(() => colleges.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    title: text("title"),
+    academicYear: text("academic_year").notNull(),
+    isHeadCoach: boolean("is_head_coach").default(false).notNull(),
+    sourceUrl: text("source_url"),
+    scrapedAt: timestamp("scraped_at").defaultNow().notNull(),
+  },
+  (t) => [
+    // Natural key includes academic_year so the same coach on two
+    // seasons' pages produces two rows — that's the whole point of
+    // this table. Title is part of the key so a coach who moves from
+    // "Assistant" to "Head Coach" within one season gets separate rows
+    // (tenures-by-role semantics).
+    unique("college_coach_tenures_college_name_title_year_uq").on(
+      t.collegeId,
+      t.name,
+      t.title,
+      t.academicYear,
+    ),
+    index("college_coach_tenures_college_year_idx").on(
+      t.collegeId,
+      t.academicYear,
+    ),
+  ],
+);
+
 export const collegeRosterHistory = pgTable(
   "college_roster_history",
   {
@@ -127,8 +160,19 @@ export const collegeRosterHistory = pgTable(
 
 export const collegesRelations = relations(colleges, ({ many }) => ({
   coaches: many(collegeCoaches),
+  coachTenures: many(collegeCoachTenures),
   rosters: many(collegeRosterHistory),
 }));
+
+export const collegeCoachTenuresRelations = relations(
+  collegeCoachTenures,
+  ({ one }) => ({
+    college: one(colleges, {
+      fields: [collegeCoachTenures.collegeId],
+      references: [colleges.id],
+    }),
+  }),
+);
 
 export const collegeCoachesRelations = relations(collegeCoaches, ({ one }) => ({
   college: one(colleges, {
