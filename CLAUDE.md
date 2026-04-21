@@ -358,6 +358,34 @@ pnpm --filter @workspace/scripts run create-admin-user -- \
 
 Rotate / add more admins with repeated `create-admin-user` invocations. Email is unique (`admin_users_email_uq`); a collision fails with a clear message rather than overwriting.
 
+### Purge polluted `coach_discoveries` (on Replit)
+
+One-shot cleanup for rows flagged by `coach-pollution-detect` (writes `coach_quality_flags` entries of type `looks_like_name_reject`). Dry-run is the default; `--commit` actually deletes. The FK `coach_quality_flags.discovery_id ON DELETE CASCADE` drops the flag rows automatically — no manual cleanup needed. `coach_discoveries.coach_id ON DELETE SET NULL` means the `coaches` master table is preserved (orphan-coach sweep is deliberately out of scope).
+
+```bash
+# 0. Pre-flight — how many rows will this purge?
+psql "$DATABASE_URL" -c "
+  SELECT COUNT(DISTINCT discovery_id)
+  FROM coach_quality_flags
+  WHERE flag_type = 'looks_like_name_reject' AND resolved_at IS NULL;
+"
+
+# 1. Dry-run — writes JSONL audit artifact to /tmp, rolls back the txn.
+pnpm --filter @workspace/scripts run purge-polluted-coach-discoveries
+
+# 2. Commit — writes JSONL, deletes, verifies cascade, commits.
+pnpm --filter @workspace/scripts run purge-polluted-coach-discoveries -- --commit
+
+# 3. Post-check — discoveries should drop by the pre-flight count;
+#    flag rows should hit 0.
+psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM coach_discoveries;"
+psql "$DATABASE_URL" -c "
+  SELECT flag_type, COUNT(*) FROM coach_quality_flags GROUP BY flag_type;
+"
+```
+
+Flags an operator has already marked `resolved_at IS NOT NULL` (via the admin canary UI) are skipped — operator triage wins over bulk purge. To purge a different flag type later, pass `--flag-type <name>` (the CHECK constraint on `coach_quality_flags.flag_type` enumerates the valid values: `looks_like_name_reject`, `role_label_as_name`, `corrupt_email`, `nav_leaked`). Override the audit dir with `--audit-dir /path/to/dir` (default `/tmp`). The JSONL artifact is the source of truth for reconstruction — keep it even after a successful purge.
+
 ### Events-route rewire (PR #8) — post-merge steps
 
 ```bash
