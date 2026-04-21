@@ -2,13 +2,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DedupPage from "../pages/Dedup";
 
+/**
+ * DedupPage migrated from `adminFetch()` to the Orval-generated
+ * `useListClubDuplicates` query hook. See ScraperHealth.test.tsx for the
+ * canonical pattern; per-test QueryClient + retries disabled keeps error
+ * paths from hanging.
+ */
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
 
 function fixturePair(overrides: Partial<Record<string, unknown>> = {}) {
@@ -66,7 +83,7 @@ describe("DedupPage", () => {
       },
     );
 
-    render(
+    renderWithProviders(
       <MemoryRouter initialEntries={["/dedup"]}>
         <Routes>
           <Route path="/dedup" element={<DedupPage />} />
@@ -107,7 +124,7 @@ describe("DedupPage", () => {
       ),
     );
 
-    render(
+    renderWithProviders(
       <MemoryRouter initialEntries={["/dedup"]}>
         <Routes>
           <Route path="/dedup" element={<DedupPage />} />
@@ -129,9 +146,7 @@ describe("DedupPage", () => {
       if (u.includes("status=merged")) {
         return Promise.resolve(
           jsonResponse({
-            pairs: [
-              fixturePair({ id: 900, status: "merged" }),
-            ],
+            pairs: [fixturePair({ id: 900, status: "merged" })],
             total: 1,
             page: 1,
             pageSize: 50,
@@ -149,7 +164,7 @@ describe("DedupPage", () => {
     });
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(fetchMock);
 
-    render(
+    renderWithProviders(
       <MemoryRouter initialEntries={["/dedup"]}>
         <Routes>
           <Route path="/dedup" element={<DedupPage />} />

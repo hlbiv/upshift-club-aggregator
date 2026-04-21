@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import type { AdminLoginResponse } from "@hlbiv/api-zod/admin";
-import { adminFetch } from "../lib/api";
+import { useAdminLogin } from "@workspace/api-client-react";
 
 /**
  * Admin login page.
@@ -9,52 +8,34 @@ import { adminFetch } from "../lib/api";
  *   POST /api/v1/admin/auth/login { email, password }
  *     - 200 → response matches AdminLoginResponse; a session cookie is
  *       set via Set-Cookie. Navigate to /scraper-health.
- *     - 4xx → show {error} body as a red inline message.
+ *     - 4xx → show the server's `{error}` body as a red inline message.
  *     - network error → show a generic fallback.
  *
- * Uses plain HTML form + controlled inputs — Radix primitives are
- * available (see @radix-ui/react-label etc.) but for a 2-field login
- * the native form is simpler and equally accessible. Radix form wiring
- * can come in later phases when we need multi-step flows.
+ * Migrated from the hand-rolled `adminFetch()` helper to the Orval-generated
+ * `useAdminLogin` mutation hook (Workstream A). The customFetch mutator
+ * throws an `ApiError` on non-2xx — we unwrap the `{error}` field out of
+ * `err.data` to preserve the pre-migration error UX.
  */
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  const loginMutation = useAdminLogin();
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    setSubmitting(true);
     try {
-      const res = await adminFetch("/api/v1/admin/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      });
-      if (res.ok) {
-        // We don't need the body for navigation, but type-check it.
-        const body = (await res.json()) as AdminLoginResponse;
-        void body;
-        navigate("/scraper-health", { replace: true });
-        return;
-      }
-      // Attempt to parse {error: string}; otherwise fall back.
-      let message = "Login failed.";
-      try {
-        const body = (await res.json()) as { error?: unknown };
-        if (typeof body.error === "string") message = body.error;
-      } catch {
-        // ignore JSON parse errors — keep generic message
-      }
-      setError(message);
-    } catch {
-      setError("Network error. Please try again.");
-    } finally {
-      setSubmitting(false);
+      await loginMutation.mutateAsync({ data: { email, password } });
+      navigate("/scraper-health", { replace: true });
+    } catch (err) {
+      setError(extractErrorMessage(err));
     }
   }
+
+  const submitting = loginMutation.isPending;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
@@ -131,4 +112,26 @@ export default function LoginPage() {
       </form>
     </div>
   );
+}
+
+/**
+ * The customFetch mutator throws `ApiError` on non-2xx with the parsed body
+ * attached as `err.data`. Admin routes surface `{error: string}`; prefer that
+ * if present, otherwise fall back to the message or a generic copy.
+ */
+function extractErrorMessage(err: unknown): string {
+  if (err && typeof err === "object") {
+    const data = (err as { data?: unknown }).data;
+    if (data && typeof data === "object") {
+      const maybe = (data as { error?: unknown }).error;
+      if (typeof maybe === "string") return maybe;
+    }
+    const status = (err as { status?: unknown }).status;
+    // Distinguish server-returned 4xx/5xx (ApiError has numeric status) from
+    // true network failures. The prior impl showed a generic network error
+    // for thrown fetches; keep that shape for parity.
+    if (typeof status !== "number") return "Network error. Please try again.";
+    if (err instanceof Error && err.message) return err.message;
+  }
+  return "Login failed.";
 }

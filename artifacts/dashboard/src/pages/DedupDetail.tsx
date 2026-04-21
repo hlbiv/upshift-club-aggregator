@@ -1,14 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
-  ClubDuplicateDetail,
-  ClubDuplicateMergeResponse,
+  useGetClubDuplicate,
+  useMergeClubDuplicate,
+  useRejectClubDuplicate,
   type ClubDuplicateDetail as ClubDuplicateDetailType,
-} from "@hlbiv/api-zod/admin";
-import { adminFetch } from "../lib/api";
+} from "@workspace/api-client-react";
 import AdminNav from "../components/AdminNav";
-import { StatusBadge, formatDate, snapshotName } from "./Dedup";
+import { StatusBadge, formatDate, formatError, snapshotName } from "./Dedup";
 
 /**
  * Dedup detail view — side-by-side panels + merge/reject action bar.
@@ -16,6 +16,10 @@ import { StatusBadge, formatDate, snapshotName } from "./Dedup";
  *   GET  /api/v1/admin/dedup/clubs/:id           → ClubDuplicateDetail
  *   POST /api/v1/admin/dedup/clubs/:id/merge     → ClubDuplicateMergeResponse
  *   POST /api/v1/admin/dedup/clubs/:id/reject    → { ok: true }
+ *
+ * Migrated from `adminFetch()` to the Orval-generated
+ * `useGetClubDuplicate` / `useMergeClubDuplicate` / `useRejectClubDuplicate`
+ * hooks (Workstream A).
  *
  * The detail response contains `leftCurrent` / `rightCurrent` (the live
  * canonical_club rows at open-time) plus affiliation / roster-snapshot
@@ -27,127 +31,62 @@ import { StatusBadge, formatDate, snapshotName } from "./Dedup";
 
 type Snapshot = Record<string, unknown>;
 
-type FetchState =
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "ok"; data: ClubDuplicateDetailType };
-
-type ActionState =
-  | { kind: "idle" }
-  | { kind: "submitting" }
-  | { kind: "error"; message: string };
-
 export default function DedupDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [state, setState] = useState<FetchState>({ kind: "loading" });
-  const [action, setAction] = useState<ActionState>({ kind: "idle" });
+  const [actionError, setActionError] = useState<string | null>(null);
   const [confirmWinner, setConfirmWinner] = useState<"left" | "right" | null>(
     null,
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    setState({ kind: "loading" });
+  const idIsValid = !!id && /^\d+$/.test(id);
+  // The generated hook already gates the query on `!!id` (0 → disabled).
+  // Pass 0 when the URL param is invalid so the query never fires.
+  const numericId = idIsValid ? Number(id) : 0;
 
-    if (!id || !/^\d+$/.test(id)) {
-      setState({ kind: "error", message: "Invalid pair id" });
-      return;
-    }
+  const detailQuery = useGetClubDuplicate(numericId);
+  const mergeMutation = useMergeClubDuplicate();
+  const rejectMutation = useRejectClubDuplicate();
 
-    adminFetch(`/api/v1/admin/dedup/clubs/${id}`)
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          setState({ kind: "error", message: `HTTP ${res.status}` });
-          return;
-        }
-        const raw = await res.json();
-        const parsed = ClubDuplicateDetail.safeParse(raw);
-        if (!parsed.success) {
-          setState({
-            kind: "error",
-            message: `Invalid response: ${parsed.error.message}`,
-          });
-          return;
-        }
-        setState({ kind: "ok", data: parsed.data });
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setState({
-          kind: "error",
-          message: e instanceof Error ? e.message : "Network error",
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  const submitting = mergeMutation.isPending || rejectMutation.isPending;
 
   async function doMerge(winnerSide: "left" | "right") {
-    if (state.kind !== "ok" || !id) return;
-    const detail = state.data;
+    if (!detailQuery.data || !idIsValid) return;
+    const detail = detailQuery.data;
     const winnerId =
       winnerSide === "left" ? detail.leftClubId : detail.rightClubId;
     const loserId =
       winnerSide === "left" ? detail.rightClubId : detail.leftClubId;
 
-    setAction({ kind: "submitting" });
+    setActionError(null);
     try {
-      const res = await adminFetch(`/api/v1/admin/dedup/clubs/${id}/merge`, {
-        method: "POST",
-        body: JSON.stringify({ winnerId, loserId }),
+      const result = await mergeMutation.mutateAsync({
+        id: numericId,
+        data: { winnerId, loserId },
       });
-      if (!res.ok) {
-        setAction({ kind: "error", message: `HTTP ${res.status}` });
-        return;
-      }
-      const raw = await res.json();
-      const parsed = ClubDuplicateMergeResponse.safeParse(raw);
-      if (!parsed.success) {
-        setAction({
-          kind: "error",
-          message: `Invalid response: ${parsed.error.message}`,
-        });
-        return;
-      }
       setConfirmWinner(null);
       const summary =
-        `Merged into #${parsed.data.winnerId}: ` +
-        `${parsed.data.loserAliasesCreated} alias(es), ` +
-        `${parsed.data.affiliationsReparented} affiliation(s), ` +
-        `${parsed.data.rosterSnapshotsReparented} roster snapshot(s) reparented`;
+        `Merged into #${result.winnerId}: ` +
+        `${result.loserAliasesCreated} alias(es), ` +
+        `${result.affiliationsReparented} affiliation(s), ` +
+        `${result.rosterSnapshotsReparented} roster snapshot(s) reparented`;
       navigate("/dedup", { replace: true, state: { flash: summary } });
-    } catch (e) {
-      setAction({
-        kind: "error",
-        message: e instanceof Error ? e.message : "Network error",
-      });
+    } catch (err) {
+      setActionError(formatError(err));
     }
   }
 
   async function doReject() {
-    if (!id) return;
-    setAction({ kind: "submitting" });
+    if (!idIsValid) return;
+    setActionError(null);
     try {
-      const res = await adminFetch(`/api/v1/admin/dedup/clubs/${id}/reject`, {
-        method: "POST",
-      });
-      if (!res.ok) {
-        setAction({ kind: "error", message: `HTTP ${res.status}` });
-        return;
-      }
+      await rejectMutation.mutateAsync({ id: numericId, data: {} });
       navigate("/dedup", {
         replace: true,
         state: { flash: `Pair #${id} rejected` },
       });
-    } catch (e) {
-      setAction({
-        kind: "error",
-        message: e instanceof Error ? e.message : "Network error",
-      });
+    } catch (err) {
+      setActionError(formatError(err));
     }
   }
 
@@ -172,64 +111,68 @@ export default function DedupDetailPage() {
         </button>
       </header>
 
-      {state.kind === "loading" ? (
+      {!idIsValid ? (
+        <Placeholder label="Failed to load: Invalid pair id" />
+      ) : detailQuery.isLoading ? (
         <Placeholder label="Loading…" />
-      ) : state.kind === "error" ? (
-        <Placeholder label={`Failed to load: ${state.message}`} />
-      ) : (
+      ) : detailQuery.error ? (
+        <Placeholder
+          label={`Failed to load: ${formatError(detailQuery.error)}`}
+        />
+      ) : detailQuery.data ? (
         <>
           <div className="mb-4 flex items-center gap-3 text-sm text-neutral-600">
-            <StatusBadge status={state.data.status} />
-            <span>score: {state.data.score.toFixed(3)}</span>
+            <StatusBadge status={detailQuery.data.status} />
+            <span>score: {detailQuery.data.score.toFixed(3)}</span>
             <span className="text-neutral-400">·</span>
-            <span>method: {state.data.method}</span>
+            <span>method: {detailQuery.data.method}</span>
             <span className="text-neutral-400">·</span>
-            <span>created: {formatDate(state.data.createdAt)}</span>
+            <span>created: {formatDate(detailQuery.data.createdAt)}</span>
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <ClubPanel
               side="Left"
-              clubId={state.data.leftClubId}
-              current={state.data.leftCurrent}
+              clubId={detailQuery.data.leftClubId}
+              current={detailQuery.data.leftCurrent}
               affiliationCount={
-                state.data.affiliations.leftAffiliationCount
+                detailQuery.data.affiliations.leftAffiliationCount
               }
-              rosterCount={state.data.rosters.leftRosterSnapshotCount}
+              rosterCount={detailQuery.data.rosters.leftRosterSnapshotCount}
             />
             <ClubPanel
               side="Right"
-              clubId={state.data.rightClubId}
-              current={state.data.rightCurrent}
+              clubId={detailQuery.data.rightClubId}
+              current={detailQuery.data.rightCurrent}
               affiliationCount={
-                state.data.affiliations.rightAffiliationCount
+                detailQuery.data.affiliations.rightAffiliationCount
               }
-              rosterCount={state.data.rosters.rightRosterSnapshotCount}
+              rosterCount={detailQuery.data.rosters.rightRosterSnapshotCount}
             />
           </div>
 
-          {action.kind === "error" ? (
+          {actionError !== null ? (
             <div
               role="alert"
               className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
             >
-              {action.message}
+              {actionError}
             </div>
           ) : null}
 
-          {state.data.status === "pending" ? (
+          {detailQuery.data.status === "pending" ? (
             <ActionBar
-              disabled={action.kind === "submitting"}
-              leftName={snapshotName(state.data.leftCurrent)}
-              rightName={snapshotName(state.data.rightCurrent)}
+              disabled={submitting}
+              leftName={snapshotName(detailQuery.data.leftCurrent)}
+              rightName={snapshotName(detailQuery.data.rightCurrent)}
               onPickLeft={() => setConfirmWinner("left")}
               onPickRight={() => setConfirmWinner("right")}
               onReject={doReject}
             />
           ) : (
             <p className="mt-6 text-sm text-neutral-500">
-              This pair has been resolved ({state.data.status}). No further
-              actions available.
+              This pair has been resolved ({detailQuery.data.status}). No
+              further actions available.
             </p>
           )}
 
@@ -239,14 +182,14 @@ export default function DedupDetailPage() {
               if (!o) setConfirmWinner(null);
             }}
             winnerSide={confirmWinner}
-            detail={state.data}
-            submitting={action.kind === "submitting"}
+            detail={detailQuery.data}
+            submitting={submitting}
             onConfirm={() => {
               if (confirmWinner !== null) void doMerge(confirmWinner);
             }}
           />
         </>
-      )}
+      ) : null}
     </main>
   );
 }
