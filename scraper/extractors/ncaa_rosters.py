@@ -990,8 +990,35 @@ def _fetch_colleges(
     conn,
     division: Optional[str] = None,
     gender: Optional[str] = None,
+    skip_unresolved: bool = True,
 ) -> List[Dict]:
-    """Query the colleges table. Returns list of dicts."""
+    """Query the colleges table. Returns list of dicts.
+
+    Parameters
+    ----------
+    skip_unresolved : bool (default True)
+        When True (default), exclude rows with
+        ``soccer_program_url IS NULL``. Each ``colleges`` row is
+        gender-scoped via ``gender_program`` (mens/womens/both), and
+        the ``soccer_program_url`` column on that row is the roster
+        URL for that specific gender's program. A NULL value means
+        the ``ncaa-resolve-urls`` job (PR-2 resolver) probed every
+        candidate SIDEARM path and found none responding — i.e., the
+        school does not field that sport. Fetching a roster for
+        those rows wastes ~6s per school in network + Playwright
+        fallback and then SKIPs with "no players parsed", producing
+        misleading error counts. The seed data itself over-lists
+        men's programs for Big Ten newcomers (Minnesota, Oregon,
+        USC) and a handful of others (Richmond, Pepperdine); this
+        filter is the single chokepoint that suppresses those
+        wasteful attempts.
+
+        Set to False only for debugging / audit scenarios where you
+        want to see every seeded row regardless of resolver state.
+        Scrapers should always run with the default (True) after the
+        ``ncaa-resolve-urls`` job has populated URLs for real
+        programs.
+    """
     clauses = []
     params: List = []
 
@@ -1001,6 +1028,8 @@ def _fetch_colleges(
     if gender:
         clauses.append("gender_program = %s")
         params.append(gender)
+    if skip_unresolved:
+        clauses.append("soccer_program_url IS NOT NULL")
 
     where = ""
     if clauses:
@@ -1091,6 +1120,7 @@ def scrape_college_rosters(
     limit: Optional[int] = None,
     dry_run: bool = False,
     backfill_seasons: int = 0,
+    skip_unresolved: bool = True,
 ) -> Dict:
     """Scrape NCAA rosters and write to college_roster_history.
 
@@ -1106,6 +1136,11 @@ def scrape_college_rosters(
         URL pattern. Writes land in ``college_roster_history`` keyed on
         ``(college_id, player_name, academic_year)`` — same natural key
         as current-season rows, so re-runs are idempotent.
+    skip_unresolved : bool (default True)
+        Skip colleges with ``soccer_program_url IS NULL`` — the
+        ``ncaa-resolve-urls`` resolver leaves that NULL when every
+        SIDEARM candidate path 404'd, which means the school doesn't
+        field the sport. See ``_fetch_colleges`` for detail.
 
     Returns
     -------
@@ -1127,7 +1162,12 @@ def scrape_college_rosters(
         logger.error("DATABASE_URL not set or connection failed; aborting (use --dry-run for no-DB mode)")
         return {"scraped": 0, "rows_inserted": 0, "rows_updated": 0, "errors": 1}
 
-    colleges = _fetch_colleges(conn, division=division, gender=gender)
+    colleges = _fetch_colleges(
+        conn,
+        division=division,
+        gender=gender,
+        skip_unresolved=skip_unresolved,
+    )
     if limit:
         colleges = colleges[:limit]
 
