@@ -8,6 +8,10 @@
  * in `beforeAll` so the password-compare path exercises the same library
  * that production uses.
  */
+// Pin NODE_ENV so cookieSecure()/cookieSameSite() take their test branch
+// (sameSite="lax", secure=false). Production / dev preview use
+// "none" + true to support cross-site iframe contexts (Replit preview).
+process.env.NODE_ENV = "test";
 import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import {
@@ -138,7 +142,7 @@ async function run() {
     );
     const opts = res.cookies[0]?.options ?? {};
     assert(opts.httpOnly === true, "login-ok", "cookie should be httpOnly");
-    assert(opts.sameSite === "lax", "login-ok", "cookie should be sameSite=lax");
+    assert(opts.sameSite === "lax", "login-ok", "cookie should be sameSite=lax in NODE_ENV=test (production/dev use 'none' for cross-site iframe support)");
     assert(opts.path === "/", "login-ok", "cookie path should be /");
     assert(sessionCreatedFor === 42, "login-ok", "createSession should run for userId=42");
     assert(lastLoginBumpedFor === 42, "login-ok", "bumpLastLogin should run for userId=42");

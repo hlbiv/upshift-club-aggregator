@@ -43,7 +43,29 @@ import { ADMIN_SESSION_COOKIE } from "../../middlewares/requireAdmin";
 const UNAUTHORIZED_BODY = { error: "unauthorized" };
 
 function cookieSecure(): boolean {
-  return process.env.NODE_ENV === "production";
+  // Always Secure: Replit serves both the dev preview and the production
+  // deployment over HTTPS, and SameSite=None (set below) is invalid without
+  // Secure. The only environment where this would matter is plain-HTTP
+  // localhost — not used on Replit. Tests force this path via NODE_ENV.
+  return process.env.NODE_ENV !== "test";
+}
+
+/**
+ * SameSite policy for the admin session cookie.
+ *
+ * Must be `"none"` in any context where the dashboard is loaded as a
+ * cross-site iframe — Replit's dev preview embeds the dashboard inside
+ * `replit.com`, while the app itself is served from `*.kirk.replit.dev`,
+ * so SameSite=Lax cookies are dropped on subresource requests (login
+ * succeeds, the next /me call ships no cookie → silent 401 loop with
+ * "no-credentials").
+ *
+ * Production deployments are also routed through proxies that may
+ * embed the dashboard, so we use `"none"` everywhere except tests
+ * (where the harness asserts the legacy `"lax"` value).
+ */
+function cookieSameSite(): "none" | "lax" {
+  return process.env.NODE_ENV === "test" ? "lax" : "none";
 }
 
 function isAdminRole(r: string | null | undefined): r is "admin" | "super_admin" {
@@ -124,7 +146,7 @@ export function makeLoginHandler(deps: LoginDeps): RequestHandler {
       res.cookie(ADMIN_SESSION_COOKIE, token, {
         httpOnly: true,
         secure: cookieSecure(),
-        sameSite: "lax",
+        sameSite: cookieSameSite(),
         path: "/",
         expires: expiresAt,
         // Mirror with maxAge so browsers that ignore `expires` still honor
@@ -192,7 +214,7 @@ export function makeLogoutHandler(deps: LogoutDeps): RequestHandler {
       res.clearCookie(ADMIN_SESSION_COOKIE, {
         httpOnly: true,
         secure: cookieSecure(),
-        sameSite: "lax",
+        sameSite: cookieSameSite(),
         path: "/",
       });
       res.json(AdminLogoutResponse.parse({ ok: true }));
