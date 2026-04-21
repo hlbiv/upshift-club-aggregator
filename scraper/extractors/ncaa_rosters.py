@@ -733,6 +733,101 @@ def _fetch_and_parse_with_fallback(
 
 
 # ---------------------------------------------------------------------------
+# Historical-season roster URLs (PR-6)
+#
+# SIDEARM and Nuxt both expose prior-season rosters via the same base URL
+# plus a year segment. Patterns discovered from live probes + dropdown
+# ``<option value>`` attributes:
+#
+#   SIDEARM : /sports/<sport>/roster/<YYYY>          (Georgetown's dropdown)
+#   Nuxt    : /sports/<sport>/roster/season/<YYYY>   (Stanford: roster-season-<YYYY>
+#                                                     class on root confirms)
+#
+# Year is the 4-digit *start year* — "2023-24" season → "2023". Academic-year
+# strings throughout the scraper use the "YYYY-YY" range form; this helper
+# extracts the start year.
+#
+# Neither platform accepts the range form (``/roster/2023-24`` on SIDEARM
+# returned current-season HTML; ``/roster/season/2023-24`` on Nuxt 404'd).
+# Same-shape patterns apply to D2/D3/NAIA/NJCAA — both vendors use
+# consistent URL conventions across divisions.
+# ---------------------------------------------------------------------------
+
+# Ordered templates. First 200-with-players wins. Same "try multiple,
+# first match wins" pattern as the PR-3 multi-path resolver.
+_HISTORICAL_URL_TEMPLATES: tuple = (
+    "{base}/roster/{start_year}",         # SIDEARM
+    "{base}/roster/season/{start_year}",  # Nuxt
+)
+
+
+def _start_year_from_academic_year(academic_year: str) -> str:
+    """Given ``"2023-24"`` return ``"2023"``. Validates format strictly."""
+    if not re.match(r"^\d{4}-\d{2}$", academic_year or ""):
+        raise ValueError(
+            f"academic_year must be 'YYYY-YY' (got {academic_year!r})"
+        )
+    return academic_year.split("-", 1)[0]
+
+
+def compose_historical_roster_urls(
+    current_roster_url: str,
+    academic_year: str,
+) -> List[str]:
+    """Pure: return candidate historical roster URLs for a prior season.
+
+    ``current_roster_url`` is the live /roster page (from
+    ``colleges.soccer_program_url`` after PR-2's resolver ran — typically
+    shaped ``https://host/sports/<sport>/roster``). ``academic_year`` is the
+    "YYYY-YY" season string; the start year is substituted into each
+    template.
+
+    The caller probes the returned URLs in order; first that returns ≥1
+    player wins. Order is SIDEARM-first because SIDEARM is the majority of
+    D1 athletics sites (~130/145 programs with rosters).
+    """
+    if not current_roster_url:
+        raise ValueError("current_roster_url must be non-empty")
+    start_year = _start_year_from_academic_year(academic_year)
+    # Strip trailing /roster or /roster/ so we can re-append the templated
+    # path. Case-insensitive for sites that capitalize 'Roster'.
+    base = re.sub(r"/roster/?$", "", current_roster_url, flags=re.IGNORECASE)
+    return [tmpl.format(base=base, start_year=start_year) for tmpl in _HISTORICAL_URL_TEMPLATES]
+
+
+def _find_historical_roster(
+    session: requests.Session,
+    current_roster_url: str,
+    academic_year: str,
+) -> Tuple[Optional[str], str, List["RosterPlayer"]]:
+    """Probe historical URL candidates; return (url, html, players) on hit.
+
+    Falls back through ``_HISTORICAL_URL_TEMPLATES`` in order; first
+    candidate that returns HTML with ≥1 parseable player wins.
+    HEAD-probing is insufficient here because malformed SIDEARM URLs
+    can return 200 with current-season HTML (observed on
+    ``/roster/2023-24`` — 200 but same content as /roster). A proper
+    decision requires parsing.
+
+    Returns ``(None, "", [])`` if every candidate fails to produce players.
+    The caller treats that as "skip this season for this college".
+    """
+    candidates = compose_historical_roster_urls(current_roster_url, academic_year)
+    for candidate in candidates:
+        html, players = _fetch_and_parse_with_fallback(session, candidate)
+        if html is None:
+            continue
+        if not players:
+            # URL returned HTML but parser couldn't extract anything.
+            # Could be a false 200 serving current-season shell, or a
+            # real historical page with markup we don't handle — either
+            # way, try the next candidate.
+            continue
+        return candidate, html, players
+    return None, "", []
+
+
+# ---------------------------------------------------------------------------
 # Single-school entry point — used by ``run.py --source ncaa-rosters``
 # ---------------------------------------------------------------------------
 
@@ -973,11 +1068,28 @@ def _update_last_scraped(cur, college_id: int) -> None:
 # Main scraper
 # ---------------------------------------------------------------------------
 
+def _prior_academic_years(current: str, n: int) -> List[str]:
+    """Return ``[current, current-1, ..., current-n]`` as 'YYYY-YY' strings.
+
+    Example: ``_prior_academic_years("2025-26", 2)`` →
+    ``["2025-26", "2024-25", "2023-24"]``. Pure; used by backfill loop.
+    """
+    if n < 0:
+        raise ValueError(f"n must be >= 0 (got {n})")
+    start = int(_start_year_from_academic_year(current))
+    seasons: List[str] = []
+    for i in range(n + 1):
+        s = start - i
+        seasons.append(f"{s}-{str(s + 1)[-2:]}")
+    return seasons
+
+
 def scrape_college_rosters(
     division: Optional[str] = None,
     gender: Optional[str] = None,
     limit: Optional[int] = None,
     dry_run: bool = False,
+    backfill_seasons: int = 0,
 ) -> Dict:
     """Scrape NCAA rosters and write to college_roster_history.
 
@@ -987,15 +1099,23 @@ def scrape_college_rosters(
     gender   : 'mens', 'womens', or None (all)
     limit    : max number of colleges to process (for testing)
     dry_run  : if True, parse pages but skip DB writes
+    backfill_seasons : 0 = current season only (default). N > 0 = also
+        pull rosters for each of the prior N seasons via the
+        ``/roster/<YYYY>`` (SIDEARM) or ``/roster/season/<YYYY>`` (Nuxt)
+        URL pattern. Writes land in ``college_roster_history`` keyed on
+        ``(college_id, player_name, academic_year)`` — same natural key
+        as current-season rows, so re-runs are idempotent.
 
     Returns
     -------
     dict with keys: scraped, rows_inserted, rows_updated, errors
     """
-    academic_year = current_academic_year()
+    current_season = current_academic_year()
+    seasons = _prior_academic_years(current_season, backfill_seasons)
     logger.info(
-        "Starting NCAA roster scrape: division=%s gender=%s limit=%s dry_run=%s academic_year=%s",
-        division, gender, limit, dry_run, academic_year,
+        "Starting NCAA roster scrape: division=%s gender=%s limit=%s dry_run=%s "
+        "seasons=%s",
+        division, gender, limit, dry_run, seasons,
     )
 
     conn = _get_connection()
@@ -1037,49 +1157,86 @@ def scrape_college_rosters(
             run_logger.start()
 
         try:
-            roster_url = discover_roster_url(session, college, college_gender)
-            if not roster_url:
+            # Discover the live (current-season) URL once per college. The
+            # historical URL composer derives from this by replacing the
+            # trailing /roster with /roster/<YYYY> (SIDEARM) or
+            # /roster/season/<YYYY> (Nuxt). Doing it once avoids N extra
+            # discover_roster_url calls per college when backfilling.
+            current_roster_url = discover_roster_url(session, college, college_gender)
+            if not current_roster_url:
                 logger.info("  SKIP %s - no roster URL found", tag)
                 total_errors += 1
                 continue
 
-            html, players = _fetch_and_parse_with_fallback(session, roster_url)
-            if html is None:
-                logger.warning("  FAIL %s - fetch failed: %s", tag, roster_url)
-                total_errors += 1
-                continue
-            if not players:
-                logger.info("  SKIP %s - no players parsed from %s", tag, roster_url)
-                total_errors += 1
-                continue
+            for season in seasons:
+                is_current = season == current_season
+                season_tag = tag if is_current else f"{tag} [{season}]"
 
-            total_scraped += 1
-            inserted = 0
-            updated = 0
+                if is_current:
+                    target_url = current_roster_url
+                    html, players = _fetch_and_parse_with_fallback(session, target_url)
+                else:
+                    target_url, html, players = _find_historical_roster(
+                        session, current_roster_url, season
+                    )
 
-            if not dry_run:
-                for p in players:
-                    try:
-                        result = _upsert_roster_row(conn.cursor(), college["id"], p, academic_year)
-                        if result == "inserted":
-                            inserted += 1
-                        else:
-                            updated += 1
-                    except Exception as exc:
-                        logger.warning("  DB error for %s / %s: %s", college["name"], p.player_name, exc)
-                        conn.rollback()
-                        continue
-                conn.commit()
-                _update_last_scraped(conn.cursor(), college["id"])
-                conn.commit()
+                if not target_url or html is None:
+                    logger.info(
+                        "  SKIP %s - no historical URL hit for %s", season_tag, season
+                    )
+                    total_errors += 1
+                    time.sleep(RATE_LIMIT_DELAY)
+                    continue
+                if not players:
+                    logger.info(
+                        "  SKIP %s - no players parsed from %s", season_tag, target_url
+                    )
+                    total_errors += 1
+                    time.sleep(RATE_LIMIT_DELAY)
+                    continue
 
-            total_inserted += inserted
-            total_updated += updated
+                total_scraped += 1
+                inserted = 0
+                updated = 0
 
-            logger.info(
-                "  OK   %s - %d players (%d new, %d updated) from %s",
-                tag, len(players), inserted, updated, roster_url,
-            )
+                if not dry_run:
+                    for p in players:
+                        try:
+                            result = _upsert_roster_row(
+                                conn.cursor(), college["id"], p, season
+                            )
+                            if result == "inserted":
+                                inserted += 1
+                            else:
+                                updated += 1
+                        except Exception as exc:
+                            logger.warning(
+                                "  DB error for %s / %s (%s): %s",
+                                college["name"], p.player_name, season, exc,
+                            )
+                            conn.rollback()
+                            continue
+                    conn.commit()
+                    # Only bump last_scraped_at on the current-season pass —
+                    # historical pulls shouldn't make an 8-year-old roster
+                    # look like it was just refreshed.
+                    if is_current:
+                        _update_last_scraped(conn.cursor(), college["id"])
+                        conn.commit()
+
+                total_inserted += inserted
+                total_updated += updated
+
+                logger.info(
+                    "  OK   %s - %d players (%d new, %d updated) from %s",
+                    season_tag, len(players), inserted, updated, target_url,
+                )
+
+                # Rate-limit between seasons for the same host. Same 1.5s
+                # cadence as between colleges — politer to spread the
+                # historical backfill load across time rather than burst 5
+                # requests back-to-back at one athletics site.
+                time.sleep(RATE_LIMIT_DELAY)
 
         except Exception as exc:
             logger.error("  ERROR %s - %s", tag, exc)
@@ -1096,9 +1253,6 @@ def scrape_college_rosters(
                     conn.rollback()
                 except Exception:
                     pass
-
-        # Rate limiting
-        time.sleep(RATE_LIMIT_DELAY)
 
     # Finish run loggers
     for div in divisions_seen:

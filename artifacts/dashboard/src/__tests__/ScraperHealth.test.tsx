@@ -1,13 +1,38 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ScraperHealthPage from "../pages/ScraperHealth";
 
+/**
+ * This page migrated from `adminFetch()` to the Orval-generated
+ * `useListScrapeRuns` / `useListScrapeHealth` hooks (Workstream A POC).
+ *
+ * The hooks route through the shared `customFetch` mutator, which ultimately
+ * calls `globalThis.fetch` — so stubbing `fetch` per-test still works. We
+ * just need a QueryClientProvider wrapper around the render.
+ *
+ * Per-test QueryClient (retries disabled) keeps error tests from hanging
+ * on React Query's default 3x retry behavior.
+ */
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 },
+    },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 describe("ScraperHealthPage", () => {
@@ -88,11 +113,7 @@ describe("ScraperHealthPage", () => {
       },
     );
 
-    render(
-      <MemoryRouter>
-        <ScraperHealthPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<ScraperHealthPage />);
 
     await waitFor(() => {
       expect(screen.getByText("club")).toBeInTheDocument();
@@ -130,14 +151,35 @@ describe("ScraperHealthPage", () => {
       },
     );
 
-    render(
-      <MemoryRouter>
-        <ScraperHealthPage />
-      </MemoryRouter>,
-    );
+    renderWithProviders(<ScraperHealthPage />);
 
     await waitFor(() => {
       expect(screen.getByText(/failed to load: http 500/i)).toBeInTheDocument();
     });
+  });
+
+  it("sends same-origin admin fetches with credentials via the custom-fetch mutator", async () => {
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({ rows: [], total: 0, runs: [], page: 1, pageSize: 50 }),
+      ),
+    );
+
+    renderWithProviders(<ScraperHealthPage />);
+
+    await waitFor(() => {
+      // Both hooks should have issued at least one fetch by now.
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    // Every call to a relative `/api/...` path must carry credentials:
+    // 'include' so the admin session cookie travels cross-origin in dev.
+    for (const call of fetchMock.mock.calls) {
+      const [input, init] = call as [RequestInfo | URL, RequestInit | undefined];
+      const url = typeof input === "string" ? input : input.toString();
+      if (!url.startsWith("/api/")) continue;
+      expect(init?.credentials).toBe("include");
+    }
   });
 });

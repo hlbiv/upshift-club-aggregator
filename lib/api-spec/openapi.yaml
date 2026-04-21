@@ -20,6 +20,13 @@ tags:
     description: Fuzzy search operations
   - name: analytics
     description: Duplicate detection, coverage gaps, and league overlap analytics
+  - name: admin
+    description: >
+      Human-admin surface mounted at `/v1/admin/*` (full path
+      `/api/v1/admin/*`). Accepts either a human session cookie
+      (`sessionAuth`, set by POST /v1/admin/auth/login) or an M2M API key
+      (`apiKey`). Every admin path advertises both schemes so the dashboard
+      and service callers share one contract.
 paths:
   /healthz:
     get:
@@ -535,6 +542,650 @@ paths:
               schema:
                 $ref: "#/components/schemas/OverlapResponse"
 
+  # ===========================================================================
+  # Admin surface — `/v1/admin/*`.
+  #
+  # Every admin path accepts either the human session cookie (`sessionAuth`)
+  # or an M2M API key (`apiKey`). OpenAPI treats a `security` array as OR
+  # across entries, so listing both means "either suffices".
+  #
+  # `/v1/admin/auth/login` is the ONE exception — it IS the auth entry point
+  # and declares `security: []` (no auth). Rate-limited server-side.
+  # ===========================================================================
+
+  /v1/admin/auth/login:
+    post:
+      operationId: adminLogin
+      tags: [admin]
+      summary: Admin login (session cookie)
+      description: >
+        Authenticate an admin user by email + password. On success, sets the
+        `upshift_admin_sid` cookie (httpOnly, sameSite=lax) and returns the
+        admin identity. The session cookie is the only way to call the rest
+        of the admin surface without an API key.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLoginRequest"
+      responses:
+        "200":
+          description: Authenticated; session cookie set in response headers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLoginResponse"
+        "401":
+          description: Invalid credentials (generic body — no enumeration oracle)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/auth/logout:
+    post:
+      operationId: adminLogout
+      tags: [admin]
+      summary: Admin logout (clears session cookie)
+      description: >
+        Delete the server-side session row for the caller's cookie and clear
+        the `upshift_admin_sid` cookie. Idempotent — calling with an already
+        expired / unknown cookie still returns `{ok: true}`.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      responses:
+        "200":
+          description: Session destroyed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLogoutResponse"
+
+  /v1/admin/me:
+    get:
+      operationId: adminMe
+      tags: [admin]
+      summary: Current admin identity
+      description: >
+        Echo the caller's identity (id, email, role). For session callers the
+        fields come straight from `admin_users`; for API-key callers the
+        server synthesizes a service-account identity (`apikey+<name>@…`).
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      responses:
+        "200":
+          description: Current admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMeResponse"
+
+  /v1/admin/scrape-runs:
+    get:
+      operationId: listScrapeRuns
+      tags: [admin]
+      summary: List scrape-run log entries
+      description: >
+        Read-only view onto `scrape_run_logs`, newest first. `status` accepts
+        the DB enum (`running | ok | partial | failed`) plus legacy aliases
+        (`success` → `ok|partial`, `failure` → `failed`).
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: ISO-8601 lower bound on `started_at`
+        - name: source
+          in: query
+          schema:
+            type: string
+          description: Exact match on `scraper_key`
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: One of `running|ok|partial|failed|success|failure`
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: limit
+          in: query
+          schema:
+            type: integer
+          description: Alias for page_size
+      responses:
+        "200":
+          description: Paginated ScrapeRunLog rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeRunLogList"
+
+  /v1/admin/scrape-runs/{id}:
+    get:
+      operationId: getScrapeRun
+      tags: [admin]
+      summary: Get a single scrape-run row
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: One ScrapeRunLog row
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeRunLog"
+        "400":
+          description: Invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/scrape-health:
+    get:
+      operationId: listScrapeHealth
+      tags: [admin]
+      summary: Rolling scrape-health rollup per entity
+      description: >
+        Read-only view onto `scrape_health`. The response envelope is
+        `{rows, total}` — pagination is server-side only via `page` /
+        `page_size`; the contract itself doesn't echo page numbers.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Scrape-health rollup rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeHealthList"
+
+  /v1/admin/scrape-health/{entity_type}/{entity_id}:
+    get:
+      operationId: getScrapeHealth
+      tags: [admin]
+      summary: Get one scrape-health row by (entity_type, entity_id)
+      description: >
+        `scrape_health` is keyed by `(entity_type, entity_id)` — not a
+        surrogate id — so the detail route is 2-segment.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: entity_type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [club, event, league, college, coach]
+        - name: entity_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: One ScrapeHealth row
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeHealthRow"
+        "400":
+          description: Invalid entity_type or entity_id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/dedup/clubs:
+    get:
+      operationId: listClubDuplicates
+      tags: [admin]
+      summary: List club-duplicate pairs in the review queue
+      description: >
+        Populated by `scraper/dedup/club_dedup.py --persist`. Default status
+        is `pending`; pass `status=merged|rejected|all` to widen. Rows are
+        sorted by score DESC so the strongest candidates surface first.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, merged, rejected, all]
+            default: pending
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: limit
+          in: query
+          schema:
+            type: integer
+          description: Alias for page_size
+      responses:
+        "200":
+          description: Paginated ClubDuplicate rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubDuplicateList"
+
+  /v1/admin/dedup/clubs/{id}:
+    get:
+      operationId: getClubDuplicate
+      tags: [admin]
+      summary: Club-duplicate detail with live side-by-side context
+      description: >
+        Extends the queue row with the live `canonical_clubs` rows on both
+        sides plus affiliation and roster-snapshot counts — everything a
+        reviewer needs on one screen.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ClubDuplicateDetail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubDuplicateDetail"
+        "400":
+          description: Invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/dedup/clubs/{id}/merge:
+    post:
+      operationId: mergeClubDuplicate
+      tags: [admin]
+      summary: Merge a duplicate-club pair (transactional reparent + alias)
+      description: >
+        Invokes the transactional `mergeClubs` helper. The 18-field helper
+        result is logged server-side; only the 5-field contract projection
+        (`ok`, `winnerId`, `loserAliasesCreated`, `affiliationsReparented`,
+        `rosterSnapshotsReparented`) returns to the caller.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClubDuplicateMergeRequest"
+      responses:
+        "200":
+          description: Merge succeeded; queue row flipped to `status=merged`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubDuplicateMergeResponse"
+        "400":
+          description: Invalid id, body, or (winner, loser) mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Pair not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Pair already reviewed (status != pending)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/dedup/clubs/{id}/reject:
+    post:
+      operationId: rejectClubDuplicate
+      tags: [admin]
+      summary: Reject a duplicate-club pair (no merge performed)
+      description: >
+        Flips the queue row to `status=rejected` with optional `notes`. No
+        data reparenting; the two clubs remain separate canonical rows.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClubDuplicateRejectRequest"
+      responses:
+        "200":
+          description: Pair marked rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubDuplicateRejectResponse"
+        "400":
+          description: Invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Pair not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Pair already reviewed (status != pending)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/data-quality/ga-premier-orphans:
+    post:
+      operationId: gaPremierOrphanCleanup
+      tags: [admin]
+      summary: Scan or delete GA Premier nav-token orphans in club_roster_snapshots
+      description: >
+        Identifies `club_roster_snapshots` rows whose `club_name_raw` is a
+        nav-menu token (FACILITIES, STAFF, NEWS, …) rather than a real club
+        name. Default `dryRun=true` returns counts + sample names; pass
+        `dryRun=false` to DELETE up to `limit` matching rows in a transaction.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GaPremierOrphanCleanupRequest"
+      responses:
+        "200":
+          description: Scan or delete result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GaPremierOrphanCleanupResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/growth/scraped-counts:
+    get:
+      operationId: getGrowthScrapedCounts
+      tags: [admin]
+      summary: Records-added-since-X delta across five headline ingest tables
+      description: >
+        Per-table `count(*) WHERE <timestamp_col> > since`. Timestamp column
+        differs per table — `canonical_clubs.last_scraped_at`,
+        `coaches.first_seen_at`, `events.last_scraped_at`,
+        `club_roster_snapshots.snapshot_date`, `matches.scraped_at`.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: since
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: ISO-8601 lower bound
+      responses:
+        "200":
+          description: Per-table deltas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapedCountsDelta"
+        "400":
+          description: Missing or invalid `since`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/growth/coverage-trend:
+    get:
+      operationId: getGrowthCoverageTrend
+      tags: [admin]
+      summary: Daily scrape-run telemetry points over a rolling window
+      description: >
+        Aggregates `scrape_run_logs` by day for the last `days` days.
+        `successes` counts `status='ok'`; `failures` counts
+        `status IN ('partial','failed')`. `running` rows contribute to `runs`
+        but not to successes/failures.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+          description: Size of the rolling window in days
+      responses:
+        "200":
+          description: Daily trend points
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverageTrendResponse"
+        "400":
+          description: Invalid `days`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/scraper-schedules/{jobKey}/runs:
+    get:
+      operationId: listScraperScheduleRuns
+      tags: [admin]
+      summary: List recent scheduler-job rows for a given jobKey
+      description: >
+        Newest-first by `requested_at`. Default `limit` 20, max 100.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: jobKey
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [nightly_tier1, weekly_state, hourly_linker]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Job rows for this jobKey
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchedulerJobList"
+        "400":
+          description: Unknown jobKey or invalid limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/scraper-schedules/{jobKey}/run:
+    post:
+      operationId: runScraperScheduleNow
+      tags: [admin]
+      summary: Enqueue a one-off run of an allow-listed scheduler jobKey
+      description: >
+        Inserts a `scheduler_jobs` row at `status=pending`; the in-process
+        worker picks it up on its next tick. Guarded by `requireSuperAdmin`
+        (session-only) plus the 30/min mutation rate limiter. Body `args`
+        are forwarded as CLI flags by the worker.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: jobKey
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [nightly_tier1, weekly_state, hourly_linker]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunNowRequest"
+      responses:
+        "201":
+          description: Enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunNowResponse"
+        "400":
+          description: Unknown jobKey or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not a super_admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/scheduler-jobs/{id}:
+    get:
+      operationId: getSchedulerJob
+      tags: [admin]
+      summary: Get a single scheduler_jobs row by id
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: One SchedulerJob row
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchedulerJob"
+        "400":
+          description: Invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   securitySchemes:
     apiKey:
@@ -548,6 +1199,16 @@ components:
         `Authorization: Bearer <key>` as an alternative. Gated by the
         `API_KEY_AUTH_ENABLED` env var; when unset, auth is skipped
         entirely (bootstrap mode). `/healthz` is exempt.
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: upshift_admin_sid
+      description: >
+        Human admin session cookie (httpOnly, sameSite=lax), set by
+        `POST /v1/admin/auth/login`. TTL is enforced server-side via
+        `admin_sessions.expires_at`. Logout (`POST /v1/admin/auth/logout`)
+        clears the cookie. The same routes that accept `sessionAuth` also
+        accept an M2M `apiKey` header — either is sufficient.
   schemas:
     HealthStatus:
       type: object
@@ -1207,3 +1868,513 @@ components:
         - total
         - page
         - page_size
+
+    # =======================================================================
+    # Admin-surface schemas.
+    #
+    # Mirrored from the hand-written source of truth at
+    # `lib/api-zod/src/admin/schemas.ts`. Field names are camelCase because
+    # that's what the admin routes return today; the public-API schemas
+    # above are snake_case for historical reasons. Do not try to normalize
+    # the two — they're independently consumed.
+    # =======================================================================
+
+    AdminLoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+      required:
+        - email
+        - password
+
+    AdminLoginResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, super_admin]
+      required:
+        - id
+        - email
+        - role
+
+    AdminMeResponse:
+      $ref: "#/components/schemas/AdminLoginResponse"
+
+    AdminLogoutResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+      required:
+        - ok
+
+    ScrapeRunLog:
+      type: object
+      description: One row of `scrape_run_logs` — a single scraper invocation.
+      properties:
+        id:
+          type: integer
+        scraperKey:
+          type: string
+        jobKey:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [running, ok, partial, failed]
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        recordsTouched:
+          type: integer
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+      required:
+        - id
+        - scraperKey
+        - jobKey
+        - status
+        - startedAt
+        - completedAt
+        - recordsTouched
+        - errorMessage
+        - metadata
+
+    ScrapeRunLogList:
+      type: object
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScrapeRunLog"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - runs
+        - total
+        - page
+        - pageSize
+
+    ScrapeHealthRow:
+      type: object
+      description: One row of `scrape_health` — rolling status per entity.
+      properties:
+        entityType:
+          type: string
+          enum: [club, event, league, college, coach]
+        entityId:
+          type: integer
+        lastScrapedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastStatus:
+          type: string
+          enum: [running, ok, partial, failed]
+          nullable: true
+        consecutiveFailures:
+          type: integer
+        nextScheduledAt:
+          type: string
+          format: date-time
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+      required:
+        - entityType
+        - entityId
+        - lastScrapedAt
+        - lastStatus
+        - consecutiveFailures
+        - nextScheduledAt
+        - metadata
+
+    ScrapeHealthList:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScrapeHealthRow"
+        total:
+          type: integer
+      required:
+        - rows
+        - total
+
+    ClubDuplicate:
+      type: object
+      description: One club-duplicate pair record surfaced in the dedup review queue.
+      properties:
+        id:
+          type: integer
+        leftClubId:
+          type: integer
+        rightClubId:
+          type: integer
+        score:
+          type: number
+        method:
+          type: string
+        status:
+          type: string
+          enum: [pending, merged, rejected]
+        createdAt:
+          type: string
+          format: date-time
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        reviewedBy:
+          type: integer
+          nullable: true
+        leftSnapshot:
+          type: object
+          additionalProperties: true
+        rightSnapshot:
+          type: object
+          additionalProperties: true
+      required:
+        - id
+        - leftClubId
+        - rightClubId
+        - score
+        - method
+        - status
+        - createdAt
+        - reviewedAt
+        - reviewedBy
+        - leftSnapshot
+        - rightSnapshot
+
+    ClubDuplicateList:
+      type: object
+      properties:
+        pairs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClubDuplicate"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - pairs
+        - total
+        - page
+        - pageSize
+
+    ClubDuplicateDetail:
+      allOf:
+        - $ref: "#/components/schemas/ClubDuplicate"
+        - type: object
+          properties:
+            leftCurrent:
+              type: object
+              additionalProperties: true
+            rightCurrent:
+              type: object
+              additionalProperties: true
+            affiliations:
+              type: object
+              properties:
+                leftAffiliationCount:
+                  type: integer
+                rightAffiliationCount:
+                  type: integer
+              required:
+                - leftAffiliationCount
+                - rightAffiliationCount
+            rosters:
+              type: object
+              properties:
+                leftRosterSnapshotCount:
+                  type: integer
+                rightRosterSnapshotCount:
+                  type: integer
+              required:
+                - leftRosterSnapshotCount
+                - rightRosterSnapshotCount
+          required:
+            - leftCurrent
+            - rightCurrent
+            - affiliations
+            - rosters
+
+    ClubDuplicateMergeRequest:
+      type: object
+      properties:
+        winnerId:
+          type: integer
+        loserId:
+          type: integer
+        notes:
+          type: string
+      required:
+        - winnerId
+        - loserId
+
+    ClubDuplicateMergeResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        winnerId:
+          type: integer
+        loserAliasesCreated:
+          type: integer
+        affiliationsReparented:
+          type: integer
+        rosterSnapshotsReparented:
+          type: integer
+      required:
+        - ok
+        - winnerId
+        - loserAliasesCreated
+        - affiliationsReparented
+        - rosterSnapshotsReparented
+
+    ClubDuplicateRejectRequest:
+      type: object
+      description: Optional notes attached to the rejection.
+      properties:
+        notes:
+          type: string
+
+    ClubDuplicateRejectResponse:
+      type: object
+      description: >
+        `reject` returns a minimal acknowledgement. Inspect `/dedup/clubs/{id}`
+        to read the flipped `status` + `reviewedAt`/`reviewedBy`.
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        id:
+          type: integer
+      required:
+        - ok
+        - id
+
+    GaPremierOrphanCleanupRequest:
+      type: object
+      description: >
+        `dryRun` defaults to true — callers must explicitly opt in to
+        destructive DELETEs. `limit` caps scan/delete size (max 10,000).
+      properties:
+        dryRun:
+          type: boolean
+          default: true
+        limit:
+          type: integer
+          default: 500
+          minimum: 1
+          maximum: 10000
+
+    GaPremierOrphanCleanupResponse:
+      type: object
+      properties:
+        scanned:
+          type: integer
+        flagged:
+          type: integer
+        deleted:
+          type: integer
+        sampleNames:
+          type: array
+          items:
+            type: string
+          maxItems: 20
+      required:
+        - scanned
+        - flagged
+        - deleted
+        - sampleNames
+
+    ScrapedCountsDelta:
+      type: object
+      description: Records added across the five headline ingest tables since a point in time.
+      properties:
+        since:
+          type: string
+          format: date-time
+        clubsAdded:
+          type: integer
+        coachesAdded:
+          type: integer
+        eventsAdded:
+          type: integer
+        rosterSnapshotsAdded:
+          type: integer
+        matchesAdded:
+          type: integer
+      required:
+        - since
+        - clubsAdded
+        - coachesAdded
+        - eventsAdded
+        - rosterSnapshotsAdded
+        - matchesAdded
+
+    CoverageTrendPoint:
+      type: object
+      description: One day of scrape-run telemetry aggregated from scrape_run_logs.
+      properties:
+        date:
+          type: string
+        runs:
+          type: integer
+        successes:
+          type: integer
+        failures:
+          type: integer
+        rowsTouched:
+          type: integer
+      required:
+        - date
+        - runs
+        - successes
+        - failures
+        - rowsTouched
+
+    CoverageTrendResponse:
+      type: object
+      properties:
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverageTrendPoint"
+        windowDays:
+          type: integer
+      required:
+        - points
+        - windowDays
+
+    SchedulerJob:
+      type: object
+      description: One row of `scheduler_jobs` — an admin-triggered scraper invocation.
+      properties:
+        id:
+          type: integer
+        jobKey:
+          type: string
+        args:
+          type: object
+          additionalProperties: true
+          nullable: true
+        status:
+          type: string
+          enum: [pending, running, success, failed, canceled]
+        requestedBy:
+          type: integer
+          nullable: true
+        requestedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        exitCode:
+          type: integer
+          nullable: true
+        stdoutTail:
+          type: string
+          nullable: true
+        stderrTail:
+          type: string
+          nullable: true
+      required:
+        - id
+        - jobKey
+        - args
+        - status
+        - requestedBy
+        - requestedAt
+        - startedAt
+        - completedAt
+        - exitCode
+        - stdoutTail
+        - stderrTail
+
+    SchedulerJobList:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/SchedulerJob"
+        total:
+          type: integer
+      required:
+        - jobs
+        - total
+
+    RunNowRequest:
+      type: object
+      description: >
+        Enqueue a one-off run. `jobKey` is taken from the URL path — when
+        present in the body it must match. `args` are forwarded as CLI flags
+        by the worker (`{"event-id": 123}` → `["--event-id", "123"]`).
+      properties:
+        jobKey:
+          type: string
+          minLength: 1
+        args:
+          type: object
+          additionalProperties: true
+
+    RunNowResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        jobKey:
+          type: string
+        status:
+          type: string
+          enum: [pending]
+        requestedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - jobKey
+        - status
+        - requestedAt

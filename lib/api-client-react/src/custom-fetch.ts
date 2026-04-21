@@ -78,6 +78,35 @@ function resolveUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
+// A request is "relative" when its path — ignoring any scheme/host — starts
+// with `/`.  Relative requests in a browser context are routed to the same
+// origin as the page (in production) or the Vite dev server (in development),
+// and the admin session cookie `upshift_admin_sid` MUST be sent with them.
+//
+// Browsers default cross-origin `fetch()` calls to `credentials: 'same-origin'`,
+// which silently drops cookies when the dashboard (Vite, :5173) calls the
+// API server (:8080).  Default to `'include'` for relative paths so dev
+// works the same as prod.  React Native consumers using `setAuthTokenGetter`
+// can override by passing `credentials: 'omit'` or `'same-origin'` explicitly.
+function isRelativeInput(input: RequestInfo | URL): boolean {
+  if (typeof input === "string") {
+    if (input.startsWith("/")) return true;
+    try {
+      return new URL(input, "http://x").pathname.startsWith("/") &&
+        !/^[a-z][a-z0-9+.-]*:/i.test(input);
+    } catch {
+      return false;
+    }
+  }
+  if (isUrl(input)) {
+    // A URL object is always absolute — treat as non-relative.
+    return false;
+  }
+  const url = input.url;
+  if (url.startsWith("/")) return true;
+  return !/^[a-z][a-z0-9+.-]*:/i.test(url);
+}
+
 function mergeHeaders(...sources: Array<HeadersInit | undefined>): Headers {
   const headers = new Headers();
 
@@ -360,7 +389,14 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  // Default to `credentials: 'include'` for relative-path (same-logical-app)
+  // requests so admin session cookies work in dev when the dashboard and
+  // api-server run on different ports.  Callers (e.g. React Native) can
+  // override by passing `credentials` explicitly in `init`.
+  const credentials: RequestCredentials =
+    init.credentials ?? (isRelativeInput(input) ? "include" : "same-origin");
+
+  const response = await fetch(input, { ...init, method, headers, credentials });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
