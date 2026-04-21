@@ -264,6 +264,19 @@ Idempotent — only touches rows where the FK is currently NULL. Fuzzy hits writ
 
 See `docs/path-a-data-model.md` for the full spec + changelog; `CLAUDE.md` for session context.
 
+### Database backup coverage
+
+Recorded decision (2026-04-21): backups are **delegated to Replit's managed Postgres tier**. We do not run a custom `pg_dump` → object-storage pipeline. What Replit provides depends on which DB tier this repo runs on — check once and re-check if the tier ever changes:
+
+```bash
+echo "$DATABASE_URL" | grep -oE 'helium|neon'
+```
+
+- **`helium`** (current default for DBs created on/after 2025-12-04): **checkpoint-based rollback via the Agent UI**, not continuous point-in-time recovery. Restore granularity is "whatever checkpoints Agent created," not "any second in the last N days." Retention window is not documented in Replit's public docs — ask Replit support if you need a number. Good enough for casual rollback of dev-time accidents; **not a DR-grade backup** against scraper bugs or bad migrations.
+- **`neon`** (legacy): Neon provides continuous PITR within its backup retention. Covers DR-grade recovery.
+
+**Revisit trigger.** If the team ever adopts a named RPO target tighter than 24h, or wants to survive a scraper bug that silently corrupts rows without an Agent checkpoint in the right place, re-file the nightly-backup task (was #45 in the April 2026 infrastructure review — cancelled in favor of this note). At that point: use Replit object storage, `pg_dump -Fc | gzip | put`, prune per a documented retention policy, log into `scrape_run_logs`, alert on failure.
+
 ---
 
 ## REST API — Express on Port 8080
