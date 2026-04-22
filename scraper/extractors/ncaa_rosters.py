@@ -2366,8 +2366,10 @@ def scrape_college_rosters(
                                         (scrape_run_log_id, college_id, division,
                                          gender_program, roster_url, probed_urls)
                                     VALUES (%s, %s, %s, %s, %s, %s)
-                                    ON CONFLICT (scrape_run_log_id, college_id, gender_program)
+                                    ON CONFLICT (college_id, gender_program)
                                     DO UPDATE SET
+                                        scrape_run_log_id = EXCLUDED.scrape_run_log_id,
+                                        division = EXCLUDED.division,
                                         roster_url = EXCLUDED.roster_url,
                                         probed_urls = EXCLUDED.probed_urls,
                                         recorded_at = now()
