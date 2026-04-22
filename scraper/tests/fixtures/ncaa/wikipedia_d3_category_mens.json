@@ -1,0 +1,13 @@
+{
+  "batchcomplete": "",
+  "continue": {"cmcontinue": "page|messiah-falcons|200", "continue": "-||"},
+  "query": {
+    "categorymembers": [
+      {"pageid": 1001, "ns": 0, "title": "Amherst Mammoths men's soccer"},
+      {"pageid": 1002, "ns": 0, "title": "Messiah Falcons men's soccer"},
+      {"pageid": 1003, "ns": 0, "title": "Kenyon Lords men’s soccer"},
+      {"pageid": 1004, "ns": 0, "title": "Tufts Jumbos men's soccer"},
+      {"pageid": 1005, "ns": 0, "title": "Williams Ephs men's soccer"}
+    ]
+  }
+}
