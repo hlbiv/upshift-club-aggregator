@@ -1812,8 +1812,10 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
 
     logger.info(
         "[naia-resolve-urls] done: resolved=%d websites_only=%d "
-        "missed_slug=%d missed_website=%d errors=%d%s",
+        "missed_slug=%d missed_website=%d errors=%d "
+        "fuzzy_matched=%d%s",
         resolved, websites_only, missed_slug, missed_website, errors,
+        fuzzy_matched,
         " (dry-run)" if dry_run else "",
     )
     if unresolved_names:
