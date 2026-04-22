@@ -38,6 +38,11 @@
  *     leaked_strings:  string[], // nav-menu tokens found in the name/email
  *     raw_name:        string
  *   }
+ *   ui_fragment_as_name: {
+ *     matched_raw:      string,  // the display_name that matched the gazetteer
+ *     matched_category: string,  // nav_label | marketing_tile | pricing_or_date | section_heading
+ *     raw_email:        string|null
+ *   }
  *
  * Per-(discovery_id, flag_type) uniqueness prevents the shared guard (or
  * repeated detector runs) from inserting duplicates — the flag is idempotent
@@ -93,7 +98,7 @@ export const coachQualityFlags = pgTable(
   (t) => [
     check(
       "coach_quality_flags_flag_type_enum",
-      sql`${t.flagType} IN ('looks_like_name_reject','role_label_as_name','corrupt_email','nav_leaked')`,
+      sql`${t.flagType} IN ('looks_like_name_reject','role_label_as_name','corrupt_email','nav_leaked','ui_fragment_as_name')`,
     ),
     unique("coach_quality_flags_discovery_type_uq").on(
       t.discoveryId,
