@@ -209,6 +209,11 @@ export const coachMisses = pgTable(
  * latest values rather than re-aggregating into a separate timeseries
  * pipeline. Reads (the trend endpoint) just `SELECT ... ORDER BY
  * snapshot_date DESC LIMIT N` — index-only by the unique key.
+ *
+ * Retention: snapshots older than 365 days are pruned by the same
+ * upsert call path in `artifacts/api-server/src/routes/admin/coverage.ts`
+ * (see the prune block alongside the upsert). The dashboard only ever
+ * asks for the last 30 days, so a year of history is plenty.
  */
 export const coverageHistory = pgTable(
   "coverage_history",
@@ -242,6 +247,10 @@ export const coverageHistory = pgTable(
  * (`ON CONFLICT (snapshot_date, league_id) DO UPDATE`). Reads (the
  * per-league trend endpoint) just `SELECT ... WHERE league_id = $1 ORDER
  * BY snapshot_date DESC LIMIT N` — index-only by the composite unique key.
+ *
+ * Retention: snapshots older than 365 days are pruned alongside the
+ * global `coverage_history` prune in
+ * `artifacts/api-server/src/routes/admin/coverage.ts`.
  *
  * `league_id` is intentionally NOT a foreign key to `leagues_master` —
  * matches the storage pattern of `coverage_history` (no FKs out of

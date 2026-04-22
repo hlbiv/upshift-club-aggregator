@@ -667,6 +667,34 @@ export const prodCoverageDeps: CoverageDeps = {
       );
     }
 
+    // Retention sweep — keep ~1 year of daily snapshots. The dashboard
+    // only ever asks for the last 30 days, and there's no product
+    // reason to hold multi-year history. Piggy-backed on the same
+    // call path that writes today's row so we don't need a separate
+    // scheduler entry; the DELETE is an indexed range scan over
+    // `snapshot_date` and a no-op on every call after the first one
+    // each day. Best-effort: a missing table on a fresh deploy must
+    // not break the read.
+    try {
+      await defaultDb.execute(sql`
+        DELETE FROM coverage_history
+        WHERE snapshot_date < (now() AT TIME ZONE 'UTC')::date - INTERVAL '365 days'
+      `);
+    } catch (err) {
+      console.error("[coverage] failed to prune coverage_history", err);
+    }
+    try {
+      await defaultDb.execute(sql`
+        DELETE FROM coverage_history_per_league
+        WHERE snapshot_date < (now() AT TIME ZONE 'UTC')::date - INTERVAL '365 days'
+      `);
+    } catch (err) {
+      console.error(
+        "[coverage] failed to prune coverage_history_per_league",
+        err,
+      );
+    }
+
     return summary;
   },
 
