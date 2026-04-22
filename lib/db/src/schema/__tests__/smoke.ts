@@ -793,47 +793,44 @@ assertTable(schema.videoSources, "video_sources", {
 //   rejects writes against the wrong label.
 // ---------------------------------------------------------------------------
 
-{
-  const expectedEvents = [
-    "gotsport",
-    "sincsports",
-    "manual",
-    "other",
-    "totalglobalsports",
-    "usclub_sanctioned",
-  ];
-  const actualEvents = (schema.eventsSourceEnum as any).enumValues as string[];
+function assertEnumValues(
+  enumDef: { enumName: string; enumValues: readonly string[] },
+  expected: readonly string[],
+): void {
+  const actual = enumDef.enumValues;
+  const ok =
+    actual.length === expected.length
+    && expected.every((v, i) => actual[i] === v);
   assert(
-    Array.isArray(actualEvents)
-      && actualEvents.length === expectedEvents.length
-      && expectedEvents.every((v, i) => actualEvents[i] === v),
-    "events_source_enum",
-    `value list drift — expected ${JSON.stringify(expectedEvents)}, got ${JSON.stringify(actualEvents)}`,
-  );
-
-  const expectedRoster = [
-    "gotsport",
-    "sincsports",
-    "maxpreps",
-    "ncaa",
-    "naia",
-    "njcaa",
-    "odp",
-    "soccerwire",
-    "club_website",
-    "duda_360player",
-    "manual",
-    "other",
-  ];
-  const actualRoster = (schema.rosterSourceEnum as any).enumValues as string[];
-  assert(
-    Array.isArray(actualRoster)
-      && actualRoster.length === expectedRoster.length
-      && expectedRoster.every((v, i) => actualRoster[i] === v),
-    "roster_source_enum",
-    `value list drift — expected ${JSON.stringify(expectedRoster)}, got ${JSON.stringify(actualRoster)}`,
+    ok,
+    enumDef.enumName,
+    `value list drift — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
   );
 }
+
+assertEnumValues(schema.eventsSourceEnum, [
+  "gotsport",
+  "sincsports",
+  "manual",
+  "other",
+  "totalglobalsports",
+  "usclub_sanctioned",
+]);
+
+assertEnumValues(schema.rosterSourceEnum, [
+  "gotsport",
+  "sincsports",
+  "maxpreps",
+  "ncaa",
+  "naia",
+  "njcaa",
+  "odp",
+  "soccerwire",
+  "club_website",
+  "duda_360player",
+  "manual",
+  "other",
+]);
 
 // ---------------------------------------------------------------------------
 // Report

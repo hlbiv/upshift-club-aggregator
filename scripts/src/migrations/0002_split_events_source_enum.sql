@@ -113,14 +113,21 @@ BEGIN
           AND  column_name = 'source'
           AND  udt_name    = 'events_source_enum'
     ) THEN
-        ALTER TABLE club_roster_snapshots
-            ALTER COLUMN source DROP DEFAULT;
+        -- The original column has no DEFAULT (drizzle schema declares
+        -- `source: rosterSourceEnum("source")` with no `.default(...)`).
+        -- Preserve that — scrapers writing rosters always set `source`
+        -- explicitly, and the runbook §9 follow-ups explicitly track
+        -- the three runners that currently leave it NULL. Adding a
+        -- DEFAULT here would silently mask those NULLs as `'other'`.
         ALTER TABLE club_roster_snapshots
             ALTER COLUMN source TYPE roster_source_enum
             USING source::text::roster_source_enum;
-        ALTER TABLE club_roster_snapshots
-            ALTER COLUMN source SET DEFAULT 'other'::roster_source_enum;
     END IF;
+    -- Belt-and-suspenders: an earlier draft of this migration briefly
+    -- set DEFAULT 'other'. Drop it on re-apply so reruns converge to
+    -- the no-default state regardless of what state the DB started in.
+    ALTER TABLE club_roster_snapshots
+        ALTER COLUMN source DROP DEFAULT;
 END $$;
 
 -- 2c. Backfill events.source = 'other' rows by host pattern.
