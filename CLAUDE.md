@@ -384,7 +384,41 @@ psql "$DATABASE_URL" -c "
 "
 ```
 
-Flags an operator has already marked `resolved_at IS NOT NULL` (via the admin canary UI) are skipped — operator triage wins over bulk purge. To purge a different flag type later, pass `--flag-type <name>` (the CHECK constraint on `coach_quality_flags.flag_type` enumerates the valid values: `looks_like_name_reject`, `role_label_as_name`, `corrupt_email`, `nav_leaked`). Override the audit dir with `--audit-dir /path/to/dir` (default `/tmp`). The JSONL artifact is the source of truth for reconstruction — keep it even after a successful purge.
+Flags an operator has already marked `resolved_at IS NOT NULL` (via the admin canary UI) are skipped — operator triage wins over bulk purge. To purge a different flag type later, pass `--flag-type <name>` (the CHECK constraint on `coach_quality_flags.flag_type` enumerates the valid values: `looks_like_name_reject`, `role_label_as_name`, `corrupt_email`, `nav_leaked`, `ui_fragment_as_name`). Override the audit dir with `--audit-dir /path/to/dir` (default `/tmp`). The JSONL artifact is the source of truth for reconstruction — keep it even after a successful purge.
+
+### Sweep orphan `coaches` master rows (on Replit)
+
+Follow-up pass to the purge script above. After the April 2026 purge, the `coach_discoveries.coach_id ON DELETE SET NULL` FK left ~200 `coaches` master rows with zero referencing discoveries — unreferenced husks that have no remaining purpose. This script deletes them. **Never touches `manually_merged = true` rows** (SELECT filter + redundant predicate on the DELETE statement itself, so a concurrent flip cannot mass-delete curated rows).
+
+The cascade FKs on `coach_career_history`, `coach_movement_events`, and `coach_effectiveness` drop children automatically. Post-cascade residual counts are verified; a non-zero count aborts the transaction.
+
+```bash
+# 0. Pre-flight — how many orphan masters will this sweep?
+psql "$DATABASE_URL" -c "
+  SELECT COUNT(*) FROM coaches c
+  WHERE c.manually_merged = false
+    AND NOT EXISTS (
+      SELECT 1 FROM coach_discoveries cd WHERE cd.coach_id = c.id
+    );
+"
+
+# 1. Dry-run — writes JSONL audit artifact to /tmp, rolls back the txn.
+pnpm --filter @workspace/scripts run sweep-orphan-coaches
+
+# 2. Commit — writes JSONL, deletes, verifies cascade, commits.
+pnpm --filter @workspace/scripts run sweep-orphan-coaches -- --commit
+
+# 3. Post-check — orphan count should be 0.
+psql "$DATABASE_URL" -c "
+  SELECT COUNT(*) FROM coaches c
+  WHERE c.manually_merged = false
+    AND NOT EXISTS (
+      SELECT 1 FROM coach_discoveries cd WHERE cd.coach_id = c.id
+    );
+"
+```
+
+Override the audit dir with `--audit-dir /path/to/dir` (default `/tmp`). The JSONL bundles each orphan coach with its cascade-tied `coach_career_history`, `coach_movement_events`, and `coach_effectiveness` rows so a full rebuild is possible from the artifact alone.
 
 ### Events-route rewire (PR #8) — post-merge steps
 
