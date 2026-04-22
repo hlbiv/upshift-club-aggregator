@@ -238,6 +238,13 @@ const URL_COLUMNS = [
 ];
 
 async function fetchMissingUrls(division: string | null): Promise<RawRow[]> {
+  // Include rows where ``website`` is ALSO NULL. The NAIA seeder
+  // (naia.org teams index) doesn't carry athletics-site URLs on
+  // program-detail pages, so every NAIA row lands with ``website``
+  // NULL. Previous behaviour filtered those out and the kid never saw
+  // them. New behaviour: emit them all and let the kid fill both
+  // columns in one pass. The importer accepts ``website`` writes
+  // alongside ``soccer_program_url`` (see validateUrlRow / importUrls).
   const divisionPredicate = division ? sql`AND c.division = ${division}` : sql``;
   const res = await db.execute(sql`
     SELECT
@@ -248,7 +255,6 @@ async function fetchMissingUrls(division: string | null): Promise<RawRow[]> {
       c.website AS website
     FROM colleges c
     WHERE c.soccer_program_url IS NULL
-      AND c.website IS NOT NULL
       ${divisionPredicate}
     ORDER BY c.division, c.name, c.gender_program
   `);
@@ -257,7 +263,7 @@ async function fetchMissingUrls(division: string | null): Promise<RawRow[]> {
     college_name: r.college_name,
     division: r.division,
     gender_program: r.gender_program,
-    website: r.website,
+    website: r.website ?? "",
     soccer_program_url: "",
   }));
 }

@@ -97,6 +97,16 @@ For each row:
 3. Copy the full URL of the roster page into `soccer_program_url`. Must start with `http://` or `https://`.
 4. Skip rows where the program doesn't exist — operator will clean those up separately.
 
+**NAIA rows have an empty `website` cell.** The NAIA seed source doesn't carry each school's athletics-site URL, so you need to find it yourself:
+
+1. Google the school + "athletics" — e.g., `"Saint Leo athletics"`.
+2. The top hit is almost always the athletics homepage. Open it.
+3. Paste the athletics homepage into the `website` cell (must start with `http://` or `https://`).
+4. Navigate to the men's or women's soccer roster page from there.
+5. Paste the roster URL into `soccer_program_url` as usual.
+
+If you fill `website` but can't find a roster page (rare — usually means the program was discontinued), leave `soccer_program_url` blank. The importer will accept `website`-only rows. Just flag the school to the operator so they can investigate.
+
 ### Rosters sheet (the big one)
 
 Each row in the export is a **blank template** for a (college, season) that's missing its roster. You need to duplicate it once per player.
