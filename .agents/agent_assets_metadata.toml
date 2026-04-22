@@ -72,3 +72,21 @@ id = "gKx7UNU83cG_QAZtwcyyI"
 uri = "file://attached_assets/missing-ncaa-20260422/missing_rosters_naia_20260422.csv"
 type = "table"
 title = "NAIA — Missing Rosters"
+
+[[outputs]]
+id = "aX41N1v9Z2-ouuDEaH7Cr"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_urls_all_20260422.csv"
+type = "table"
+title = "All divisions — Missing URLs"
+
+[[outputs]]
+id = "Ye4iLTTTRt6wCjlAzpjSU"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_coaches_all_20260422.csv"
+type = "table"
+title = "All divisions — Missing Coaches"
+
+[[outputs]]
+id = "FCv4NjRaVzk3VOoxbTB0U"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_rosters_all_20260422.csv"
+type = "table"
+title = "All divisions — Missing Rosters"

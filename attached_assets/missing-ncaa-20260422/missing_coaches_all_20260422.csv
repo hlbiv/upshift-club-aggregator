@@ -1,0 +1,188 @@
+college_id,college_name,division,gender_program,website,soccer_program_url,academic_year,name,title,email,phone,source_url,is_head_coach
+3,Auburn University,D1,womens,https://auburntigers.com,https://auburntigers.com/sports/soccer/roster,2023-24,,,,,,true
+3,Auburn University,D1,womens,https://auburntigers.com,https://auburntigers.com/sports/soccer/roster,2022-23,,,,,,true
+113,Brigham Young University,D1,womens,https://byucougars.com,https://byucougars.com/sports/womens-soccer/roster,2025-26,,,,,,true
+113,Brigham Young University,D1,womens,https://byucougars.com,https://byucougars.com/sports/womens-soccer/roster,2024-25,,,,,,true
+113,Brigham Young University,D1,womens,https://byucougars.com,https://byucougars.com/sports/womens-soccer/roster,2023-24,,,,,,true
+113,Brigham Young University,D1,womens,https://byucougars.com,https://byucougars.com/sports/womens-soccer/roster,2022-23,,,,,,true
+170,George Mason University,D1,mens,https://gomason.com,https://gomason.com/sports/mens-soccer/roster,2025-26,,,,,,true
+170,George Mason University,D1,mens,https://gomason.com,https://gomason.com/sports/mens-soccer/roster,2024-25,,,,,,true
+170,George Mason University,D1,mens,https://gomason.com,https://gomason.com/sports/mens-soccer/roster,2023-24,,,,,,true
+170,George Mason University,D1,mens,https://gomason.com,https://gomason.com/sports/mens-soccer/roster,2022-23,,,,,,true
+171,George Mason University,D1,womens,https://gomason.com,https://gomason.com/sports/womens-soccer/roster,2025-26,,,,,,true
+171,George Mason University,D1,womens,https://gomason.com,https://gomason.com/sports/womens-soccer/roster,2024-25,,,,,,true
+171,George Mason University,D1,womens,https://gomason.com,https://gomason.com/sports/womens-soccer/roster,2023-24,,,,,,true
+171,George Mason University,D1,womens,https://gomason.com,https://gomason.com/sports/womens-soccer/roster,2022-23,,,,,,true
+7,Louisiana State University,D1,womens,https://lsusports.net,,2025-26,,,,,,true
+8,Mississippi State University,D1,womens,https://hailstate.com,https://hailstate.com/sports/womens-soccer/roster,2025-26,,,,,,true
+8,Mississippi State University,D1,womens,https://hailstate.com,https://hailstate.com/sports/womens-soccer/roster,2024-25,,,,,,true
+8,Mississippi State University,D1,womens,https://hailstate.com,https://hailstate.com/sports/womens-soccer/roster,2023-24,,,,,,true
+8,Mississippi State University,D1,womens,https://hailstate.com,https://hailstate.com/sports/womens-soccer/roster,2022-23,,,,,,true
+72,Penn State University,D1,mens,https://gopsusports.com,https://gopsusports.com/sports/mens-soccer/roster,2023-24,,,,,,true
+72,Penn State University,D1,mens,https://gopsusports.com,https://gopsusports.com/sports/mens-soccer/roster,2022-23,,,,,,true
+73,Penn State University,D1,womens,https://gopsusports.com,https://gopsusports.com/sports/womens-soccer/roster,2022-23,,,,,,true
+74,Purdue University,D1,mens,https://purduesports.com,https://purduesports.com/sports/soccer/roster,2024-25,,,,,,true
+74,Purdue University,D1,mens,https://purduesports.com,https://purduesports.com/sports/soccer/roster,2023-24,,,,,,true
+74,Purdue University,D1,mens,https://purduesports.com,https://purduesports.com/sports/soccer/roster,2022-23,,,,,,true
+75,Purdue University,D1,womens,https://purduesports.com,https://purduesports.com/sports/soccer/roster,2024-25,,,,,,true
+75,Purdue University,D1,womens,https://purduesports.com,https://purduesports.com/sports/soccer/roster,2023-24,,,,,,true
+75,Purdue University,D1,womens,https://purduesports.com,https://purduesports.com/sports/soccer/roster,2022-23,,,,,,true
+132,San Diego State University,D1,womens,https://goaztecs.com,https://goaztecs.com/sports/womens-soccer/roster,2025-26,,,,,,true
+132,San Diego State University,D1,womens,https://goaztecs.com,https://goaztecs.com/sports/womens-soccer/roster,2024-25,,,,,,true
+132,San Diego State University,D1,womens,https://goaztecs.com,https://goaztecs.com/sports/womens-soccer/roster,2023-24,,,,,,true
+132,San Diego State University,D1,womens,https://goaztecs.com,https://goaztecs.com/sports/womens-soccer/roster,2022-23,,,,,,true
+38,Stanford University,D1,mens,https://gostanford.com,https://gostanford.com/sports/mens-soccer/roster,2025-26,,,,,,true
+38,Stanford University,D1,mens,https://gostanford.com,https://gostanford.com/sports/mens-soccer/roster,2024-25,,,,,,true
+38,Stanford University,D1,mens,https://gostanford.com,https://gostanford.com/sports/mens-soccer/roster,2023-24,,,,,,true
+38,Stanford University,D1,mens,https://gostanford.com,https://gostanford.com/sports/mens-soccer/roster,2022-23,,,,,,true
+39,Stanford University,D1,womens,https://gostanford.com,https://gostanford.com/sports/womens-soccer/roster,2025-26,,,,,,true
+39,Stanford University,D1,womens,https://gostanford.com,https://gostanford.com/sports/womens-soccer/roster,2024-25,,,,,,true
+39,Stanford University,D1,womens,https://gostanford.com,https://gostanford.com/sports/womens-soccer/roster,2023-24,,,,,,true
+39,Stanford University,D1,womens,https://gostanford.com,https://gostanford.com/sports/womens-soccer/roster,2022-23,,,,,,true
+123,University of Central Florida,D1,womens,https://ucfknights.com,https://ucfknights.com/sports/womens-soccer/roster,2025-26,,,,,,true
+123,University of Central Florida,D1,womens,https://ucfknights.com,https://ucfknights.com/sports/womens-soccer/roster,2024-25,,,,,,true
+123,University of Central Florida,D1,womens,https://ucfknights.com,https://ucfknights.com/sports/womens-soccer/roster,2022-23,,,,,,true
+116,University of Houston,D1,womens,https://uhcougars.com,https://uhcougars.com/sports/womens-soccer/roster,2024-25,,,,,,true
+6,University of Kentucky,D1,womens,https://ukathletics.com,https://ukathletics.com/sports/wsoc/roster,2025-26,,,,,,true
+6,University of Kentucky,D1,womens,https://ukathletics.com,https://ukathletics.com/sports/wsoc/roster,2024-25,,,,,,true
+6,University of Kentucky,D1,womens,https://ukathletics.com,https://ukathletics.com/sports/wsoc/roster,2023-24,,,,,,true
+6,University of Kentucky,D1,womens,https://ukathletics.com,https://ukathletics.com/sports/wsoc/roster,2022-23,,,,,,true
+60,University of Michigan,D1,mens,https://mgoblue.com,https://mgoblue.com/sports/mens-soccer/roster,2025-26,,,,,,true
+60,University of Michigan,D1,mens,https://mgoblue.com,https://mgoblue.com/sports/mens-soccer/roster,2024-25,,,,,,true
+60,University of Michigan,D1,mens,https://mgoblue.com,https://mgoblue.com/sports/mens-soccer/roster,2023-24,,,,,,true
+60,University of Michigan,D1,mens,https://mgoblue.com,https://mgoblue.com/sports/mens-soccer/roster,2022-23,,,,,,true
+61,University of Michigan,D1,womens,https://mgoblue.com,https://mgoblue.com/sports/womens-soccer/roster,2025-26,,,,,,true
+61,University of Michigan,D1,womens,https://mgoblue.com,https://mgoblue.com/sports/womens-soccer/roster,2024-25,,,,,,true
+61,University of Michigan,D1,womens,https://mgoblue.com,https://mgoblue.com/sports/womens-soccer/roster,2023-24,,,,,,true
+61,University of Michigan,D1,womens,https://mgoblue.com,https://mgoblue.com/sports/womens-soccer/roster,2022-23,,,,,,true
+66,University of Nebraska,D1,mens,https://huskers.com,https://huskers.com/sports/soccer/roster,2025-26,,,,,,true
+66,University of Nebraska,D1,mens,https://huskers.com,https://huskers.com/sports/soccer/roster,2024-25,,,,,,true
+66,University of Nebraska,D1,mens,https://huskers.com,https://huskers.com/sports/soccer/roster,2023-24,,,,,,true
+66,University of Nebraska,D1,mens,https://huskers.com,https://huskers.com/sports/soccer/roster,2022-23,,,,,,true
+67,University of Nebraska,D1,womens,https://huskers.com,https://huskers.com/sports/soccer/roster,2025-26,,,,,,true
+67,University of Nebraska,D1,womens,https://huskers.com,https://huskers.com/sports/soccer/roster,2024-25,,,,,,true
+67,University of Nebraska,D1,womens,https://huskers.com,https://huskers.com/sports/soccer/roster,2023-24,,,,,,true
+67,University of Nebraska,D1,womens,https://huskers.com,https://huskers.com/sports/soccer/roster,2022-23,,,,,,true
+131,University of New Mexico,D1,womens,https://golobos.com,https://golobos.com/sports/wsoc/roster,2025-26,,,,,,true
+34,University of Notre Dame,D1,mens,https://fightingirish.com,https://fightingirish.com/sports/msoc/roster,2025-26,,,,,,true
+34,University of Notre Dame,D1,mens,https://fightingirish.com,https://fightingirish.com/sports/msoc/roster,2024-25,,,,,,true
+34,University of Notre Dame,D1,mens,https://fightingirish.com,https://fightingirish.com/sports/msoc/roster,2023-24,,,,,,true
+34,University of Notre Dame,D1,mens,https://fightingirish.com,https://fightingirish.com/sports/msoc/roster,2022-23,,,,,,true
+35,University of Notre Dame,D1,womens,https://fightingirish.com,https://fightingirish.com/sports/wsoc/roster,2025-26,,,,,,true
+35,University of Notre Dame,D1,womens,https://fightingirish.com,https://fightingirish.com/sports/wsoc/roster,2024-25,,,,,,true
+35,University of Notre Dame,D1,womens,https://fightingirish.com,https://fightingirish.com/sports/wsoc/roster,2023-24,,,,,,true
+35,University of Notre Dame,D1,womens,https://fightingirish.com,https://fightingirish.com/sports/wsoc/roster,2022-23,,,,,,true
+180,University of Richmond,D1,womens,https://richmondspiders.com,https://richmondspiders.com/sports/womens-soccer/roster,2022-23,,,,,,true
+12,University of South Carolina,D1,womens,https://gamecocksonline.com,https://gamecocksonline.com/sports/wsoc/roster,2025-26,,,,,,true
+12,University of South Carolina,D1,womens,https://gamecocksonline.com,https://gamecocksonline.com/sports/wsoc/roster,2024-25,,,,,,true
+12,University of South Carolina,D1,womens,https://gamecocksonline.com,https://gamecocksonline.com/sports/wsoc/roster,2023-24,,,,,,true
+12,University of South Carolina,D1,womens,https://gamecocksonline.com,https://gamecocksonline.com/sports/wsoc/roster,2022-23,,,,,,true
+14,University of Texas,D1,womens,https://texassports.com,https://texassports.com/sports/womens-soccer/roster,2025-26,,,,,,true
+14,University of Texas,D1,womens,https://texassports.com,https://texassports.com/sports/womens-soccer/roster,2024-25,,,,,,true
+14,University of Texas,D1,womens,https://texassports.com,https://texassports.com/sports/womens-soccer/roster,2023-24,,,,,,true
+136,University of Wyoming,D1,womens,https://gowyo.com,https://gowyo.com/sports/womens-soccer/roster,2025-26,,,,,,true
+136,University of Wyoming,D1,womens,https://gowyo.com,https://gowyo.com/sports/womens-soccer/roster,2024-25,,,,,,true
+136,University of Wyoming,D1,womens,https://gowyo.com,https://gowyo.com/sports/womens-soccer/roster,2023-24,,,,,,true
+136,University of Wyoming,D1,womens,https://gowyo.com,https://gowyo.com/sports/womens-soccer/roster,2022-23,,,,,,true
+135,Utah State University,D1,womens,https://utahstateaggies.com,https://utahstateaggies.com/sports/womens-soccer/roster,2025-26,,,,,,true
+135,Utah State University,D1,womens,https://utahstateaggies.com,https://utahstateaggies.com/sports/womens-soccer/roster,2024-25,,,,,,true
+135,Utah State University,D1,womens,https://utahstateaggies.com,https://utahstateaggies.com/sports/womens-soccer/roster,2023-24,,,,,,true
+135,Utah State University,D1,womens,https://utahstateaggies.com,https://utahstateaggies.com/sports/womens-soccer/roster,2022-23,,,,,,true
+16,Vanderbilt University,D1,womens,https://vucommodores.com,https://vucommodores.com/sports/wsoc/roster,2025-26,,,,,,true
+16,Vanderbilt University,D1,womens,https://vucommodores.com,https://vucommodores.com/sports/wsoc/roster,2022-23,,,,,,true
+44,Virginia Tech,D1,mens,https://hokiesports.com,https://hokiesports.com/sports/mens-soccer/roster,2025-26,,,,,,true
+44,Virginia Tech,D1,mens,https://hokiesports.com,https://hokiesports.com/sports/mens-soccer/roster,2024-25,,,,,,true
+44,Virginia Tech,D1,mens,https://hokiesports.com,https://hokiesports.com/sports/mens-soccer/roster,2023-24,,,,,,true
+44,Virginia Tech,D1,mens,https://hokiesports.com,https://hokiesports.com/sports/mens-soccer/roster,2022-23,,,,,,true
+45,Virginia Tech,D1,womens,https://hokiesports.com,https://hokiesports.com/sports/womens-soccer/roster,2025-26,,,,,,true
+45,Virginia Tech,D1,womens,https://hokiesports.com,https://hokiesports.com/sports/womens-soccer/roster,2024-25,,,,,,true
+45,Virginia Tech,D1,womens,https://hokiesports.com,https://hokiesports.com/sports/womens-soccer/roster,2023-24,,,,,,true
+45,Virginia Tech,D1,womens,https://hokiesports.com,https://hokiesports.com/sports/womens-soccer/roster,2022-23,,,,,,true
+186,American International College,D2,mens,https://aicyellowjackets.com,https://aicyellowjackets.com/sports/mens-soccer/roster,2022-23,,,,,,true
+187,American International College,D2,womens,https://aicyellowjackets.com,https://aicyellowjackets.com/sports/womens-soccer/roster,2022-23,,,,,,true
+190,Assumption University,D2,mens,https://assumptiongreyhounds.com,https://assumptiongreyhounds.com/sports/mens-soccer/roster,2025-26,,,,,,true
+190,Assumption University,D2,mens,https://assumptiongreyhounds.com,https://assumptiongreyhounds.com/sports/mens-soccer/roster,2024-25,,,,,,true
+190,Assumption University,D2,mens,https://assumptiongreyhounds.com,https://assumptiongreyhounds.com/sports/mens-soccer/roster,2023-24,,,,,,true
+200,California Baptist University,D2,mens,https://cbulancers.com,https://cbulancers.com/sports/mens-soccer/roster,2024-25,,,,,,true
+200,California Baptist University,D2,mens,https://cbulancers.com,https://cbulancers.com/sports/mens-soccer/roster,2023-24,,,,,,true
+200,California Baptist University,D2,mens,https://cbulancers.com,https://cbulancers.com/sports/mens-soccer/roster,2022-23,,,,,,true
+201,California Baptist University,D2,womens,https://cbulancers.com,https://cbulancers.com/sports/womens-soccer/roster,2023-24,,,,,,true
+201,California Baptist University,D2,womens,https://cbulancers.com,https://cbulancers.com/sports/womens-soccer/roster,2022-23,,,,,,true
+418,Catawba College,D2,mens,https://catawbaathletics.com,https://catawbaathletics.com/sports/mens-soccer/roster,2024-25,,,,,,true
+418,Catawba College,D2,mens,https://catawbaathletics.com,https://catawbaathletics.com/sports/mens-soccer/roster,2022-23,,,,,,true
+419,Catawba College,D2,womens,https://catawbaathletics.com,https://catawbaathletics.com/sports/womens-soccer/roster,2024-25,,,,,,true
+419,Catawba College,D2,womens,https://catawbaathletics.com,https://catawbaathletics.com/sports/womens-soccer/roster,2022-23,,,,,,true
+202,Colorado Mesa University,D2,mens,https://cmumavericks.com,https://cmumavericks.com/sports/mens-soccer/roster,2025-26,,,,,,true
+203,Colorado Mesa University,D2,womens,https://cmumavericks.com,https://cmumavericks.com/sports/womens-soccer/roster,2025-26,,,,,,true
+204,Colorado School of Mines,D2,mens,https://minesathletics.com,https://minesathletics.com/sports/mens-soccer/roster,2025-26,,,,,,true
+208,Drury University,D2,mens,https://drurypanthers.com,https://drurypanthers.com/sports/mens-soccer/roster,2023-24,,,,,,true
+256,Ouachita Baptist University,D2,mens,https://obutigers.com,https://obutigers.com/sports/mens-soccer/roster,2023-24,,,,,,true
+259,Pace University,D2,womens,https://paceuathletics.com,https://paceuathletics.com/sports/womens-soccer/roster,2023-24,,,,,,true
+259,Pace University,D2,womens,https://paceuathletics.com,https://paceuathletics.com/sports/womens-soccer/roster,2022-23,,,,,,true
+265,Saint Leo University,D2,womens,https://saintleolions.com,https://saintleolions.com/sports/womens-soccer/roster,2025-26,,,,,,true
+279,Tiffin University,D2,womens,https://gotiffindragons.com,https://gotiffindragons.com/sports/womens-soccer/roster,2025-26,,,,,,true
+524,Adrian College,D3,mens,https://adrianbulldogs.com,https://adrianbulldogs.com/sports/mens-soccer/roster,2025-26,,,,,,true
+524,Adrian College,D3,mens,https://adrianbulldogs.com,https://adrianbulldogs.com/sports/mens-soccer/roster,2024-25,,,,,,true
+524,Adrian College,D3,mens,https://adrianbulldogs.com,https://adrianbulldogs.com/sports/mens-soccer/roster,2022-23,,,,,,true
+522,Alma College,D3,mens,https://almascots.com,https://almascots.com/sports/mens-soccer/roster,2022-23,,,,,,true
+493,Amherst College,D3,womens,https://athletics.amherst.edu,https://athletics.amherst.edu/sports/womens-soccer/roster,2023-24,,,,,,true
+493,Amherst College,D3,womens,https://athletics.amherst.edu,https://athletics.amherst.edu/sports/womens-soccer/roster,2022-23,,,,,,true
+454,Brooklyn College,D3,mens,https://brooklyncollegeathletics.com,https://brooklyncollegeathletics.com/sports/mens-soccer/roster,2024-25,,,,,,true
+454,Brooklyn College,D3,mens,https://brooklyncollegeathletics.com,https://brooklyncollegeathletics.com/sports/mens-soccer/roster,2022-23,,,,,,true
+542,Carthage College,D3,mens,https://athletics.carthage.edu,https://athletics.carthage.edu/sports/mens-soccer/roster,2025-26,,,,,,true
+575,Claremont-Mudd-Scripps,D3,womens,https://cmsathletics.org,https://cmsathletics.org/sports/womens-soccer/roster,2022-23,,,,,,true
+734,College of Mount Saint Vincent,D3,mens,https://cmsvathletics.com,https://cmsvathletics.com/sports/mens-soccer/roster,2024-25,,,,,,true
+460,Lehman College,D3,mens,https://lehmanathletics.com,https://lehmanathletics.com/sports/mens-soccer/roster,2025-26,,,,,,true
+461,Lehman College,D3,womens,https://lehmanathletics.com,https://lehmanathletics.com/sports/womens-soccer/roster,2025-26,,,,,,true
+464,MIT,D3,mens,https://mitathletics.com,https://mitathletics.com/sports/mens-soccer/roster,2025-26,,,,,,true
+738,Medgar Evers College,D3,mens,https://mecathletics.com,https://mecathletics.com/sports/mens-soccer/roster,2025-26,,,,,,true
+738,Medgar Evers College,D3,mens,https://mecathletics.com,https://mecathletics.com/sports/mens-soccer/roster,2023-24,,,,,,true
+738,Medgar Evers College,D3,mens,https://mecathletics.com,https://mecathletics.com/sports/mens-soccer/roster,2022-23,,,,,,true
+739,Medgar Evers College,D3,womens,https://mecathletics.com,https://mecathletics.com/sports/womens-soccer/roster,2025-26,,,,,,true
+739,Medgar Evers College,D3,womens,https://mecathletics.com,https://mecathletics.com/sports/womens-soccer/roster,2024-25,,,,,,true
+739,Medgar Evers College,D3,womens,https://mecathletics.com,https://mecathletics.com/sports/womens-soccer/roster,2022-23,,,,,,true
+444,Nazareth University,D3,mens,https://nazathletics.com,https://nazathletics.com/sports/mens-soccer/roster,2025-26,,,,,,true
+444,Nazareth University,D3,mens,https://nazathletics.com,https://nazathletics.com/sports/mens-soccer/roster,2024-25,,,,,,true
+444,Nazareth University,D3,mens,https://nazathletics.com,https://nazathletics.com/sports/mens-soccer/roster,2023-24,,,,,,true
+444,Nazareth University,D3,mens,https://nazathletics.com,https://nazathletics.com/sports/mens-soccer/roster,2022-23,,,,,,true
+572,Occidental College,D3,mens,https://oxyathletics.com,https://oxyathletics.com/sports/mens-soccer/roster,2022-23,,,,,,true
+573,Occidental College,D3,womens,https://oxyathletics.com,https://oxyathletics.com/sports/womens-soccer/roster,2024-25,,,,,,true
+573,Occidental College,D3,womens,https://oxyathletics.com,https://oxyathletics.com/sports/womens-soccer/roster,2023-24,,,,,,true
+452,Pomona-Pitzer Colleges,D3,mens,https://sagehens.com,https://sagehens.com/sports/mens-soccer/roster,2024-25,,,,,,true
+452,Pomona-Pitzer Colleges,D3,mens,https://sagehens.com,https://sagehens.com/sports/mens-soccer/roster,2023-24,,,,,,true
+452,Pomona-Pitzer Colleges,D3,mens,https://sagehens.com,https://sagehens.com/sports/mens-soccer/roster,2022-23,,,,,,true
+453,Pomona-Pitzer Colleges,D3,womens,https://sagehens.com,https://sagehens.com/sports/womens-soccer/roster,2024-25,,,,,,true
+453,Pomona-Pitzer Colleges,D3,womens,https://sagehens.com,https://sagehens.com/sports/womens-soccer/roster,2023-24,,,,,,true
+453,Pomona-Pitzer Colleges,D3,womens,https://sagehens.com,https://sagehens.com/sports/womens-soccer/roster,2022-23,,,,,,true
+569,Rivier University,D3,womens,https://rivierathletics.com,https://rivierathletics.com/sports/womens-soccer/roster,2024-25,,,,,,true
+592,Roanoke College,D3,mens,https://roanokemaroons.com,https://roanokemaroons.com/sports/mens-soccer/roster,2022-23,,,,,,true
+448,SUNY Geneseo,D3,mens,https://geneseoknights.com,https://geneseoknights.com/sports/mens-soccer/roster,2022-23,,,,,,true
+449,SUNY Geneseo,D3,womens,https://geneseoknights.com,https://geneseoknights.com/sports/womens-soccer/roster,2022-23,,,,,,true
+604,SUNY Morrisville,D3,mens,https://morrisvillemustangs.com,https://morrisvillemustangs.com/sports/mens-soccer/roster,2025-26,,,,,,true
+604,SUNY Morrisville,D3,mens,https://morrisvillemustangs.com,https://morrisvillemustangs.com/sports/mens-soccer/roster,2024-25,,,,,,true
+606,SUNY Oswego,D3,mens,https://oswegolakers.com,https://oswegolakers.com/sports/mens-soccer/roster,2025-26,,,,,,true
+606,SUNY Oswego,D3,mens,https://oswegolakers.com,https://oswegolakers.com/sports/mens-soccer/roster,2024-25,,,,,,true
+606,SUNY Oswego,D3,mens,https://oswegolakers.com,https://oswegolakers.com/sports/mens-soccer/roster,2023-24,,,,,,true
+606,SUNY Oswego,D3,mens,https://oswegolakers.com,https://oswegolakers.com/sports/mens-soccer/roster,2022-23,,,,,,true
+607,SUNY Oswego,D3,womens,https://oswegolakers.com,https://oswegolakers.com/sports/womens-soccer/roster,2025-26,,,,,,true
+607,SUNY Oswego,D3,womens,https://oswegolakers.com,https://oswegolakers.com/sports/womens-soccer/roster,2024-25,,,,,,true
+607,SUNY Oswego,D3,womens,https://oswegolakers.com,https://oswegolakers.com/sports/womens-soccer/roster,2023-24,,,,,,true
+607,SUNY Oswego,D3,womens,https://oswegolakers.com,https://oswegolakers.com/sports/womens-soccer/roster,2022-23,,,,,,true
+480,Trinity University (TX),D3,mens,https://trinitytigers.com,https://trinitytigers.com/sports/mens-soccer/roster,2025-26,,,,,,true
+480,Trinity University (TX),D3,mens,https://trinitytigers.com,https://trinitytigers.com/sports/mens-soccer/roster,2024-25,,,,,,true
+480,Trinity University (TX),D3,mens,https://trinitytigers.com,https://trinitytigers.com/sports/mens-soccer/roster,2023-24,,,,,,true
+480,Trinity University (TX),D3,mens,https://trinitytigers.com,https://trinitytigers.com/sports/mens-soccer/roster,2022-23,,,,,,true
+481,Trinity University (TX),D3,womens,https://trinitytigers.com,https://trinitytigers.com/sports/womens-soccer/roster,2025-26,,,,,,true
+481,Trinity University (TX),D3,womens,https://trinitytigers.com,https://trinitytigers.com/sports/womens-soccer/roster,2024-25,,,,,,true
+481,Trinity University (TX),D3,womens,https://trinitytigers.com,https://trinitytigers.com/sports/womens-soccer/roster,2023-24,,,,,,true
+481,Trinity University (TX),D3,womens,https://trinitytigers.com,https://trinitytigers.com/sports/womens-soccer/roster,2022-23,,,,,,true
+494,Union College,D3,mens,https://unionathletics.com,https://unionathletics.com/sports/mens-soccer/roster,2025-26,,,,,,true
+494,Union College,D3,mens,https://unionathletics.com,https://unionathletics.com/sports/mens-soccer/roster,2024-25,,,,,,true
+494,Union College,D3,mens,https://unionathletics.com,https://unionathletics.com/sports/mens-soccer/roster,2023-24,,,,,,true
+494,Union College,D3,mens,https://unionathletics.com,https://unionathletics.com/sports/mens-soccer/roster,2022-23,,,,,,true
+495,Union College,D3,womens,https://unionathletics.com,https://unionathletics.com/sports/womens-soccer/roster,2025-26,,,,,,true
+495,Union College,D3,womens,https://unionathletics.com,https://unionathletics.com/sports/womens-soccer/roster,2024-25,,,,,,true
+495,Union College,D3,womens,https://unionathletics.com,https://unionathletics.com/sports/womens-soccer/roster,2023-24,,,,,,true
+495,Union College,D3,womens,https://unionathletics.com,https://unionathletics.com/sports/womens-soccer/roster,2022-23,,,,,,true
+656,Whitworth University,D3,mens,https://whitworthpirates.com,https://whitworthpirates.com/sports/mens-soccer/roster,2022-23,,,,,,true
+2933,Bushnell,NAIA,mens,https://bushnellbeacons.com,https://bushnellbeacons.com/sports/mens-soccer/roster,2023-24,,,,,,true
