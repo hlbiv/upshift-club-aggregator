@@ -7,23 +7,28 @@ the Replit console, **not** in git; what lives in git is:
 - `scraper/scheduled/nightly_tier1.sh`
 - `scraper/scheduled/weekly_state.sh`
 - `scraper/scheduled/hourly_linker.sh`
+- `scraper/scheduled/ncaa_d1_rosters.sh`
+- `scraper/scheduled/ncaa_d2_rosters.sh`
+- `scraper/scheduled/ncaa_d3_rosters.sh`
 - The `scrape_run_logs.triggered_by` column (populated by the Python
   logger from the `SCRAPE_TRIGGERED_BY` env var each script exports).
 
-This doc is the step-by-step for wiring three scheduled deployments in
+This doc is the step-by-step for wiring the scheduled deployments in
 the Replit console and verifying they fire.
 
-## Why three jobs (and only three)
+## Why these jobs
 
 | Job              | What it runs                                      | Cadence        | Why this cadence                                                         |
 | ---------------- | ------------------------------------------------- | -------------- | ------------------------------------------------------------------------ |
 | `nightly-tier1`  | `python3 run.py --tier 1` (7 national leagues)    | daily 02:00 ET | Tier 1 churns the fastest; nightly catches roster + staff moves quickly. |
 | `weekly-state`   | `python3 run.py --scope state` (54 state assocs)  | Sunday 03:00 ET | State-assoc sites are large + change slowly; weekly keeps load bounded.  |
 | `hourly-linker`  | `python3 run.py --source link-canonical-clubs`    | hourly at :05  | Every event/match scraper leaves canonical FKs NULL by design; the linker fills them so `/api/events/search?club_id=N` and the club_results rollup work. Hourly keeps staleness under one hour. |
+| `weekly-ncaa-d1` | `--source ncaa-rosters --all --division D1` (mens + womens) | Monday 04:00 ET | Coach + roster moves on D1 programs are weekly-news cadence; the wrapper also enables `COACH_MISSES_REPORT_ENABLED=true` so the `/data-quality/coach-misses` page populates. |
+| `weekly-ncaa-d2` | `--source ncaa-rosters --all --division D2` (mens + womens) | Monday 06:00 ET | Same rationale as D1; staggered to avoid overlap. |
+| `weekly-ncaa-d3` | `--source ncaa-rosters --all --division D3` (mens + womens) | Monday 09:00 ET | Same rationale as D1; D3 is the largest universe so it gets the longest start window. |
 
-Anything outside these three (tournaments, SincSports events, tryouts,
-rosters, matches) stays operator-invoked on Replit until we have a
-reason to schedule it.
+Tournaments, SincSports events, and tryouts stay operator-invoked on
+Replit until we have a reason to schedule them.
 
 ## Cron expressions (UTC)
 
@@ -53,7 +58,7 @@ description field so the next operator isn't confused:
 ## Configuring each scheduled deployment
 
 Go to the Replit console → Deployments → "Scheduled Deployment" → "Add
-scheduled run". Repeat for each of the three jobs below.
+scheduled run". Repeat for each of the jobs below.
 
 ### Shared form values
 
@@ -98,6 +103,39 @@ a secret or env var in the console.
 | Command  | `bash scraper/scheduled/hourly_linker.sh`         |
 | Timeout  | 15 minutes                            |
 | Notes    | Runs `python3 run.py --source link-canonical-clubs`. Idempotent — only touches rows where the FK is currently NULL. Cheap when there's nothing to do. |
+
+### Jobs 4–6 — `weekly-ncaa-d1` / `d2` / `d3`
+
+Each wrapper exports `COACH_MISSES_REPORT_ENABLED=true` inline, so the
+gated writer in `scraper/extractors/ncaa_rosters.py` records one row per
+school where the head coach could not be extracted (feeds the
+`/data-quality/coach-misses` dashboard). After the first scheduled cycle
+expect a realistic miss list (rough order of magnitude per task #38:
+~60 D1 mens + ~80 D1 womens; D2/D3 will be larger).
+
+All three crons are written in fixed UTC per option 1 in the
+"DST handling" section above — i.e. the local-ET hour drifts by one
+between winter (EST) and summer (EDT). If you need the local hour
+pinned, edit twice a year (option 2).
+
+| Field         | `weekly-ncaa-d1`     | `weekly-ncaa-d2`     | `weekly-ncaa-d3`     |
+| ------------- | -------------------- | -------------------- | -------------------- |
+| Cron (UTC)    | `0 9 * * 1`          | `0 11 * * 1`         | `0 14 * * 1`         |
+| ET equivalent | Mon 04:00 EST / 05:00 EDT | Mon 06:00 EST / 07:00 EDT | Mon 09:00 EST / 10:00 EDT |
+| Command       | `bash scraper/scheduled/ncaa_d1_rosters.sh` | `bash scraper/scheduled/ncaa_d2_rosters.sh` | `bash scraper/scheduled/ncaa_d3_rosters.sh` |
+| Timeout       | 180 minutes          | 240 minutes          | 360 minutes          |
+
+Notes:
+
+- Each wrapper runs men's then women's back-to-back. With `set -euo pipefail`
+  in the wrapper, if the men's pass fails the women's pass will not run —
+  re-trigger from the console once the cause is fixed.
+- The wrappers do not pass `--backfill-seasons`, so each cycle scrapes only
+  the current season. Coach-misses is gated to the current-season pass
+  inside the extractor, so backfill flags would not change miss output.
+- To temporarily stop populating coach-misses without disabling the whole
+  job, comment out the `export COACH_MISSES_REPORT_ENABLED=true` line in
+  the wrapper and open a PR. The scrape itself does not need the env var.
 
 ## Verifying a scheduled run fired
 
