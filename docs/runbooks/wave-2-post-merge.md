@@ -256,7 +256,7 @@ WHERE started_at > now() - interval '10 min'
 ORDER BY started_at DESC LIMIT 5;
 ```
 
-For this manual run, `triggered_by` will be `'manual'` (the env var isn't set by your shell). The `'scheduler'` verification happens the morning after, when the cron actually fires.
+For this manual run, `triggered_by` will be `'scheduler'` — each `scraper/scheduled/*.sh` exports `SCRAPE_TRIGGERED_BY=scheduler` inline on the python invocation, so the stamp is the same whether the cron fires it or you run it from the shell. That's by design: it lets you verify the stamping mechanism without waiting for the next cron window. The console-cron verification (i.e. that the *Replit scheduler itself* actually fired the script unattended at the configured time) still has to wait for the next nightly / hourly window.
 
 **Next-morning check:**
 
@@ -268,6 +268,66 @@ ORDER BY started_at DESC LIMIT 5;
 ```
 
 Should show rows from overnight / the scheduled window.
+
+### Verified manual smokes (2026-04-22)
+
+All three wrapper scripts have been smoked end-to-end against the live
+dev DB. Each row below is a `scrape_run_logs` entry with
+`triggered_by='scheduler'` and `status='ok'`. These prove the script +
+logger + DB stamping path; what is **not yet** proven is that the
+Replit *console scheduler* itself fires them on cron — that requires
+the operator to wire the three Scheduled Deployments per the table
+above and observe the next-window rows the morning after.
+
+| Script | First scheduler-stamped row observed at (UTC) | Coverage |
+|---|---|---|
+| `scraper/scheduled/hourly_linker.sh` | `2026-04-22 11:54:46` | 1 row, `link-canonical-clubs` ok, 2071 event_teams linked. Linker NULL backlog: 2607 → 536. |
+| `scraper/scheduled/nightly_tier1.sh` | `2026-04-22 12:00:22` (mls-next) → `12:01:02` (last of 8) | 8 rows, all 8 tier-1 leagues `ok`, 599 clubs collected, 0 failures. |
+| `scraper/scheduled/weekly_state.sh` | `2026-04-22 12:02:24` (alabama) → `12:03:13` (last of 54) | 54 rows, all 54 state assocs `ok`, 2553 clubs collected, 0 failures. 3 LOW-CLUBS validation warnings (MS, RI, SC). |
+
+Reproduction query:
+
+```sql
+SELECT scraper_key, league_name, status, started_at, completed_at
+FROM scrape_run_logs
+WHERE triggered_by = 'scheduler'
+  AND started_at BETWEEN '2026-04-22 11:54:00' AND '2026-04-22 12:04:00'
+ORDER BY started_at;
+```
+
+**Container-orphan caveat (Replit-specific):** the dev container reaps
+background processes that outlive the originating shell. `nohup … &
+disown` is not enough on its own — wrap your invocation in
+`setsid bash -c '…' &` and keep the originating shell alive (or just
+run the script in the foreground). This affects the dev smoke only;
+Scheduled Deployments in production are not orphaned by definition.
+
+### Console wiring still pending (operator-side)
+
+The three Scheduled Deployments (`upshift-nightly-tier1`,
+`upshift-weekly-state`, `upshift-hourly-linker`) must be created in
+the Replit console with the names, commands, and UTC crons from the
+table at the top of §6. The console UI cannot be driven from a shell
+or script. After wiring, return the next morning and check for
+console-fired rows:
+
+```sql
+-- Distinguish console-fired rows from manual shell-smoke rows: the
+-- console fires on the cron boundary (`hourly-linker` at :05 of each
+-- hour ± a few seconds; `nightly-tier1` at 06:00 UTC ± seconds during
+-- EDT). Manual smokes land at arbitrary minutes-past-the-hour.
+SELECT scraper_key, started_at, status,
+       extract(minute FROM started_at)::int AS m,
+       extract(second FROM started_at)::int AS s
+FROM scrape_run_logs
+WHERE triggered_by = 'scheduler'
+  AND started_at > now() - interval '25 hours'
+ORDER BY started_at DESC;
+-- Console-fired hourly-linker rows have m=5 and s<60. Manual smokes do not.
+```
+
+Append the first console-fired-row timestamp under each script in the
+"Verified manual smokes" table once observed.
 
 ---
 
