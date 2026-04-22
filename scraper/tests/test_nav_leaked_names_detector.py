@@ -49,21 +49,37 @@ class FakeCursor:
             "SELECT id, club_name_raw, season, age_group, gender, player_name "
             "FROM club_roster_snapshots"
         ):
+            # detector._iter_snapshot_rows uses keyset pagination:
+            #   WHERE [scraped_at >= NOW() - interval AND] id > %s
+            #   ORDER BY id LIMIT %s
+            # The trailing two params are always (last_id, page_size);
+            # an optional leading window_days_str precedes them when
+            # the windowed branch is in use.
             windowed = "WHERE scraped_at" in sql_norm
+            assert "ORDER BY id" in sql_norm
+            assert "LIMIT" in sql_norm
+            assert "id > %s" in sql_norm
+            assert params is not None
             if windowed:
-                # Params shape matches detector._fetch_snapshot_rows:
-                # (window_days_str,). Simulate `scraped_at >= NOW() -
-                # interval` against each snapshot's `scraped_at` key.
-                assert params is not None and len(params) == 1
+                assert len(params) == 3
                 window_days = int(params[0])
+                last_id = int(params[1])
+                page_size = int(params[2])
                 cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
                 matched = [
                     r
                     for r in self._conn.snapshots
-                    if _scraped_at(r) >= cutoff
+                    if _scraped_at(r) >= cutoff and r["id"] > last_id
                 ]
             else:
-                matched = list(self._conn.snapshots)
+                assert len(params) == 2
+                last_id = int(params[0])
+                page_size = int(params[1])
+                matched = [
+                    r for r in self._conn.snapshots if r["id"] > last_id
+                ]
+            matched.sort(key=lambda r: r["id"])
+            matched = matched[:page_size]
             self._last_result = [
                 (
                     r["id"],
@@ -304,6 +320,65 @@ def test_full_scan_flag_ignores_window() -> None:
     assert stats.snapshot_groups_flagged == 2
     assert 300 in conn.flags_by_snapshot
     assert 400 in conn.flags_by_snapshot
+
+
+def test_group_split_across_batch_boundary_handled_correctly() -> None:
+    """
+    A snapshot group can have rows interleaved with other groups by
+    `id`, so keyset pagination will frequently split a group across
+    two (or more) batches. Force that scenario with batch_size=2 and
+    verify the per-group accumulator (leaked_set, roster_size,
+    representative min snapshot_id) is unchanged vs. a single-batch
+    scan.
+    """
+    # Two groups (Z, W) interleaved by id. With batch_size=2 the page
+    # boundaries fall mid-group:
+    #   batch 1: ids 50, 51   (Z=Home, W=clean)
+    #   batch 2: ids 52, 53   (Z=clean, W=Contact)
+    #   batch 3: ids 54, 55   (Z=Sitemap, W=clean)
+    #   batch 4: ids 56       (W=clean)
+    snapshots = [
+        _row(50, "Z", "2024-25", "U15", "Boys", "Home"),
+        _row(51, "W", "2024-25", "U15", "Boys", "Alex Real"),
+        _row(52, "Z", "2024-25", "U15", "Boys", "Real Player"),
+        _row(53, "W", "2024-25", "U15", "Boys", "Contact"),
+        _row(54, "Z", "2024-25", "U15", "Boys", "Sitemap"),
+        _row(55, "W", "2024-25", "U15", "Boys", "Pat Real"),
+        _row(56, "W", "2024-25", "U15", "Boys", "Sam Real"),
+    ]
+
+    conn = FakeConn(snapshots)
+    stats = detector.detect_all(conn, dry_run=False, batch_size=2)
+
+    assert stats.rows_scanned == 7
+    assert stats.snapshot_groups_scanned == 2
+    assert stats.snapshot_groups_flagged == 2
+
+    # Z group: representative = min id = 50, two leaked strings, three rows.
+    assert 50 in conn.flags_by_snapshot
+    z_md = conn.flags_by_snapshot[50]["metadata"]
+    assert sorted(z_md["leaked_strings"]) == ["Home", "Sitemap"]
+    assert z_md["snapshot_roster_size"] == 3
+
+    # W group: representative = min id = 51, one leaked string, four rows.
+    assert 51 in conn.flags_by_snapshot
+    w_md = conn.flags_by_snapshot[51]["metadata"]
+    assert w_md["leaked_strings"] == ["Contact"]
+    assert w_md["snapshot_roster_size"] == 4
+
+    # Sanity check: the streaming result must equal the single-batch
+    # result. Re-run with a batch large enough to fit everything in
+    # one page and compare.
+    conn_one_batch = FakeConn(snapshots)
+    detector.detect_all(conn_one_batch, dry_run=False, batch_size=1000)
+    assert (
+        conn_one_batch.flags_by_snapshot[50]["metadata"]
+        == conn.flags_by_snapshot[50]["metadata"]
+    )
+    assert (
+        conn_one_batch.flags_by_snapshot[51]["metadata"]
+        == conn.flags_by_snapshot[51]["metadata"]
+    )
 
 
 def test_re_run_after_leak_change_updates_metadata() -> None:

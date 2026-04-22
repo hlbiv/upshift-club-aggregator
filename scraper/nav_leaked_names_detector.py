@@ -30,9 +30,8 @@ from __future__ import annotations
 
 import logging
 import os
-from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 try:
     import psycopg2  # type: ignore
@@ -155,44 +154,76 @@ GroupKey = Tuple[str, str, str, str]
 # nightly runs. See module docstring for rationale.
 DEFAULT_WINDOW_DAYS = 7
 
+# Keyset pagination batch size. The detector streams
+# `club_roster_snapshots` in fixed-size pages so memory stays bounded
+# regardless of corpus size — see module docstring. 50k rows × ~6
+# small string columns ≈ tens of MB peak, well within the
+# scheduled-job container's headroom.
+DEFAULT_BATCH_SIZE = 50_000
 
-def _fetch_snapshot_rows(
+
+def _iter_snapshot_rows(
     cur,
     limit: Optional[int],
     full_scan: bool = False,
     window_days: int = DEFAULT_WINDOW_DAYS,
-) -> List[Tuple[int, str, str, str, str, str]]:
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> Iterator[Tuple[int, str, str, str, str, str]]:
     """
-    Return (id, club_name_raw, season, age_group, gender, player_name)
-    for snapshot rows, ordered by id.
+    Yield (id, club_name_raw, season, age_group, gender, player_name)
+    for snapshot rows, ordered by id, using keyset pagination on `id`.
 
     By default only rows with `scraped_at >= NOW() - window_days` are
     returned — see module docstring for the window rationale. Pass
     `full_scan=True` to skip the window filter (operator escape hatch
     for one-off historical re-scans).
 
-    `limit` caps the row count for smoke tests; production nightly
-    runs leave it None.
+    `limit` caps the total row count for smoke tests; production
+    nightly runs leave it None. Pages are fetched lazily so the
+    detector never materializes the whole corpus in memory.
     """
     if full_scan:
-        sql = (
+        base_sql = (
             "SELECT id, club_name_raw, season, age_group, gender, player_name "
             "FROM club_roster_snapshots "
-            "ORDER BY id"
+            "WHERE id > %s "
+            "ORDER BY id "
+            "LIMIT %s"
         )
-        params: Tuple[Any, ...] = ()
+        base_params: Tuple[Any, ...] = ()
     else:
-        sql = (
+        base_sql = (
             "SELECT id, club_name_raw, season, age_group, gender, player_name "
             "FROM club_roster_snapshots "
             "WHERE scraped_at >= NOW() - (%s || ' days')::interval "
-            "ORDER BY id"
+            "AND id > %s "
+            "ORDER BY id "
+            "LIMIT %s"
         )
-        params = (str(int(window_days)),)
-    if limit is not None:
-        sql += f" LIMIT {int(limit)}"
-    cur.execute(sql, params if params else None)
-    return list(cur.fetchall())
+        base_params = (str(int(window_days)),)
+
+    last_id = 0
+    yielded = 0
+    while True:
+        # Shrink the page on the final batch when a global `limit` is
+        # set, so we never overshoot.
+        page_size = batch_size
+        if limit is not None:
+            remaining = limit - yielded
+            if remaining <= 0:
+                return
+            page_size = min(batch_size, remaining)
+
+        cur.execute(base_sql, base_params + (last_id, page_size))
+        page = cur.fetchall()
+        if not page:
+            return
+        for row in page:
+            yield row
+            yielded += 1
+        last_id = page[-1][0]
+        if len(page) < page_size:
+            return
 
 
 def _upsert_flag(
@@ -251,12 +282,20 @@ def detect_all(
     limit: Optional[int] = None,
     full_scan: bool = False,
     window_days: int = DEFAULT_WINDOW_DAYS,
+    batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> DetectorStats:
     """
-    Main entry point. Scans `club_roster_snapshots`, groups by
+    Main entry point. Streams `club_roster_snapshots` in keyset-paged
+    batches (memory bounded by group count, not row count), groups by
     (club_name_raw, season, age_group, gender), and upserts one
     `roster_quality_flags` row per group whose player_name column
     contains nav-word leaks.
+
+    Group accumulators that span batch boundaries are handled
+    correctly: the iterator yields rows in `id` order across
+    arbitrarily many pages, and each group's per-group accumulator
+    (leaked-set, roster size, min snapshot_id) is updated incrementally
+    as each row arrives.
 
     Args:
         conn: open psycopg2 connection.
@@ -268,43 +307,63 @@ def detect_all(
             False.
         window_days: size of the incremental window when `full_scan`
             is False. Defaults to `DEFAULT_WINDOW_DAYS` (7).
+        batch_size: keyset-pagination page size. Defaults to
+            `DEFAULT_BATCH_SIZE` (50k); tests override to small values
+            to force batch-boundary scenarios.
     """
     stats = DetectorStats()
 
+    # Per-group accumulators. Bounded in memory by the number of
+    # distinct (club, season, age_group, gender) groups in the scan
+    # window — orders of magnitude smaller than the row count.
+    #
+    # leaked_set is a dict-as-ordered-set preserving the first-seen
+    # casing of each offending player_name.
+    accumulators: Dict[
+        GroupKey, Dict[str, Any]
+    ] = {}
+
     with conn.cursor() as cur:
-        rows = _fetch_snapshot_rows(
-            cur, limit, full_scan=full_scan, window_days=window_days
-        )
-        stats.rows_scanned = len(rows)
+        for row in _iter_snapshot_rows(
+            cur,
+            limit,
+            full_scan=full_scan,
+            window_days=window_days,
+            batch_size=batch_size,
+        ):
+            row_id, club_name_raw, season, age_group, gender, player_name = row
+            stats.rows_scanned += 1
 
-        # Group rows by (club_name_raw, season, age_group, gender).
-        groups: Dict[GroupKey, List[Tuple[int, str]]] = defaultdict(list)
-        for row_id, club_name_raw, season, age_group, gender, player_name in rows:
             key: GroupKey = (club_name_raw, season, age_group, gender)
-            groups[key].append((row_id, player_name))
+            acc = accumulators.get(key)
+            if acc is None:
+                acc = {
+                    "min_id": row_id,
+                    "roster_size": 0,
+                    "leaked_set": {},  # dict-as-ordered-set
+                }
+                accumulators[key] = acc
+            else:
+                if row_id < acc["min_id"]:
+                    acc["min_id"] = row_id
+            acc["roster_size"] += 1
 
-        stats.snapshot_groups_scanned = len(groups)
+            if is_nav_word(player_name):
+                # Preserve original case of the offending player_name.
+                acc["leaked_set"].setdefault(player_name.strip(), None)
 
-        for key, members in groups.items():
-            leaked_set: Dict[str, None] = {}
-            for _row_id, player_name in members:
-                if is_nav_word(player_name):
-                    # Preserve original case of the offending player_name.
-                    leaked_set.setdefault(player_name.strip(), None)
+        stats.snapshot_groups_scanned = len(accumulators)
 
+        for key, acc in accumulators.items():
+            leaked_set: Dict[str, None] = acc["leaked_set"]
             if not leaked_set:
                 continue
 
             stats.snapshot_groups_flagged += 1
             leaked_strings = list(leaked_set.keys())
             stats.leaked_strings_seen += len(leaked_strings)
-            roster_size = len(members)
-
-            # Reference the smallest snapshot_id in the group as the
-            # canonical row the flag points at — stable across runs and
-            # the natural choice when the panel needs "one snapshot to
-            # show" for the flag.
-            representative_snapshot_id = min(r[0] for r in members)
+            roster_size = acc["roster_size"]
+            representative_snapshot_id = acc["min_id"]
 
             if len(stats.sample_flags) < 10:
                 stats.sample_flags.append(
