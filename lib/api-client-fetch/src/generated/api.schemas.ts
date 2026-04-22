@@ -880,6 +880,34 @@ export interface CoverageLeaguesHistoryResponse {
 }
 
 /**
+ * One day's snapshot of a single league's coverage rollup. Mirrors the five per-league counters returned by the `/leagues` rollup (no `leaguesTotal` — that's a global field, not per-league).
+
+ */
+export interface CoverageLeagueHistoryRow {
+  /** ISO date (YYYY-MM-DD) of the snapshot. */
+  snapshotDate: string;
+  clubsTotal: number;
+  clubsWithRosterSnapshot: number;
+  clubsWithCoachDiscovery: number;
+  clubsNeverScraped: number;
+  clubsStale14d: number;
+}
+
+export type CoverageLeagueHistoryResponseLeague = {
+  id: number;
+  name: string;
+};
+
+/**
+ * Daily snapshot timeseries for a single league, oldest-first. The `league` field echoes the resolved (id, name) pair so the page can render a header without a second request. May contain fewer than the requested `days` rows on a fresh deploy.
+
+ */
+export interface CoverageLeagueHistoryResponse {
+  league: CoverageLeagueHistoryResponseLeague;
+  rows: CoverageLeagueHistoryRow[];
+}
+
+/**
  * Per-club coverage detail within a single league.
  */
 export interface CoverageLeagueDetailRow {
@@ -1350,6 +1378,14 @@ export type GetCoverageLeaguesParams = {
 };
 
 export type GetCoverageLeaguesHistoryParams = {
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+};
+
+export type GetCoverageLeagueHistoryParams = {
   /**
    * @minimum 1
    * @maximum 365

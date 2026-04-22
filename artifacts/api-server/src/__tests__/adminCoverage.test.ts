@@ -20,11 +20,13 @@ import {
   makeLeagueDetailHandler,
   makeSummaryHandler,
   makeHistoryHandler,
+  makeLeagueHistoryHandler,
   type CoverageDeps,
   type CoverageLeagueAggRow,
   type CoverageLeagueDetailAggRow,
   type CoverageLeaguesSummary,
   type CoverageHistoryRow,
+  type CoverageLeagueHistoryRow,
 } from "../routes/admin/coverage";
 import type { CoverageLeagueDetailStatus } from "@hlbiv/api-zod/admin";
 
@@ -92,10 +94,12 @@ function makeDeps(opts: {
   knownLeagues?: Record<number, { id: number; name: string }>;
   detail?: { rows: CoverageLeagueDetailAggRow[]; total: number };
   history?: CoverageHistoryRow[];
+  leagueHistory?: CoverageLeagueHistoryRow[];
   listLeaguesCalls?: ListLeaguesCall[];
   summaryCalls?: number[];
   detailCalls?: DetailCall[];
   historyCalls?: Array<{ days: number }>;
+  leagueHistoryCalls?: Array<{ leagueId: number; days: number }>;
 }): CoverageDeps {
   return {
     listLeagues: async ({ page, pageSize }) => {
@@ -118,6 +122,10 @@ function makeDeps(opts: {
     getCoverageHistory: async ({ days }) => {
       opts.historyCalls?.push({ days });
       return opts.history ?? [];
+    },
+    getLeagueCoverageHistory: async ({ leagueId, days }) => {
+      opts.leagueHistoryCalls?.push({ leagueId, days });
+      return opts.leagueHistory ?? [];
     },
     findLeague: async ({ leagueId }) => {
       return opts.knownLeagues?.[leagueId] ?? null;
@@ -544,6 +552,146 @@ async function run() {
     assert(
       res.statusCode === 400,
       "history-bogus-days",
+      `expected 400, got ${res.statusCode}`,
+    );
+  }
+
+  // --- 13. league history — happy path ------------------------------------
+  {
+    const leagueHistoryCalls: Array<{ leagueId: number; days: number }> = [];
+    const leagueHistory: CoverageLeagueHistoryRow[] = [
+      {
+        snapshotDate: "2026-04-01",
+        clubsTotal: 50,
+        clubsWithRosterSnapshot: 30,
+        clubsWithCoachDiscovery: 20,
+        clubsNeverScraped: 5,
+        clubsStale14d: 8,
+      },
+      {
+        snapshotDate: "2026-04-02",
+        clubsTotal: 50,
+        clubsWithRosterSnapshot: 32,
+        clubsWithCoachDiscovery: 22,
+        clubsNeverScraped: 4,
+        clubsStale14d: 7,
+      },
+    ];
+    const deps = makeDeps({
+      knownLeagues: { 7: { id: 7, name: "ECNL" } },
+      leagueHistory,
+      leagueHistoryCalls,
+    });
+    const handler = makeLeagueHistoryHandler(deps);
+    const res = makeRes();
+    await handler(
+      makeReq({ params: { leagueId: "7" } }),
+      res as unknown as Response,
+      () => {},
+    );
+    assert(
+      res.statusCode === 200,
+      "league-history-default",
+      `expected 200, got ${res.statusCode}`,
+    );
+    const body = res.body as {
+      league: { id: number; name: string };
+      rows: CoverageLeagueHistoryRow[];
+    };
+    assert(
+      body?.league?.id === 7 && body?.league?.name === "ECNL",
+      "league-history-default",
+      `expected league echoed, got ${JSON.stringify(body?.league)}`,
+    );
+    assert(
+      Array.isArray(body?.rows) && body.rows.length === 2,
+      "league-history-default",
+      `expected 2 rows, got ${body?.rows?.length}`,
+    );
+    assert(
+      leagueHistoryCalls.length === 1 &&
+        leagueHistoryCalls[0]?.leagueId === 7 &&
+        leagueHistoryCalls[0]?.days === 30,
+      "league-history-default",
+      `expected leagueId=7 days=30, got ${JSON.stringify(leagueHistoryCalls)}`,
+    );
+  }
+
+  // --- 14. league history — custom days ------------------------------------
+  {
+    const leagueHistoryCalls: Array<{ leagueId: number; days: number }> = [];
+    const deps = makeDeps({
+      knownLeagues: { 7: { id: 7, name: "ECNL" } },
+      leagueHistoryCalls,
+    });
+    const handler = makeLeagueHistoryHandler(deps);
+    const res = makeRes();
+    await handler(
+      makeReq({ params: { leagueId: "7" }, query: { days: "7" } }),
+      res as unknown as Response,
+      () => {},
+    );
+    assert(
+      res.statusCode === 200,
+      "league-history-custom-days",
+      `expected 200, got ${res.statusCode}`,
+    );
+    assert(
+      leagueHistoryCalls[0]?.days === 7,
+      "league-history-custom-days",
+      `expected days=7, got ${JSON.stringify(leagueHistoryCalls)}`,
+    );
+  }
+
+  // --- 15. league history — unknown league → 404 --------------------------
+  {
+    const deps = makeDeps({});
+    const handler = makeLeagueHistoryHandler(deps);
+    const res = makeRes();
+    await handler(
+      makeReq({ params: { leagueId: "999" } }),
+      res as unknown as Response,
+      () => {},
+    );
+    assert(
+      res.statusCode === 404,
+      "league-history-unknown",
+      `expected 404, got ${res.statusCode}`,
+    );
+  }
+
+  // --- 16. league history — bogus leagueId → 400 --------------------------
+  {
+    const deps = makeDeps({});
+    const handler = makeLeagueHistoryHandler(deps);
+    const res = makeRes();
+    await handler(
+      makeReq({ params: { leagueId: "abc" } }),
+      res as unknown as Response,
+      () => {},
+    );
+    assert(
+      res.statusCode === 400,
+      "league-history-bogus-id",
+      `expected 400, got ${res.statusCode}`,
+    );
+  }
+
+  // --- 17. league history — bogus days → 400 ------------------------------
+  {
+    const deps = makeDeps({
+      knownLeagues: { 7: { id: 7, name: "ECNL" } },
+    });
+    const handler = makeLeagueHistoryHandler(deps);
+    const res = makeRes();
+    await handler(
+      makeReq({ params: { leagueId: "7" }, query: { days: "0" } }),
+      res as unknown as Response,
+      () => {},
+    );
+    assert(
+      res.statusCode === 400,
+      "league-history-bogus-days",
       `expected 400, got ${res.statusCode}`,
     );
   }

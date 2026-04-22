@@ -1671,6 +1671,56 @@ export const GetCoverageLeaguesHistoryResponse = zod
   );
 
 /**
+ * Daily timeseries of one league's coverage rollup. Same five per-league counters returned by `/v1/admin/coverage/leagues` (no `leaguesTotal` — that's a global field). One row per UTC day, oldest first, capped at `days` rows (default 30, max 365). Powers the sparkline + week-over-week delta on the Coverage drilldown page so operators can see whether a specific league's coverage is improving or regressing.
+History is recorded by the same idempotent upsert that powers the global timeseries: each call to `/v1/admin/coverage/leagues/summary` bulk-rewrites today's row for every league (`ON CONFLICT (snapshot_date, league_id) DO UPDATE`).
+Returns 404 if `leagueId` is unknown to `leagues_master`.
+
+ * @summary Daily snapshot timeseries for a single league
+ */
+
+export const GetCoverageLeagueHistoryParams = zod.object({
+  leagueId: zod.coerce.number().min(1),
+});
+
+export const getCoverageLeagueHistoryQueryDaysDefault = 30;
+export const getCoverageLeagueHistoryQueryDaysMax = 365;
+
+export const GetCoverageLeagueHistoryQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .min(1)
+    .max(getCoverageLeagueHistoryQueryDaysMax)
+    .default(getCoverageLeagueHistoryQueryDaysDefault),
+});
+
+export const GetCoverageLeagueHistoryResponse = zod
+  .object({
+    league: zod.object({
+      id: zod.number(),
+      name: zod.string(),
+    }),
+    rows: zod.array(
+      zod
+        .object({
+          snapshotDate: zod
+            .string()
+            .describe("ISO date (YYYY-MM-DD) of the snapshot."),
+          clubsTotal: zod.number(),
+          clubsWithRosterSnapshot: zod.number(),
+          clubsWithCoachDiscovery: zod.number(),
+          clubsNeverScraped: zod.number(),
+          clubsStale14d: zod.number(),
+        })
+        .describe(
+          "One day's snapshot of a single league's coverage rollup. Mirrors the five per-league counters returned by the `\/leagues` rollup (no `leaguesTotal` — that's a global field, not per-league).\n",
+        ),
+    ),
+  })
+  .describe(
+    "Daily snapshot timeseries for a single league, oldest-first. The `league` field echoes the resolved (id, name) pair so the page can render a header without a second request. May contain fewer than the requested `days` rows on a fresh deploy.\n",
+  );
+
+/**
  * Paginated list of the canonical clubs affiliated with the given league, each row carrying its last-scraped timestamp, consecutive failures, coach count, roster-snapshot presence, staff-page URL, and scrape confidence.
 `status` filters:
   * `all` (default) — every affiliated club.

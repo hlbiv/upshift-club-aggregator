@@ -1,12 +1,17 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Building2, Users, UserCheck, Ban, Clock3 } from "lucide-react";
 import {
   useGetCoverageLeagueDetail,
+  useGetCoverageLeagueHistory,
   type CoverageLeagueDetailResponse,
+  type CoverageLeagueHistoryResponse,
   type GetCoverageLeagueDetailStatus,
 } from "@workspace/api-client-react";
 import { AppShell } from "../components/AppShell";
 import { PageHeader } from "../components/primitives/PageHeader";
+import { KpiStrip } from "../components/primitives/KpiStrip";
+import { KpiCard, type KpiTrend } from "../components/primitives/KpiCard";
 
 /**
  * Coverage drilldown — per-club detail for one league.
@@ -40,6 +45,7 @@ export default function CoverageLeaguePage() {
     page_size: PAGE_SIZE,
     status,
   });
+  const historyQuery = useGetCoverageLeagueHistory(leagueId, { days: 30 });
 
   return (
     <AppShell>
@@ -52,6 +58,12 @@ export default function CoverageLeaguePage() {
       <PageHeader
         title={query.data?.league.name ?? `League #${leagueId}`}
         description="Per-club coverage within this league. Oldest last-scraped first."
+      />
+
+      <TrendsStrip
+        data={historyQuery.data}
+        isLoading={historyQuery.isLoading}
+        isError={historyQuery.isError}
       />
 
       <div
@@ -93,6 +105,115 @@ export default function CoverageLeaguePage() {
       />
     </AppShell>
   );
+}
+
+/**
+ * Per-league sparkline strip — same KpiStrip shape as the global Coverage
+ * page, but driven by `/v1/admin/coverage/leagues/:leagueId/history`. The
+ * five counters mirror the per-league rollup row exactly so this strip
+ * always agrees with what the parent table shows for this league.
+ *
+ * History rows accumulate one per UTC day starting the first time the
+ * Coverage summary endpoint is hit on a deployed instance, so a fresh
+ * deploy renders the strip with KpiCards that simply omit the trend
+ * (the cards still render their current value once the data lands).
+ */
+function TrendsStrip({
+  data,
+  isLoading,
+  isError,
+}: {
+  data: CoverageLeagueHistoryResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  const rows = data?.rows;
+  const latest = rows && rows.length > 0 ? rows[rows.length - 1] : undefined;
+  const trends = buildLeagueTrends(rows);
+
+  return (
+    <div className="mb-6">
+      <KpiStrip cols={5}>
+        <KpiCard
+          label="Clubs"
+          icon={Building2}
+          tone="neutral"
+          value={(latest?.clubsTotal ?? 0).toLocaleString()}
+          isLoading={isLoading}
+          isError={isError}
+          trend={trends.clubsTotal}
+        />
+        <KpiCard
+          label="With roster"
+          icon={Users}
+          tone="ok"
+          value={(latest?.clubsWithRosterSnapshot ?? 0).toLocaleString()}
+          isLoading={isLoading}
+          isError={isError}
+          trend={trends.clubsWithRosterSnapshot}
+        />
+        <KpiCard
+          label="With coach"
+          icon={UserCheck}
+          tone="ok"
+          value={(latest?.clubsWithCoachDiscovery ?? 0).toLocaleString()}
+          isLoading={isLoading}
+          isError={isError}
+          trend={trends.clubsWithCoachDiscovery}
+        />
+        <KpiCard
+          label="Never scraped"
+          icon={Ban}
+          tone={(latest?.clubsNeverScraped ?? 0) > 0 ? "fail" : "neutral"}
+          value={(latest?.clubsNeverScraped ?? 0).toLocaleString()}
+          isLoading={isLoading}
+          isError={isError}
+          trend={trends.clubsNeverScraped}
+        />
+        <KpiCard
+          label="Stale 14d"
+          icon={Clock3}
+          tone={(latest?.clubsStale14d ?? 0) > 0 ? "warn" : "neutral"}
+          value={(latest?.clubsStale14d ?? 0).toLocaleString()}
+          isLoading={isLoading}
+          isError={isError}
+          trend={trends.clubsStale14d}
+        />
+      </KpiStrip>
+    </div>
+  );
+}
+
+/**
+ * Slice the per-league history series into per-counter trends. Returns
+ * `undefined` per counter when the series is empty so KpiCard simply omits
+ * the trend slot rather than rendering an empty stub on first render.
+ */
+function buildLeagueTrends(
+  rows: CoverageLeagueHistoryResponse["rows"] | undefined,
+): {
+  clubsTotal?: KpiTrend;
+  clubsWithRosterSnapshot?: KpiTrend;
+  clubsWithCoachDiscovery?: KpiTrend;
+  clubsNeverScraped?: KpiTrend;
+  clubsStale14d?: KpiTrend;
+} {
+  if (!rows || rows.length === 0) return {};
+  const pick = (
+    key: keyof CoverageLeagueHistoryResponse["rows"][number],
+    deltaDirection: "higher_better" | "lower_better",
+  ): KpiTrend => ({
+    history: rows.map((r) => Number(r[key] ?? 0)),
+    deltaDirection,
+    windowDays: 7,
+  });
+  return {
+    clubsTotal: pick("clubsTotal", "higher_better"),
+    clubsWithRosterSnapshot: pick("clubsWithRosterSnapshot", "higher_better"),
+    clubsWithCoachDiscovery: pick("clubsWithCoachDiscovery", "higher_better"),
+    clubsNeverScraped: pick("clubsNeverScraped", "lower_better"),
+    clubsStale14d: pick("clubsStale14d", "lower_better"),
+  };
 }
 
 function DetailTable({

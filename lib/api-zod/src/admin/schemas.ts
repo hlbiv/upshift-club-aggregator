@@ -734,6 +734,48 @@ export type CoverageLeaguesHistoryResponse = z.infer<
   typeof CoverageLeaguesHistoryResponse
 >;
 
+/** Request for GET /v1/admin/coverage/leagues/:leagueId/history. */
+export const CoverageLeagueHistoryRequest = z.object({
+  days: z.number().int().positive().max(365).default(30),
+});
+export type CoverageLeagueHistoryRequest = z.infer<
+  typeof CoverageLeagueHistoryRequest
+>;
+
+/**
+ * One day's snapshot of a single league's coverage rollup. Mirrors the
+ * five per-league counters returned by `listLeagues` (no `leaguesTotal` —
+ * that's a global field, not per-league).
+ */
+export const CoverageLeagueHistoryRow = z.object({
+  snapshotDate: z.string(),
+  clubsTotal: z.number().int(),
+  clubsWithRosterSnapshot: z.number().int(),
+  clubsWithCoachDiscovery: z.number().int(),
+  clubsNeverScraped: z.number().int(),
+  clubsStale14d: z.number().int(),
+});
+export type CoverageLeagueHistoryRow = z.infer<typeof CoverageLeagueHistoryRow>;
+
+/**
+ * Daily timeseries of one league's coverage rollup. Rows are ordered by
+ * snapshotDate ascending so the dashboard can pass them straight into a
+ * sparkline. May contain fewer than `days` entries on a fresh deploy
+ * (history starts when the first summary call records its first row), and
+ * the `league` field echoes the resolved (id, name) pair so the page can
+ * render a header without a second request.
+ */
+export const CoverageLeagueHistoryResponse = z.object({
+  league: z.object({
+    id: z.number().int(),
+    name: z.string(),
+  }),
+  rows: z.array(CoverageLeagueHistoryRow),
+});
+export type CoverageLeagueHistoryResponse = z.infer<
+  typeof CoverageLeagueHistoryResponse
+>;
+
 /**
  * Status filter for the per-league drilldown. `all` (default) returns every
  * club affiliated with the league; `never_scraped` keeps only those with no

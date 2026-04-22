@@ -28,6 +28,7 @@ import type {
   CoachSearchResponse,
   CollegeListResponse,
   CoverageLeagueDetailResponse,
+  CoverageLeagueHistoryResponse,
   CoverageLeaguesHistoryResponse,
   CoverageLeaguesResponse,
   CoverageLeaguesSummaryResponse,
@@ -43,6 +44,7 @@ import type {
   GetCoachMissesParams,
   GetCoachQualityFlagsParams,
   GetCoverageLeagueDetailParams,
+  GetCoverageLeagueHistoryParams,
   GetCoverageLeaguesHistoryParams,
   GetCoverageLeaguesParams,
   GetEmptyStaffPagesParams,
@@ -1306,6 +1308,46 @@ export const getCoverageLeaguesHistory = async (
 ): Promise<CoverageLeaguesHistoryResponse> => {
   return customFetch<CoverageLeaguesHistoryResponse>(
     getGetCoverageLeaguesHistoryUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * Daily timeseries of one league's coverage rollup. Same five per-league counters returned by `/v1/admin/coverage/leagues` (no `leaguesTotal` — that's a global field). One row per UTC day, oldest first, capped at `days` rows (default 30, max 365). Powers the sparkline + week-over-week delta on the Coverage drilldown page so operators can see whether a specific league's coverage is improving or regressing.
+History is recorded by the same idempotent upsert that powers the global timeseries: each call to `/v1/admin/coverage/leagues/summary` bulk-rewrites today's row for every league (`ON CONFLICT (snapshot_date, league_id) DO UPDATE`).
+Returns 404 if `leagueId` is unknown to `leagues_master`.
+
+ * @summary Daily snapshot timeseries for a single league
+ */
+export const getGetCoverageLeagueHistoryUrl = (
+  leagueId: number,
+  params?: GetCoverageLeagueHistoryParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/coverage/leagues/${leagueId}/history?${stringifiedParams}`
+    : `/api/v1/admin/coverage/leagues/${leagueId}/history`;
+};
+
+export const getCoverageLeagueHistory = async (
+  leagueId: number,
+  params?: GetCoverageLeagueHistoryParams,
+  options?: RequestInit,
+): Promise<CoverageLeagueHistoryResponse> => {
+  return customFetch<CoverageLeagueHistoryResponse>(
+    getGetCoverageLeagueHistoryUrl(leagueId, params),
     {
       ...options,
       method: "GET",

@@ -54,6 +54,8 @@ import {
   CoverageLeaguesHistoryResponse,
   CoverageLeagueDetailRequest,
   CoverageLeagueDetailResponse,
+  CoverageLeagueHistoryRequest,
+  CoverageLeagueHistoryResponse,
   type CoverageLeagueDetailStatus,
 } from "@hlbiv/api-zod/admin";
 
@@ -102,6 +104,16 @@ export interface CoverageHistoryRow {
   clubsStale14d: number;
 }
 
+export interface CoverageLeagueHistoryRow {
+  /** ISO calendar date (YYYY-MM-DD) — one row per UTC day. */
+  snapshotDate: string;
+  clubsTotal: number;
+  clubsWithRosterSnapshot: number;
+  clubsWithCoachDiscovery: number;
+  clubsNeverScraped: number;
+  clubsStale14d: number;
+}
+
 export interface CoverageDeps {
   listLeagues: (args: {
     page: number;
@@ -128,6 +140,17 @@ export interface CoverageDeps {
   getCoverageHistory: (args: {
     days: number;
   }) => Promise<CoverageHistoryRow[]>;
+
+  /**
+   * Daily timeseries of one league's coverage rollup, oldest-first,
+   * capped at `days`. Returns an empty array when the per-league
+   * history table has no rows for the league yet (fresh deploy or a
+   * league that's never been included in a summary call).
+   */
+  getLeagueCoverageHistory: (args: {
+    leagueId: number;
+    days: number;
+  }) => Promise<CoverageLeagueHistoryRow[]>;
 
   /**
    * Resolves the `(id, name)` pair for the requested league. Returns null
@@ -240,6 +263,41 @@ export function makeHistoryHandler(deps: CoverageDeps) {
       const { days } = parsed.data;
       const rows = await deps.getCoverageHistory({ days });
       res.json(CoverageLeaguesHistoryResponse.parse({ rows }));
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export function makeLeagueHistoryHandler(deps: CoverageDeps) {
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const leagueId = Number(req.params.leagueId);
+      if (!Number.isFinite(leagueId) || leagueId <= 0) {
+        res.status(400).json({ error: "Invalid leagueId" });
+        return;
+      }
+      const parsed = CoverageLeagueHistoryRequest.safeParse({
+        days: toNumberOrUndefined(req.query.days),
+      });
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid query params" });
+        return;
+      }
+      const { days } = parsed.data;
+
+      const league = await deps.findLeague({ leagueId });
+      if (league === null) {
+        res.status(404).json({ error: "League not found" });
+        return;
+      }
+
+      const rows = await deps.getLeagueCoverageHistory({ leagueId, days });
+      res.json(CoverageLeagueHistoryResponse.parse({ league, rows }));
     } catch (err) {
       next(err);
     }
@@ -527,6 +585,85 @@ export const prodCoverageDeps: CoverageDeps = {
       console.error("[coverage] failed to upsert coverage_history", err);
     }
 
+    // Per-league snapshot — bulk-upsert today's row for every league in
+    // one statement. Uses the same `league_clubs`/`league_agg` shape as
+    // `listLeagues`, but feeds into INSERT instead of paginated SELECT
+    // so all 127 leagues get a row per call (not just page 1). Same
+    // best-effort try/catch policy as the global upsert above: a missing
+    // table on a deploy that hasn't migrated yet must not break the
+    // KpiStrip read.
+    try {
+      await defaultDb.execute(sql`
+        WITH league_clubs AS (
+          SELECT
+            lm.id         AS league_id,
+            cc.id         AS club_id,
+            EXISTS (
+              SELECT 1 FROM club_roster_snapshots crs WHERE crs.club_id = cc.id
+            ) AS has_roster_snapshot,
+            EXISTS (
+              SELECT 1 FROM coach_discoveries cd WHERE cd.club_id = cc.id
+            ) AS has_coach_discovery,
+            sh.last_scraped_at
+          FROM leagues_master lm
+          LEFT JOIN club_affiliations ca
+            ON ca.source_name = lm.league_name
+          LEFT JOIN canonical_clubs cc
+            ON cc.id = ca.club_id
+          LEFT JOIN scrape_health sh
+            ON sh.entity_type = 'club' AND sh.entity_id = cc.id
+        ),
+        league_agg AS (
+          SELECT
+            league_id,
+            COUNT(DISTINCT club_id) AS clubs_total,
+            COUNT(DISTINCT club_id) FILTER (WHERE has_roster_snapshot)
+              AS clubs_with_roster_snapshot,
+            COUNT(DISTINCT club_id) FILTER (WHERE has_coach_discovery)
+              AS clubs_with_coach_discovery,
+            COUNT(DISTINCT club_id) FILTER (
+              WHERE club_id IS NOT NULL AND last_scraped_at IS NULL
+            ) AS clubs_never_scraped,
+            COUNT(DISTINCT club_id) FILTER (
+              WHERE last_scraped_at IS NOT NULL
+                AND last_scraped_at < now() - make_interval(days => ${STALE_THRESHOLD_DAYS})
+            ) AS clubs_stale_14d
+          FROM league_clubs
+          GROUP BY league_id
+        )
+        INSERT INTO coverage_history_per_league (
+          snapshot_date,
+          league_id,
+          clubs_total,
+          clubs_with_roster_snapshot,
+          clubs_with_coach_discovery,
+          clubs_never_scraped,
+          clubs_stale_14d
+        )
+        SELECT
+          (now() AT TIME ZONE 'UTC')::date,
+          league_id,
+          clubs_total,
+          clubs_with_roster_snapshot,
+          clubs_with_coach_discovery,
+          clubs_never_scraped,
+          clubs_stale_14d
+        FROM league_agg
+        ON CONFLICT (snapshot_date, league_id) DO UPDATE SET
+          clubs_total = EXCLUDED.clubs_total,
+          clubs_with_roster_snapshot = EXCLUDED.clubs_with_roster_snapshot,
+          clubs_with_coach_discovery = EXCLUDED.clubs_with_coach_discovery,
+          clubs_never_scraped = EXCLUDED.clubs_never_scraped,
+          clubs_stale_14d = EXCLUDED.clubs_stale_14d,
+          recorded_at = now()
+      `);
+    } catch (err) {
+      console.error(
+        "[coverage] failed to upsert coverage_history_per_league",
+        err,
+      );
+    }
+
     return summary;
   },
 
@@ -571,6 +708,55 @@ export const prodCoverageDeps: CoverageDeps = {
           ? r.snapshot_date.toISOString().slice(0, 10)
           : String(r.snapshot_date).slice(0, 10),
       leaguesTotal: Number(r.leagues_total ?? 0),
+      clubsTotal: Number(r.clubs_total ?? 0),
+      clubsWithRosterSnapshot: Number(r.clubs_with_roster_snapshot ?? 0),
+      clubsWithCoachDiscovery: Number(r.clubs_with_coach_discovery ?? 0),
+      clubsNeverScraped: Number(r.clubs_never_scraped ?? 0),
+      clubsStale14d: Number(r.clubs_stale_14d ?? 0),
+    }));
+    return rows.reverse();
+  },
+
+  getLeagueCoverageHistory: async ({ leagueId, days }) => {
+    // Same shape as getCoverageHistory: pull most recent `days` rows in
+    // DESC order (index hit on coverage_history_per_league_league_date_idx)
+    // then reverse to ASC so the dashboard can pass straight into a
+    // sparkline.
+    const result = await defaultDb.execute<{
+      snapshot_date: Date | string;
+      clubs_total: string;
+      clubs_with_roster_snapshot: string;
+      clubs_with_coach_discovery: string;
+      clubs_never_scraped: string;
+      clubs_stale_14d: string;
+    }>(sql`
+      SELECT
+        snapshot_date,
+        clubs_total::text                  AS clubs_total,
+        clubs_with_roster_snapshot::text   AS clubs_with_roster_snapshot,
+        clubs_with_coach_discovery::text   AS clubs_with_coach_discovery,
+        clubs_never_scraped::text          AS clubs_never_scraped,
+        clubs_stale_14d::text              AS clubs_stale_14d
+      FROM coverage_history_per_league
+      WHERE league_id = ${leagueId}
+      ORDER BY snapshot_date DESC
+      LIMIT ${days}
+    `);
+    const list = Array.from(
+      result as unknown as Array<{
+        snapshot_date: Date | string;
+        clubs_total: string;
+        clubs_with_roster_snapshot: string;
+        clubs_with_coach_discovery: string;
+        clubs_never_scraped: string;
+        clubs_stale_14d: string;
+      }>,
+    );
+    const rows: CoverageLeagueHistoryRow[] = list.map((r) => ({
+      snapshotDate:
+        r.snapshot_date instanceof Date
+          ? r.snapshot_date.toISOString().slice(0, 10)
+          : String(r.snapshot_date).slice(0, 10),
       clubsTotal: Number(r.clubs_total ?? 0),
       clubsWithRosterSnapshot: Number(r.clubs_with_roster_snapshot ?? 0),
       clubsWithCoachDiscovery: Number(r.clubs_with_coach_discovery ?? 0),
@@ -696,6 +882,13 @@ export function makeCoverageRouter(deps: CoverageDeps): IRouter {
   // so Express doesn't capture "summary"/"history" as the leagueId.
   router.get("/leagues/summary", makeSummaryHandler(deps));
   router.get("/leagues/history", makeHistoryHandler(deps));
+  // The `:leagueId/history` static suffix must be registered before the
+  // bare `:leagueId` param route so Express doesn't capture "history"
+  // as part of the param.
+  router.get(
+    "/leagues/:leagueId/history",
+    makeLeagueHistoryHandler(deps),
+  );
   router.get("/leagues/:leagueId", makeLeagueDetailHandler(deps));
   return router;
 }

@@ -230,6 +230,54 @@ export const coverageHistory = pgTable(
   ],
 );
 
+/**
+ * coverage_history_per_league — daily snapshot of the per-league coverage
+ * rollup that powers the per-league trend display on the Coverage drilldown
+ * page. Mirrors the five per-league counters returned by `listLeagues`
+ * (clubsTotal + four subset counts), one row per (UTC day, league_id).
+ *
+ * Populated by the same idempotent upsert that `coverage_history` is
+ * populated by — the summary endpoint runs the per-league aggregation once
+ * per call and bulk-upserts every league's row for today
+ * (`ON CONFLICT (snapshot_date, league_id) DO UPDATE`). Reads (the
+ * per-league trend endpoint) just `SELECT ... WHERE league_id = $1 ORDER
+ * BY snapshot_date DESC LIMIT N` — index-only by the composite unique key.
+ *
+ * `league_id` is intentionally NOT a foreign key to `leagues_master` —
+ * matches the storage pattern of `coverage_history` (no FKs out of
+ * snapshot tables) so a league rename / delete doesn't cascade into the
+ * trend series. A league removed from `leagues_master` simply stops
+ * accumulating new history rows; its existing rows remain queryable for
+ * audit but get no new writes (since the summary endpoint only upserts
+ * for currently-known leagues).
+ */
+export const coverageHistoryPerLeague = pgTable(
+  "coverage_history_per_league",
+  {
+    id: serial("id").primaryKey(),
+    snapshotDate: date("snapshot_date").notNull(),
+    leagueId: integer("league_id").notNull(),
+    clubsTotal: integer("clubs_total").notNull(),
+    clubsWithRosterSnapshot: integer("clubs_with_roster_snapshot").notNull(),
+    clubsWithCoachDiscovery: integer("clubs_with_coach_discovery").notNull(),
+    clubsNeverScraped: integer("clubs_never_scraped").notNull(),
+    clubsStale14d: integer("clubs_stale_14d").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("coverage_history_per_league_date_league_uq").on(
+      t.snapshotDate,
+      t.leagueId,
+    ),
+    index("coverage_history_per_league_league_date_idx").on(
+      t.leagueId,
+      t.snapshotDate.desc(),
+    ),
+  ],
+);
+
 export const rawHtmlArchive = pgTable(
   "raw_html_archive",
   {
