@@ -69,6 +69,18 @@ class TestDirectoryUrl:
         url = directory_url("NAIA", "mens")
         assert "NAIA_men" in url
 
+    def test_d1_mens_url_shape(self):
+        """D1 is supported as a FALLBACK for when stats.ncaa.org 403s the
+        scraper. Same 'List of NCAA Division I ... soccer programs' page
+        shape as D2/D3."""
+        url = directory_url("D1", "mens")
+        assert url == "https://en.wikipedia.org/wiki/List_of_NCAA_Division_I_men%27s_soccer_programs"
+
+    def test_d1_womens_url_shape(self):
+        url = directory_url("D1", "womens")
+        assert "Division_I_women" in url
+        assert "Division_II" not in url  # guard against accidental II/III match
+
     def test_unsupported_division_raises(self):
         with pytest.raises(ValueError, match="No Wikipedia source"):
             directory_url("NJCAA", "mens")
@@ -78,7 +90,7 @@ class TestDirectoryUrl:
             directory_url("D2", "boys")
 
     def test_supported_divisions_list(self):
-        assert set(supported_divisions()) == {"D2", "D3", "NAIA"}
+        assert set(supported_divisions()) == {"D1", "D2", "D3", "NAIA"}
 
 
 # ---------------------------------------------------------------------------
@@ -142,8 +154,10 @@ class TestParseWikipediaTable:
         assert all(s.name not in ("NCAA tournament", "2023") for s in seeds)
 
     def test_invalid_division_raises(self):
+        # D1 is supported now (fallback); use an unambiguously-unsupported
+        # division code as the rejection case.
         with pytest.raises(ValueError):
-            parse_wikipedia_table("<html></html>", "D1", "mens")
+            parse_wikipedia_table("<html></html>", "NJCAA", "mens")
 
     def test_invalid_gender_raises(self):
         with pytest.raises(ValueError):
