@@ -4,16 +4,22 @@ teams index.
 
 Wikipedia doesn't have consolidated "List of NAIA ... soccer programs"
 pages (unlike NCAA D2/D3). naia.org is the authoritative source, but
-their current-season list endpoint (``/sports/msoc/<current>/teams``)
-broke after 2021-22 — subsequent seasons 302 to the first team detail
-page instead of rendering the full list.
+their current-season list endpoint (``/sports/(m|w)soc/<current>/teams``)
+broke after different seasons per gender:
 
-The 2021-22 endpoint still renders the complete index with one
-``<a href="/sports/(m|w)soc/2021-22/teams/<slug>">NAME (STATE)</a>``
-anchor per program. That's our seed source. NAIA program churn is
-roughly ~5 programs/year, so a 2021-22 snapshot covers ~95% of
-current (2025-26) membership; the kid flags any gaps during manual
-data entry (PR #195 workflow).
+  - mens:   2021-22 is the last working index. 2023-24 onward
+            302-redirects to the first team's detail page; 2025-26
+            404s.
+  - womens: 2020-21 is the last working index. 2021-22 already renders
+            a generic "Women's Soccer" landing page with zero team
+            anchors (this was surfaced by the first production run —
+            the womens parser returned 0 seeds).
+
+Each working-season endpoint renders the complete index as one
+``<a href="/sports/(m|w)soc/<season>/teams/<slug>">NAME (STATE)</a>``
+anchor per program. NAIA program churn is ~5/year, so each snapshot
+covers ~95% of current (2025-26) membership; the rest come in via
+the manual-entry workflow (PR #195).
 
 Same ``CollegeSeed`` dataclass + ``upsert_college`` writer as the D1
 (stats.ncaa.org) and D2/D3 (Wikipedia) seeders.
@@ -55,17 +61,26 @@ log = logging.getLogger("naia_directory")
 # Gender → URL map
 # ---------------------------------------------------------------------------
 
-# naia.org's 2021-22 is the last season with a rendered team index.
-# Pinning the season here rather than the current one is deliberate —
-# even though the listing is stale by ~4 seasons, it still covers the
-# vast majority of current NAIA membership and *does* render, whereas
-# later seasons don't.
-_NAIA_SEASON = "2021-22"
+# naia.org's teams-list endpoint broke at different seasons per gender:
+#   - mens:   2021-22 is the last season that renders a full index
+#             (2023-24 onward 302-redirects to the first team's detail
+#             page; 2025-26 404s)
+#   - womens: 2020-21 is the last working index (2021-22 renders a
+#             generic "Women's Soccer" landing page with zero team
+#             anchors)
+# The per-gender map encodes that asymmetry. Staleness is ~4-5 seasons,
+# but NAIA program churn (~5/year) means each snapshot still covers
+# the vast majority of current membership; the rest come in via the
+# manual-entry workflow (#195).
+_NAIA_SEASONS: dict[str, str] = {
+    "mens":   "2021-22",
+    "womens": "2020-21",
+}
 _NAIA_BASE = "https://www.naia.org/sports"
 
 _GENDER_SOURCES: dict[str, str] = {
-    "mens":   f"{_NAIA_BASE}/msoc/{_NAIA_SEASON}/teams",
-    "womens": f"{_NAIA_BASE}/wsoc/{_NAIA_SEASON}/teams",
+    "mens":   f"{_NAIA_BASE}/msoc/{_NAIA_SEASONS['mens']}/teams",
+    "womens": f"{_NAIA_BASE}/wsoc/{_NAIA_SEASONS['womens']}/teams",
 }
 
 # Team-link pattern. Matches both m-soc and w-soc, both the pinned
