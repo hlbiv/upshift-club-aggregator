@@ -509,6 +509,93 @@ class TestProbeCoachesPages:
         assert probe_coaches_pages(self._fake_session(), url, cache=cache) is None
         assert mock_fetch.call_count == first_calls  # cached miss
 
+    @mock.patch("extractors.ncaa_rosters._render_with_playwright")
+    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    def test_playwright_fallback_recovers_js_only_coaches_page(
+        self, mock_fetch, mock_render, monkeypatch
+    ):
+        # Static fetch on the /coaches candidate returns a JS shell
+        # with no inline coach markup (mirrors D1 SIDEARM NextGen +
+        # some Nuxt tenants whose staff pages are also JS-rendered).
+        # When NCAA_PLAYWRIGHT_FALLBACK is on, the renderer must be
+        # invoked and the hydrated DOM re-extracted.
+        monkeypatch.setenv("NCAA_PLAYWRIGHT_FALLBACK", "true")
+        shell = _read("js_rendered_roster_shell.html")
+        rendered = _read("coaches_page_server_rendered.html")
+        mock_fetch.return_value = shell
+        mock_render.return_value = rendered
+
+        result = probe_coaches_pages(
+            self._fake_session(),
+            "https://js.example.edu/sports/mens-soccer/roster",
+        )
+
+        assert result is not None
+        assert result["name"] == "Marcus Reyes"
+        # First candidate is the /coaches URL → renderer is hit on it
+        # and we break on first success (no further candidates probed).
+        assert mock_render.call_count == 1
+        assert mock_render.call_args.args[0] == (
+            "https://js.example.edu/sports/mens-soccer/coaches"
+        )
+        assert mock_fetch.call_count == 1
+        # Strategy is tagged so end-of-run breakdown can tell rendered
+        # hits apart from static-fetch hits at the same fallback bucket.
+        assert result["_strategy"].startswith(
+            "coaches-page-fallback:rendered:"
+        )
+        assert result["_source_url"] == (
+            "https://js.example.edu/sports/mens-soccer/coaches"
+        )
+
+    @mock.patch("extractors.ncaa_rosters._render_with_playwright")
+    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    def test_playwright_fallback_skipped_when_env_disabled(
+        self, mock_fetch, mock_render, monkeypatch
+    ):
+        # Same shell-only HTML, but env flag off → renderer must NOT
+        # be invoked (CI / sandbox safety: keeps current behavior
+        # when Playwright isn't installed or the operator hasn't
+        # opted in yet).
+        monkeypatch.delenv("NCAA_PLAYWRIGHT_FALLBACK", raising=False)
+        mock_fetch.return_value = _read("js_rendered_roster_shell.html")
+
+        result = probe_coaches_pages(
+            self._fake_session(),
+            "https://x.edu/sports/mens-soccer/roster",
+        )
+
+        assert result is None
+        assert mock_render.call_count == 0
+
+    @mock.patch("extractors.ncaa_rosters._render_with_playwright")
+    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    def test_playwright_negative_result_is_cached(
+        self, mock_fetch, mock_render, monkeypatch
+    ):
+        # When every candidate misses inline AND the rendered DOM
+        # also misses, the negative result must be cached so the
+        # next call against the same program doesn't re-render
+        # (renders are 3-5s each — ~20s of waste per repeat probe).
+        monkeypatch.setenv("NCAA_PLAYWRIGHT_FALLBACK", "true")
+        shell = _read("js_rendered_roster_shell.html")
+        mock_fetch.return_value = shell
+        mock_render.return_value = shell  # rendered DOM also empty
+        cache: dict = {}
+        url = "https://x.edu/sports/mens-soccer/roster"
+
+        assert probe_coaches_pages(
+            self._fake_session(), url, cache=cache
+        ) is None
+        first_render_calls = mock_render.call_count
+        assert first_render_calls > 0  # confirm fallback actually fired
+
+        assert probe_coaches_pages(
+            self._fake_session(), url, cache=cache
+        ) is None
+        # Cached miss → no additional renders on the second probe.
+        assert mock_render.call_count == first_render_calls
+
 
 class TestYearNormalization:
     """Verify all year/class variants map correctly."""

@@ -1444,10 +1444,37 @@ def probe_coaches_pages(
         if not html or len(html) < 500:
             continue
         coach = extract_head_coach_from_html(html)
+        rendered_hit = False
+        # Last-bucket fallback: a small residual of schools (D1
+        # SIDEARM NextGen, some Nuxt tenants) ship JS-only /coaches
+        # pages too — the static fetch returns a shell with no
+        # staff markup, so the inline extractor misses identically
+        # to how it would on the JS-only roster page. When the
+        # roster-side Playwright fallback is enabled (same env
+        # flag, same renderer), re-run the candidate through
+        # headless Chromium and re-extract from the hydrated DOM.
+        # Mirrors the pattern in ``_fetch_and_parse_with_fallback``.
+        if coach is None and _playwright_fallback_enabled():
+            logger.info(
+                "[ncaa-coaches-fallback] inline miss on %s; trying "
+                "Playwright render",
+                candidate,
+            )
+            rendered = _render_with_playwright(candidate)
+            if rendered:
+                coach = extract_head_coach_from_html(rendered)
+                if coach is not None:
+                    rendered_hit = True
+                    logger.info(
+                        "[ncaa-coaches-fallback] Playwright render "
+                        "recovered head coach: %s", candidate,
+                    )
         if coach is None:
             continue
         coach = dict(coach)
         original_strategy = coach.get("_strategy", "unknown")
+        if rendered_hit:
+            original_strategy = f"rendered:{original_strategy}"
         coach["_strategy"] = f"coaches-page-fallback:{original_strategy}"
         coach["_source_url"] = candidate
         result = coach

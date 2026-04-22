@@ -174,3 +174,19 @@ crawl") is now unblocked by both PR-7 (Task #34) and PR-9 (this
 change). It should be run next to confirm the projected ~88% lands
 in production and to scope whether PR-10 (Playwright on the fallback)
 is justified for the remaining ~12%.
+
+## PR-10 — Playwright on the fallback (Task #55)
+
+PR-10 closes the JS-only-coaches-page residual (the George Mason /
+Virginia Tech bucket above) by extending `probe_coaches_pages` to
+re-fetch a candidate via `_render_with_playwright` when the static
+fetch returned HTML but `extract_head_coach_from_html` found
+nothing. Same env flag (`NCAA_PLAYWRIGHT_FALLBACK`) gates it, so
+CI / sandbox keeps working unchanged. Hits get tagged
+`coaches-page-fallback:rendered:<inline-strategy>` so the end-of-run
+strategy breakdown can tell rendered hits apart from static-fetch
+hits at the same fallback bucket. Negative results (rendered DOM
+also missed) flow through the existing per-host probe cache, so a
+school with neither a server-rendered nor a JS-rendered staff page
+pays the ~3-5 s render once and then no-ops on subsequent program
+passes within the same run.
