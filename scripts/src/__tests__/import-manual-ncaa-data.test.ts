@@ -152,22 +152,66 @@ test("is_head_coach defaults true when blank", () => {
 
 console.log("validateUrlRow");
 
-test("happy path", () => {
+test("happy path — soccer_program_url only (D1/D2/D3 shape)", () => {
   const row = validateUrlRow(
     { college_id: "5", soccer_program_url: "https://example.edu/sports/mens-soccer/roster" },
     1,
   );
   assert.ok(!("error" in row));
   assert.equal((row as any).college_id, 5);
+  assert.equal((row as any).soccer_program_url, "https://example.edu/sports/mens-soccer/roster");
+  assert.equal((row as any).website, null);
 });
 
-test("non-http URL rejects", () => {
+test("happy path — both website + soccer_program_url (NAIA shape)", () => {
+  const row = validateUrlRow(
+    {
+      college_id: "5",
+      website: "https://example.edu/athletics",
+      soccer_program_url: "https://example.edu/sports/mens-soccer/roster",
+    },
+    1,
+  );
+  assert.ok(!("error" in row));
+  assert.equal((row as any).website, "https://example.edu/athletics");
+  assert.equal((row as any).soccer_program_url, "https://example.edu/sports/mens-soccer/roster");
+});
+
+test("happy path — website only (kid couldn't find roster page)", () => {
+  const row = validateUrlRow(
+    { college_id: "5", website: "https://example.edu/athletics", soccer_program_url: "" },
+    1,
+  );
+  assert.ok(!("error" in row));
+  assert.equal((row as any).website, "https://example.edu/athletics");
+  assert.equal((row as any).soccer_program_url, null);
+});
+
+test("rejects row with neither field filled", () => {
+  const row = validateUrlRow(
+    { college_id: "5", website: "", soccer_program_url: "" },
+    7,
+  );
+  assert.ok("error" in row);
+  assert.match((row as any).error, /neither soccer_program_url nor website/);
+});
+
+test("non-http soccer_program_url rejects", () => {
   const row = validateUrlRow(
     { college_id: "5", soccer_program_url: "example.edu/sports" },
     1,
   );
   assert.ok("error" in row);
-  assert.match((row as any).error, /http/);
+  assert.match((row as any).error, /soccer_program_url.*http/);
+});
+
+test("non-http website rejects", () => {
+  const row = validateUrlRow(
+    { college_id: "5", website: "example.edu", soccer_program_url: "" },
+    1,
+  );
+  assert.ok("error" in row);
+  assert.match((row as any).error, /website.*http/);
 });
 
 test("missing college_id rejects", () => {

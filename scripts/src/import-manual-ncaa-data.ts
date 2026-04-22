@@ -272,29 +272,50 @@ async function importCoaches(
 
 interface UrlRow {
   college_id: number;
-  soccer_program_url: string;
+  // At least one of soccer_program_url / website must be non-null.
+  // NAIA rows (seeded with NULL website) commonly need both filled in
+  // one pass; D1/D2/D3 rows typically only fill soccer_program_url
+  // because website was already populated at seed time.
+  soccer_program_url: string | null;
+  website: string | null;
 }
 
 export function validateUrlRow(raw: Record<string, string>, lineNo: number): UrlRow | { error: string } {
   const collegeId = toInt(raw.college_id);
   const url = normalizeString(raw.soccer_program_url);
+  const website = normalizeString(raw.website);
   if (collegeId === null) return { error: `line ${lineNo}: missing/invalid college_id` };
-  if (!url) return { error: `line ${lineNo}: missing soccer_program_url` };
-  if (!/^https?:\/\//i.test(url)) {
+  if (!url && !website) {
+    return {
+      error:
+        `line ${lineNo}: row has neither soccer_program_url nor website — ` +
+        `fill at least one (blank template rows should be deleted before import)`,
+    };
+  }
+  if (url && !/^https?:\/\//i.test(url)) {
     return { error: `line ${lineNo}: soccer_program_url must start with http:// or https:// (got ${url})` };
   }
-  return { college_id: collegeId, soccer_program_url: url };
+  if (website && !/^https?:\/\//i.test(website)) {
+    return { error: `line ${lineNo}: website must start with http:// or https:// (got ${website})` };
+  }
+  return { college_id: collegeId, soccer_program_url: url, website };
 }
 
 async function importUrls(rows: UrlRow[], dryRun: boolean): Promise<Counts> {
   const counts: Counts = { inserted: 0, updated: 0, skipped: 0 };
   for (const row of rows) {
     if (dryRun) continue;
+    // COALESCE on both columns: the kid may supply website-only (can't
+    // find a roster URL yet), soccer_program_url-only (D1/D2/D3 normal
+    // case), or both (NAIA normal case). Never clobber a populated
+    // column with NULL — that would regress D1 rows where website was
+    // seeded by stats.ncaa.org.
     try {
       const res = await db.execute(sql`
         UPDATE colleges
-        SET soccer_program_url = ${row.soccer_program_url},
-            last_scraped_at = now()
+        SET soccer_program_url = COALESCE(${row.soccer_program_url}, soccer_program_url),
+            website            = COALESCE(${row.website}, website),
+            last_scraped_at    = now()
         WHERE id = ${row.college_id}
         RETURNING id
       `);
