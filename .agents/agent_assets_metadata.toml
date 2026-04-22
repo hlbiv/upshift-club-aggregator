@@ -1,0 +1,74 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "btRNziqDyG_u-UKfkds6r"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_urls_d1_20260422.csv"
+type = "table"
+title = "D1 — Missing URLs"
+
+[[outputs]]
+id = "1G_J84FGx2WZ1M7RY0sXp"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_coaches_d1_20260422.csv"
+type = "table"
+title = "D1 — Missing Coaches"
+
+[[outputs]]
+id = "cA4Pn2NZ-o_vuWiSDgfXZ"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_rosters_d1_20260422.csv"
+type = "table"
+title = "D1 — Missing Rosters"
+
+[[outputs]]
+id = "_6A0f4Yr_H56Tyj1RjRdl"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_urls_d2_20260422.csv"
+type = "table"
+title = "D2 — Missing URLs"
+
+[[outputs]]
+id = "JWUlHmVZ_tPBoX-J2GISa"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_coaches_d2_20260422.csv"
+type = "table"
+title = "D2 — Missing Coaches"
+
+[[outputs]]
+id = "gP6sq-3u8eSnXPKvlQrVp"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_rosters_d2_20260422.csv"
+type = "table"
+title = "D2 — Missing Rosters"
+
+[[outputs]]
+id = "Dg62EpfDiBlz8rVbbqQjD"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_urls_d3_20260422.csv"
+type = "table"
+title = "D3 — Missing URLs"
+
+[[outputs]]
+id = "9PJZtE-o8MGOj-vOAMzgx"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_coaches_d3_20260422.csv"
+type = "table"
+title = "D3 — Missing Coaches"
+
+[[outputs]]
+id = "y-iOJBsyYU7wz2_XOr3F3"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_rosters_d3_20260422.csv"
+type = "table"
+title = "D3 — Missing Rosters"
+
+[[outputs]]
+id = "tjdx6EVOyqcPEnkhlpEZ2"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_urls_naia_20260422.csv"
+type = "table"
+title = "NAIA — Missing URLs"
+
+[[outputs]]
+id = "sWXG3TjjLzlBInKIzxS6K"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_coaches_naia_20260422.csv"
+type = "table"
+title = "NAIA — Missing Coaches"
+
+[[outputs]]
+id = "gKx7UNU83cG_QAZtwcyyI"
+uri = "file://attached_assets/missing-ncaa-20260422/missing_rosters_naia_20260422.csv"
+type = "table"
+title = "NAIA — Missing Rosters"
