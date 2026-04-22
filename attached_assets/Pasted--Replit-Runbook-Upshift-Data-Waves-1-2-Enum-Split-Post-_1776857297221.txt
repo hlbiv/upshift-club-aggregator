@@ -1,0 +1,324 @@
+# Replit Runbook — Upshift Data Waves 1 + 2 + Enum Split, Post-Merge
+
+Run these in order from the Replit shell. Assumes `DATABASE_URL` and `$REPL_HOME` are already set. 20 PRs merged since last pull (19 Wave 1+2 + the `events_source_enum` split) — expect `git pull` to have a lot of commits.
+
+---
+
+## 1. Pull and install
+
+```bash
+cd "$REPL_HOME"
+git fetch origin master && git checkout master && git pull
+pnpm install
+```
+
+Check that workspace packages resolve:
+
+```bash
+pnpm -r --filter '@workspace/*' exec node -e "console.log(require('./package.json').name)"
+```
+
+If `pnpm typecheck` fails on `@workspace/api-server` with `TS2307` for `express-rate-limit` / `swagger-ui-express` / `yaml`, the missing-deps follow-up PR hasn't merged yet — check `gh pr list` for it before proceeding.
+
+---
+
+## 1.5. Apply the events_source_enum split (one-shot, run BEFORE push)
+
+Splits the previously-shared `events_source_enum` by domain:
+- Adds `totalglobalsports` and `usclub_sanctioned` to `events_source_enum` (reverses the prior downcasts to `'other'`).
+- Creates `roster_source_enum` for `club_roster_snapshots.source` (12 values incl. CMS vendors from `cms_detect.py`).
+- Backfills `events.source='other'` rows that were really TGS or US Club.
+
+Hand-rolled because `ALTER TYPE ... ADD VALUE` cannot be referenced inside the same transaction it's added — drizzle-kit push wraps DDL in a single transaction and would fail.
+
+**Pre-flight** (verify backfill assumptions):
+
+```bash
+psql "$DATABASE_URL" -c "SELECT DISTINCT source FROM club_roster_snapshots;"
+# Expect: only NULL (the writer omits the column today).
+
+psql "$DATABASE_URL" -c "SELECT source, count(*) FROM events GROUP BY source;"
+# Note the 'other' count — should shrink after backfill.
+
+psql "$DATABASE_URL" -c "SELECT DISTINCT platform_event_id FROM events WHERE source='other' LIMIT 50;"
+# Expect mostly tgs-* and usclub-* sentinels.
+```
+
+**Apply** (idempotent — every statement uses `IF NOT EXISTS` / `ADD VALUE IF NOT EXISTS`):
+
+```bash
+psql "$DATABASE_URL" -f scripts/src/migrations/0002_split_events_source_enum.sql
+```
+
+**Verify**:
+
+```bash
+psql "$DATABASE_URL" -c "\dT+ events_source_enum"
+# Expect: gotsport, sincsports, totalglobalsports, usclub_sanctioned, manual, other
+
+psql "$DATABASE_URL" -c "\dT+ roster_source_enum"
+# Expect: gotsport, sincsports, soccerwire, sportsengine, squarespace, duda,
+#         360player, wordpress, wix, static_html, manual, other
+
+psql "$DATABASE_URL" -c "SELECT source, count(*) FROM events GROUP BY source;"
+# Expect nonzero counts for totalglobalsports and usclub_sanctioned post-backfill.
+
+psql "$DATABASE_URL" -c "\d club_roster_snapshots"
+# The `source` column should now show type `roster_source_enum`.
+```
+
+After this completes, Section 2's `pnpm db push` becomes a no-op for the enum types (already applied) and only picks up the 5 Wave-2 tables.
+
+---
+
+## 2. Apply schema changes
+
+Adds `scrape_run_logs.triggered_by` column + 5 new tables: `raw_html_archive`, `commitments`, `ynt_call_ups`, `odp_roster_entries`, `hs_rosters`.
+
+```bash
+pnpm --filter @workspace/db run push
+```
+
+Expected prompts from drizzle-kit:
+- **"Is `<table>` created or renamed from another table?"** for each new table → answer **No**.
+- **`triggered_by` column** → auto-applies with `'manual'` default, no prompt.
+
+Verify:
+
+```bash
+psql "$DATABASE_URL" -c "\dt raw_html_archive commitments ynt_call_ups odp_roster_entries hs_rosters"
+psql "$DATABASE_URL" -c "SELECT column_name, column_default FROM information_schema.columns WHERE table_name='scrape_run_logs' AND column_name='triggered_by';"
+```
+
+Both should return rows.
+
+---
+
+## 3. Set environment variables (Replit Secrets)
+
+| Secret | Value | Purpose |
+|---|---|---|
+| `API_KEY_AUTH_ENABLED` | `true` | apiKeyAuth middleware (#62) |
+| `API_RATE_LIMIT_ENABLED` | `true` | Rate limit: 100 req/min per key (#62) |
+| `API_DOCS_ENABLED` | `true` | Serves swagger-ui at `/api/docs` |
+| `ARCHIVE_RAW_HTML_ENABLED` | leave unset for now | Turn on after step 5 completes |
+
+Restart the api-server:
+
+```bash
+pnpm --filter @workspace/api-server run dev   # or your prod start script
+```
+
+Expected boot log:
+
+```
+[api-key-auth] enabled
+[rate-limit] enabled
+[api-docs] serving at /api/docs
+```
+
+---
+
+## 4. Smoke-test the API
+
+With `UPSHIFT_DATA_API_KEY` exported:
+
+```bash
+# Docs site
+curl -sSI http://localhost:8080/api/docs | head -1
+# Expect: HTTP/1.1 200 OK
+
+# Auth gate
+curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/clubs?page_size=1
+# Expect: 401
+curl -sS -o /dev/null -w "%{http_code}\n" -H "X-API-Key: $UPSHIFT_DATA_API_KEY" \
+  http://localhost:8080/api/clubs?page_size=1
+# Expect: 200
+
+# Rate limit (burst 101 requests)
+for i in $(seq 1 101); do
+  curl -sS -o /dev/null -w "%{http_code}\n" \
+    -H "X-API-Key: $UPSHIFT_DATA_API_KEY" \
+    http://localhost:8080/api/clubs?page_size=1
+done | sort | uniq -c
+# Expect: 100 × 200, 1 × 429
+
+# New event-platform source filter (post-enum-split)
+curl -sS -H "X-API-Key: $UPSHIFT_DATA_API_KEY" \
+  "http://localhost:8080/api/events/list?source=totalglobalsports&page_size=5" | jq '.total'
+# Expect: nonzero (the 0002 backfill reclassified TGS rows from 'other').
+```
+
+---
+
+## 5. Replit Object Storage for raw HTML archival
+
+1. Replit console → Object Storage → create bucket `upshift-raw-html`.
+2. Confirm SDK available: `python3 -c "import replit.object_storage; print('ok')"`
+3. In Secrets: set `ARCHIVE_RAW_HTML_ENABLED=true`.
+4. Smoke:
+   ```bash
+   python3 -c "from scraper.utils.html_archive import archive_raw_html; \
+     print(archive_raw_html('https://example.com/test', '<html>hi</html>'))"
+   ```
+   Expect `{sha256, bucket_path, content_bytes}`. If `None`: check stderr for the one-time init warning.
+5. After any scrape run:
+   ```sql
+   SELECT count(*) FROM raw_html_archive
+   WHERE archived_at > now() - interval '10 min';
+   ```
+   Should be `> 0`. Both requests-based (`scraper_static.py`) and Playwright-based (`scraper_js.py`) paths archive through the same flag.
+
+---
+
+## 6. Wire scheduled deployments
+
+Per `docs/replit-scheduled-deployments.md`. Three jobs in Replit console:
+
+| Name | Command (cwd = repo root) | Cron (UTC — currently EDT) |
+|---|---|---|
+| `upshift-nightly-tier1` | `scraper/scheduled/nightly_tier1.sh` | `0 6 * * *` (= 02:00 ET) |
+| `upshift-weekly-state` | `scraper/scheduled/weekly_state.sh` | `0 7 * * 0` (= 03:00 ET Sun) |
+| `upshift-hourly-linker` | `scraper/scheduled/hourly_linker.sh` | `5 * * * *` |
+
+**DST note**: add `+1` to each UTC hour after Nov 2, 2026 (EST). The docs file has both sets of crons.
+
+Verify the first scheduled run:
+
+```sql
+SELECT source_name, triggered_by, started_at, status
+FROM scrape_run_logs
+WHERE triggered_by = 'scheduler'
+ORDER BY started_at DESC LIMIT 5;
+```
+
+---
+
+## 7. Mint API keys + sync sibling repo
+
+### 7a. Mint a key for the sibling
+
+```bash
+pnpm --filter @workspace/scripts run create-api-key -- --name "upshift-studio"
+# Prints plaintext key ONCE. Copy immediately.
+```
+
+### 7b. Sync the sibling repo (`hlbiv/upshift-studio`)
+
+The sibling's GitHub repo is `hlbiv/upshift-studio` (local dir is `upshift-player-platform`, but remote + PRs live at `upshift-studio`).
+
+```bash
+cd /path/to/upshift-studio
+git fetch origin master && git checkout master && git pull
+pnpm install
+```
+
+`upshift-studio#445` re-vendored `@hlbiv/api-zod@0.2.0` into `lib/upshift-data-client/vendor/hlbiv-api-zod/` and replaced 14 `z.any()` stubs with real imports. No npm publish — api-zod stays vendored.
+
+Smoke the sibling:
+
+```bash
+pnpm --filter @workspace/upshift-data-client run test
+# Should pass — now exercises real Zod validation end-to-end.
+```
+
+### 7c. Wire the sibling's Replit Secrets
+
+- `UPSHIFT_DATA_API_KEY` → plaintext from step 7a
+- `UPSHIFT_DATA_API_URL` → this service's base URL (e.g., `https://upshift-data.<you>.repl.co`)
+
+Restart the sibling's api-server.
+
+---
+
+## 8. Sanity check canonical-club linker
+
+After any scraper runs, the linker must backfill FKs:
+
+```bash
+python3 scraper/run.py --source link-canonical-clubs --dry-run --limit 100
+# If dry-run numbers look right:
+python3 scraper/run.py --source link-canonical-clubs
+```
+
+Verify:
+
+```sql
+SELECT count(*) FROM event_teams WHERE canonical_club_id IS NULL;
+-- Should shrink each run.
+
+SELECT count(*) FROM commitments WHERE club_id IS NULL;
+-- Same pattern.
+
+SELECT count(*) FROM hs_rosters WHERE school_name_raw IS NOT NULL;
+-- School linker is a follow-up; expect raw-only today.
+```
+
+---
+
+## 9. What's working vs. what's still in flight
+
+### ✅ Working now
+
+- `--source replay-html --run-id <uuid>` replays archived HTML for extractors with pure-function parsers. ~14 extractors covered today: `gotsport_events`, `sincsports_events`, `totalglobalsports_events`, `maxpreps_rosters`, `ussoccer_ynt`, `topdrawer_commitments`, `tryouts_wordpress`, `gotsport_tryouts`, `gotsport_rosters`, `ncaa_rosters`, `naia_rosters`, `njcaa_rosters`, `college_coaches`, `youth_club_coaches`.
+- Playwright path archives post-render DOM via `page.content()` — same `ARCHIVE_RAW_HTML_ENABLED` flag.
+- Scheduler + `triggered_by` recorded in `scrape_run_logs`.
+- **Six event-platform sources distinguishable end-to-end**: `gotsport`, `sincsports`, `totalglobalsports`, `usclub_sanctioned`, `manual`, `other`. The TGS extractor (`extractors/totalglobalsports_events.py`) and US Club runner (`usclub_events_runner.py`) write their real source value instead of downcasting to `'other'`.
+- **Roster source tracked at scrape time**: `sincsports`, `gotsport`, `sportsengine`, `squarespace` rosters land their literal in `club_roster_snapshots.source` via the new `roster_source_enum`. CMS labels mirror `scraper/extractors/cms_detect.py`.
+
+### 🚧 In flight / deferred
+
+- TDS and MaxPreps at full volume — proxy pool is empty. `--limit 20` only. Add creds to `scraper/proxy_config.yaml` when ready (see #68 for format).
+- 26 per-league extractors need a `(html, url)` entry-point refactor before replay covers them. Currently they fetch internally and can't be replayed from archive.
+- Roster scrapers `soccerwire`, `club_website`, and `duda_360player` don't emit roster snapshots yet (they handle tryouts / coach discovery only). When they do, add `"source": "<literal>"` per the `roster_source_enum` value set.
+
+---
+
+## 9.5. Known extractor gaps (produce 0 rows today)
+
+Two Wave 2 extractors ship with verified-live seed URLs but parse 0 rows at runtime. Fixes are 1–5 line parser PRs, not Replit tasks — mentioning here so you don't panic when smokes return 0.
+
+| Extractor | Issue | Fix |
+|---|---|---|
+| TDS commitments | `_HEADER_ALIASES` in `scraper/extractors/topdrawer_commitments.py` missing `"commitment" → "college_name_raw"`. TDS's actual column header is "Commitment". | Add one alias entry. |
+| US Soccer YNT | Regex in `scraper/extractors/ussoccer_ynt.py` handles em-dash/pipe rosters but not the `Name (Club; Hometown)` inline format on ~2/3 of articles. | Extend regex. |
+
+Both extractors work correctly against their fixtures — parsers just need a handful of new lines. File a small follow-up PR when you have 10 minutes; no code changes on Replit.
+
+---
+
+## 10. Rollback switches
+
+If anything misbehaves, flip one of these in Secrets and restart the api-server / scraper:
+
+| Flag | Off behavior |
+|---|---|
+| `API_KEY_AUTH_ENABLED=false` | Disables auth gate (pre-#62 behavior). |
+| `API_RATE_LIMIT_ENABLED=false` | Disables rate limiting. |
+| `API_DOCS_ENABLED=false` | Hides `/api/docs`. |
+| `ARCHIVE_RAW_HTML_ENABLED=false` | Scraper stops archiving; DB and bucket untouched. |
+
+Schema changes are non-destructive: the 5 new tables are empty on creation and unused by existing routes; `triggered_by` defaults to `'manual'` so existing logger calls are unchanged.
+
+**No rollback flag for the enum split.** `ALTER TYPE ... ADD VALUE` is permanent in Postgres (no `DROP VALUE`), and the column-type swap is wrapped in its own transaction — partial failure rolls back automatically. Forward-only.
+
+---
+
+## Post-run checklist
+
+- [ ] All 5 new tables (`raw_html_archive`, `commitments`, `ynt_call_ups`, `odp_roster_entries`, `hs_rosters`) exist
+- [ ] `scrape_run_logs.triggered_by` column exists with `'manual'` default
+- [ ] `events_source_enum` has 6 values (incl. `totalglobalsports`, `usclub_sanctioned`)
+- [ ] `roster_source_enum` exists with 12 values
+- [ ] `events.source='other'` count dropped after `0002` backfill (TGS + usclub rows reclassified)
+- [ ] `club_roster_snapshots.source` column type is `roster_source_enum`
+- [ ] API docs reachable at `/api/docs` (auth not required for the docs page itself)
+- [ ] Burst test: 100×200 + 1×429 on rate limiter
+- [ ] After running one roster scraper end-to-end: `SELECT source, count(*) FROM club_roster_snapshots WHERE scraped_at > now() - interval '5 min' GROUP BY source` returns the scraper's literal, not NULL
+- [ ] `raw_html_archive` has rows after first scrape with flag on
+- [ ] First scheduled run logs `triggered_by='scheduler'`
+- [ ] Sibling repo (`upshift-studio`) builds clean + tests pass
+- [ ] One new API key minted, plaintext stored in sibling's `UPSHIFT_DATA_API_KEY`
+- [ ] Linker pass run once; NULL FK counts verified shrinking
+
+If any box stays unchecked after a full pass, file an issue tagged `post-wave-2` with the failing command + output.
