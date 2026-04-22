@@ -3,11 +3,14 @@ import { useNavigate, useParams } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   useGetClubDuplicate,
+  useListClubDuplicates,
   useMergeClubDuplicate,
   useRejectClubDuplicate,
   type ClubDuplicateDetail as ClubDuplicateDetailType,
 } from "@workspace/api-client-react";
-import AdminNav from "../components/AdminNav";
+import { AppShell } from "../components/AppShell";
+import { PageHeader } from "../components/primitives/PageHeader";
+import { useQueueShortcuts } from "../hooks/useQueueShortcuts";
 import { StatusBadge, formatDate, formatError, snapshotName } from "./Dedup";
 
 /**
@@ -48,7 +51,38 @@ export default function DedupDetailPage() {
   const mergeMutation = useMergeClubDuplicate();
   const rejectMutation = useRejectClubDuplicate();
 
+  // Pending-queue snapshot used to compute the next pair after merge/reject
+  // so we can auto-advance directly into the next item rather than dumping
+  // the user back at the list. Fetched in parallel with the detail.
+  const pendingQuery = useListClubDuplicates({
+    status: "pending",
+    limit: 50,
+    page: 1,
+  });
+
   const submitting = mergeMutation.isPending || rejectMutation.isPending;
+
+  function nextPendingId(): number | null {
+    const pairs = pendingQuery.data?.pairs ?? [];
+    if (pairs.length === 0) return null;
+    const idx = pairs.findIndex((p) => p.id === numericId);
+    if (idx === -1) {
+      // Current pair already gone from the queue (resolved elsewhere) —
+      // fall back to whatever sits at the top of the pending list.
+      return pairs[0]?.id ?? null;
+    }
+    const next = pairs[idx + 1] ?? pairs.find((p) => p.id !== numericId);
+    return next?.id ?? null;
+  }
+
+  function advance(flash: string) {
+    const next = nextPendingId();
+    if (next !== null && next !== numericId) {
+      navigate(`/dedup/${next}`, { replace: true, state: { flash } });
+    } else {
+      navigate("/dedup", { replace: true, state: { flash } });
+    }
+  }
 
   async function doMerge(winnerSide: "left" | "right") {
     if (!detailQuery.data || !idIsValid) return;
@@ -70,7 +104,7 @@ export default function DedupDetailPage() {
         `${result.loserAliasesCreated} alias(es), ` +
         `${result.affiliationsReparented} affiliation(s), ` +
         `${result.rosterSnapshotsReparented} roster snapshot(s) reparented`;
-      navigate("/dedup", { replace: true, state: { flash: summary } });
+      advance(summary);
     } catch (err) {
       setActionError(formatError(err));
     }
@@ -81,35 +115,58 @@ export default function DedupDetailPage() {
     setActionError(null);
     try {
       await rejectMutation.mutateAsync({ id: numericId, data: {} });
-      navigate("/dedup", {
-        replace: true,
-        state: { flash: `Pair #${id} rejected` },
-      });
+      advance(`Pair #${id} rejected`);
     } catch (err) {
       setActionError(formatError(err));
     }
   }
 
+  // J/K and ?-help still work via the global handlers; on the detail page,
+  // M opens the Merge confirm dialog (Left winner by default — operators
+  // can use the Right button or click Right in the dialog) and R triggers
+  // a reject. Auto-advance after either action is implicit: both flows
+  // navigate back to /dedup, which surfaces the next pending pair.
+  function siblingPair(direction: 1 | -1): number | null {
+    const pairs = pendingQuery.data?.pairs ?? [];
+    if (pairs.length === 0) return null;
+    const idx = pairs.findIndex((p) => p.id === numericId);
+    if (idx === -1) return pairs[0]?.id ?? null;
+    const target = pairs[idx + direction];
+    return target?.id ?? null;
+  }
+
+  useQueueShortcuts({
+    enabled:
+      detailQuery.data?.status === "pending" && !submitting && idIsValid,
+    onPrimary: () => setConfirmWinner((c) => (c === null ? "left" : c)),
+    onSecondary: () => {
+      void doReject();
+    },
+    onNext: () => {
+      const next = siblingPair(1);
+      if (next !== null) navigate(`/dedup/${next}`);
+    },
+    onPrev: () => {
+      const prev = siblingPair(-1);
+      if (prev !== null) navigate(`/dedup/${prev}`);
+    },
+  });
+
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
-      <AdminNav />
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-neutral-900">
-            Dedup pair{id ? ` #${id}` : ""}
-          </h1>
-          <p className="text-sm text-neutral-500">
-            Compare the two clubs below, then pick a winner or reject the pair.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => navigate("/dedup")}
-          className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
-        >
-          Back to queue
-        </button>
-      </header>
+    <AppShell>
+      <PageHeader
+        title={`Dedup pair${id ? ` #${id}` : ""}`}
+        description="Compare the two clubs below, then pick a winner or reject the pair. Press M to merge, R to reject."
+        actions={
+          <button
+            type="button"
+            onClick={() => navigate("/dedup")}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+          >
+            Back to queue
+          </button>
+        }
+      />
 
       {!idIsValid ? (
         <Placeholder label="Failed to load: Invalid pair id" />
@@ -161,14 +218,39 @@ export default function DedupDetailPage() {
           ) : null}
 
           {detailQuery.data.status === "pending" ? (
-            <ActionBar
-              disabled={submitting}
-              leftName={snapshotName(detailQuery.data.leftCurrent)}
-              rightName={snapshotName(detailQuery.data.rightCurrent)}
-              onPickLeft={() => setConfirmWinner("left")}
-              onPickRight={() => setConfirmWinner("right")}
-              onReject={doReject}
-            />
+            <>
+              <p
+                className="mt-6 mb-2 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+                aria-live="polite"
+              >
+                <kbd className="rounded border border-indigo-200 bg-white px-1.5 font-mono text-[10px]">
+                  M
+                </kbd>
+                merge
+                <span className="text-indigo-300">·</span>
+                <kbd className="rounded border border-indigo-200 bg-white px-1.5 font-mono text-[10px]">
+                  R
+                </kbd>
+                reject
+                <span className="text-indigo-300">·</span>
+                <kbd className="rounded border border-indigo-200 bg-white px-1.5 font-mono text-[10px]">
+                  J
+                </kbd>
+                /
+                <kbd className="rounded border border-indigo-200 bg-white px-1.5 font-mono text-[10px]">
+                  K
+                </kbd>
+                next/prev pair
+              </p>
+              <ActionBar
+                disabled={submitting}
+                leftName={snapshotName(detailQuery.data.leftCurrent)}
+                rightName={snapshotName(detailQuery.data.rightCurrent)}
+                onPickLeft={() => setConfirmWinner("left")}
+                onPickRight={() => setConfirmWinner("right")}
+                onReject={doReject}
+              />
+            </>
           ) : (
             <p className="mt-6 text-sm text-neutral-500">
               This pair has been resolved ({detailQuery.data.status}). No
@@ -190,7 +272,7 @@ export default function DedupDetailPage() {
           />
         </>
       ) : null}
-    </main>
+    </AppShell>
   );
 }
 

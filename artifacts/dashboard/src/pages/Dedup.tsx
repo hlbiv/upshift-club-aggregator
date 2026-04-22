@@ -5,7 +5,9 @@ import {
   type ClubDuplicate,
   type ClubDuplicateList,
 } from "@workspace/api-client-react";
-import AdminNav from "../components/AdminNav";
+import { AppShell } from "../components/AppShell";
+import { PageHeader } from "../components/primitives/PageHeader";
+import { useQueueShortcuts } from "../hooks/useQueueShortcuts";
 
 /**
  * Dedup review queue.
@@ -46,18 +48,50 @@ export default function DedupPage() {
       : { status, limit: PAGE_SIZE, page };
   const query = useListClubDuplicates(params);
 
+  const pairs = query.data?.pairs ?? [];
+  const total = query.data?.total ?? 0;
+  const [cursor, setCursor] = useState(0);
+  const navigateRouter = useNavigate();
+  const pageStart = (query.data?.page ?? page) - 1;
+  const positionGlobal =
+    pairs.length === 0 ? 0 : pageStart * PAGE_SIZE + cursor + 1;
+
+  // Clamp the cursor when results shrink (status switch, page nav).
+  useEffect(() => {
+    if (cursor >= pairs.length) setCursor(Math.max(0, pairs.length - 1));
+  }, [pairs.length, cursor]);
+
+  useQueueShortcuts({
+    enabled: pairs.length > 0,
+    onNext: () => setCursor((c) => Math.min(pairs.length - 1, c + 1)),
+    onPrev: () => setCursor((c) => Math.max(0, c - 1)),
+    onOpen: () => {
+      const pair = pairs[cursor];
+      if (pair) navigateRouter(`/dedup/${pair.id}`);
+    },
+  });
+
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
-      <AdminNav />
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-neutral-900">
-          Dedup review
-        </h1>
-        <p className="text-sm text-neutral-500">
-          Candidate club-duplicate pairs queued by the dedup scraper. Pick a
-          winner to merge, or reject the pair.
+    <AppShell>
+      <PageHeader
+        title="Dedup review"
+        description="Candidate club-duplicate pairs queued by the dedup scraper. Pick a winner to merge, or reject the pair."
+      />
+      {pairs.length > 0 ? (
+        <p
+          className="mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+          aria-live="polite"
+        >
+          Pair{" "}
+          <span className="tabular-nums">
+            {positionGlobal} of {total.toLocaleString()}
+          </span>
+          <span className="text-indigo-400">·</span>
+          <span className="text-indigo-500">
+            J/K to move, Enter to open
+          </span>
         </p>
-      </header>
+      ) : null}
 
       {flashVisible ? (
         <div
@@ -103,6 +137,7 @@ export default function DedupPage() {
         data={query.data}
         isLoading={query.isLoading}
         error={query.error}
+        cursor={cursor}
       />
 
       {query.data && query.data.total > PAGE_SIZE ? (
@@ -113,7 +148,7 @@ export default function DedupPage() {
           onChange={setPage}
         />
       ) : null}
-    </main>
+    </AppShell>
   );
 }
 
@@ -121,10 +156,12 @@ function DedupTable({
   data,
   isLoading,
   error,
+  cursor,
 }: {
   data: ClubDuplicateList | undefined;
   isLoading: boolean;
   error: unknown;
+  cursor: number;
 }) {
   const navigate = useNavigate();
 
@@ -169,7 +206,14 @@ function DedupTable({
           {pairs.map((pair, i) => (
             <tr
               key={pair.id}
-              className={i % 2 === 0 ? "bg-white" : "bg-neutral-50/50"}
+              aria-current={i === cursor ? "true" : undefined}
+              className={
+                i === cursor
+                  ? "bg-indigo-50/60 ring-2 ring-inset ring-indigo-300"
+                  : i % 2 === 0
+                    ? "bg-white"
+                    : "bg-neutral-50/50"
+              }
             >
               <Td>{pair.id}</Td>
               <Td>

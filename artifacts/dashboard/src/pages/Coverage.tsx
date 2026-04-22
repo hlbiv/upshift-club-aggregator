@@ -4,7 +4,8 @@ import {
   useGetCoverageLeagues,
   type CoverageLeaguesResponse,
 } from "@workspace/api-client-react";
-import AdminNav from "../components/AdminNav";
+import { AppShell } from "../components/AppShell";
+import { PageHeader } from "../components/primitives/PageHeader";
 
 /**
  * Coverage overview.
@@ -27,15 +28,11 @@ export default function CoveragePage() {
   const query = useGetCoverageLeagues({ page, page_size: PAGE_SIZE });
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
-      <AdminNav />
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-neutral-900">Coverage</h1>
-        <p className="text-sm text-neutral-500">
-          Per-league rollup of club coverage. Worst-covered leagues first.
-          Click through for per-club drilldown.
-        </p>
-      </header>
+    <AppShell>
+      <PageHeader
+        title="Coverage"
+        description="Per-league rollup of club coverage. Worst-covered leagues first. Click through for per-club drilldown."
+      />
 
       <LeaguesTable
         data={query.data}
@@ -44,7 +41,7 @@ export default function CoveragePage() {
         page={page}
         onPageChange={setPage}
       />
-    </main>
+    </AppShell>
   );
 }
 

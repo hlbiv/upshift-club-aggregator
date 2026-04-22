@@ -84,6 +84,27 @@ export interface SearchResponse {
   results: Club[];
 }
 
+/**
+ * A canonical college / university record.
+ */
+export interface College {
+  id: number;
+  name: string;
+  slug: string;
+  division: string;
+  conference?: string | null;
+  state?: string | null;
+  city?: string | null;
+  gender_program: string;
+}
+
+export interface CollegeListResponse {
+  colleges: College[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface LeagueListResponse {
   leagues: League[];
 }
@@ -853,6 +874,29 @@ export type SearchClubsParams = {
    * Search query
    */
   q: string;
+};
+
+export type ListCollegesParams = {
+  /**
+   * Substring match on the canonical college name (ILIKE)
+   */
+  q?: string;
+  /**
+   * NCAA division code (D1 / D2 / D3 / NAIA / NJCAA)
+   */
+  division?: string;
+  /**
+   * US state abbreviation or full name (ILIKE match)
+   */
+  state?: string;
+  gender_program?: string;
+  conference?: string;
+  scholarship_available?: boolean;
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
 };
 
 export type SearchClubsAdvancedParams = {

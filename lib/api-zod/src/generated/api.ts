@@ -163,6 +163,58 @@ export const SearchClubsResponse = zod.object({
 });
 
 /**
+ * Returns colleges ordered alphabetically by name. The `q` parameter runs an ILIKE substring match against the canonical name and is what the dashboard's global search uses.
+
+ * @summary Paginated, filterable list of NCAA colleges
+ */
+export const listCollegesQueryPageDefault = 1;
+export const listCollegesQueryPageSizeDefault = 20;
+export const listCollegesQueryPageSizeMax = 100;
+
+export const ListCollegesQueryParams = zod.object({
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe("Substring match on the canonical college name (ILIKE)"),
+  division: zod.coerce
+    .string()
+    .optional()
+    .describe("NCAA division code (D1 \/ D2 \/ D3 \/ NAIA \/ NJCAA)"),
+  state: zod.coerce
+    .string()
+    .optional()
+    .describe("US state abbreviation or full name (ILIKE match)"),
+  gender_program: zod.coerce.string().optional(),
+  conference: zod.coerce.string().optional(),
+  scholarship_available: zod.coerce.boolean().optional(),
+  page: zod.coerce.number().default(listCollegesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(listCollegesQueryPageSizeMax)
+    .default(listCollegesQueryPageSizeDefault),
+});
+
+export const ListCollegesResponse = zod.object({
+  colleges: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        name: zod.string(),
+        slug: zod.string(),
+        division: zod.string(),
+        conference: zod.string().nullish(),
+        state: zod.string().nullish(),
+        city: zod.string().nullish(),
+        gender_program: zod.string(),
+      })
+      .describe("A canonical college \/ university record."),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
  * @summary List all leagues in the master directory
  */
 export const ListLeaguesResponse = zod.object({

@@ -36,6 +36,7 @@ import type {
   ClubStaffResponse,
   CoachQualityFlagsResponse,
   CoachSearchResponse,
+  CollegeListResponse,
   CoverageLeagueDetailResponse,
   CoverageLeaguesResponse,
   CoverageResponse,
@@ -62,6 +63,7 @@ import type {
   LeagueListResponse,
   ListClubDuplicatesParams,
   ListClubsParams,
+  ListCollegesParams,
   ListScrapeHealthParams,
   ListScrapeRunsParams,
   ListScraperScheduleRunsParams,
@@ -523,6 +525,102 @@ export function useSearchClubs<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getSearchClubsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns colleges ordered alphabetically by name. The `q` parameter runs an ILIKE substring match against the canonical name and is what the dashboard's global search uses.
+
+ * @summary Paginated, filterable list of NCAA colleges
+ */
+export const getListCollegesUrl = (params?: ListCollegesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/colleges?${stringifiedParams}`
+    : `/api/colleges`;
+};
+
+export const listColleges = async (
+  params?: ListCollegesParams,
+  options?: RequestInit,
+): Promise<CollegeListResponse> => {
+  return customFetch<CollegeListResponse>(getListCollegesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCollegesQueryKey = (params?: ListCollegesParams) => {
+  return [`/api/colleges`, ...(params ? [params] : [])] as const;
+};
+
+export const getListCollegesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listColleges>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListCollegesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listColleges>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListCollegesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listColleges>>> = ({
+    signal,
+  }) => listColleges(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listColleges>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCollegesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listColleges>>
+>;
+export type ListCollegesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Paginated, filterable list of NCAA colleges
+ */
+
+export function useListColleges<
+  TData = Awaited<ReturnType<typeof listColleges>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListCollegesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listColleges>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCollegesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

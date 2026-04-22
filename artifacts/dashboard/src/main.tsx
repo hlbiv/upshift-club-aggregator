@@ -12,6 +12,10 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       // No cross-page cache sharing today; retry on network hiccup only.
       retry: 1,
+      // 60s default staleTime so the sidebar badge counts + Overview KPI
+      // strip don't refire the same list endpoints on every route change.
+      // Pages that need fresher data still call `refetch()` explicitly.
+      staleTime: 60_000,
     },
   },
 });

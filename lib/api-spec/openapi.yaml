@@ -20,6 +20,8 @@ tags:
     description: Fuzzy search operations
   - name: analytics
     description: Duplicate detection, coverage gaps, and league overlap analytics
+  - name: colleges
+    description: NCAA / NAIA college directory operations
   - name: admin
     description: >
       Human-admin surface mounted at `/v1/admin/*` (full path
@@ -162,6 +164,62 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SearchResponse"
+
+  /colleges:
+    get:
+      operationId: listColleges
+      tags: [colleges]
+      summary: Paginated, filterable list of NCAA colleges
+      description: >
+        Returns colleges ordered alphabetically by name. The `q` parameter
+        runs an ILIKE substring match against the canonical name and is
+        what the dashboard's global search uses.
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Substring match on the canonical college name (ILIKE)
+        - name: division
+          in: query
+          schema:
+            type: string
+          description: NCAA division code (D1 / D2 / D3 / NAIA / NJCAA)
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: US state abbreviation or full name (ILIKE match)
+        - name: gender_program
+          in: query
+          schema:
+            type: string
+        - name: conference
+          in: query
+          schema:
+            type: string
+        - name: scholarship_available
+          in: query
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated college list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollegeListResponse"
 
   /leagues:
     get:
@@ -1970,6 +2028,55 @@ components:
       required:
         - query
         - results
+
+    College:
+      type: object
+      description: A canonical college / university record.
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        division:
+          type: string
+        conference:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        gender_program:
+          type: string
+      required:
+        - id
+        - name
+        - slug
+        - division
+        - gender_program
+
+    CollegeListResponse:
+      type: object
+      properties:
+        colleges:
+          type: array
+          items:
+            $ref: "#/components/schemas/College"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+      required:
+        - colleges
+        - total
+        - page
+        - page_size
 
     LeagueListResponse:
       type: object

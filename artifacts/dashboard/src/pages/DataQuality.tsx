@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetNavLeakedNamesQueryKey,
@@ -15,6 +15,8 @@ import {
   type NumericOnlyNamesResponse,
   type StaleScrapesResponse,
 } from "@workspace/api-client-react";
+import { useQueueShortcuts } from "../hooks/useQueueShortcuts";
+import { Navigate } from "react-router-dom";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,12 +28,6 @@ import {
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
 import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from "../components/ui/tabs";
-import {
   Table,
   TableBody,
   TableCell,
@@ -39,7 +35,6 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
-import AdminNav from "../components/AdminNav";
 
 /**
  * Data-quality admin page.
@@ -70,54 +65,22 @@ const PANEL_DEFAULT_PAGE_SIZE = 20;
 const EMPTY_STAFF_DEFAULT_WINDOW_DAYS = 30;
 const STALE_SCRAPES_DEFAULT_THRESHOLD_DAYS = 14;
 
-export default function DataQualityPage() {
-  return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
-      <AdminNav />
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold text-neutral-900">
-          Data quality
-        </h1>
-        <p className="text-sm text-neutral-500">
-          Read-only panels for spotting empty-staff clubs and stale scrapes,
-          plus the GA Premier orphan cleanup sweep.
-        </p>
-      </header>
-
-      <Tabs defaultValue="ga-premier" className="w-full">
-        <TabsList className="mb-6">
-          <TabsTrigger value="ga-premier">GA Premier orphans</TabsTrigger>
-          <TabsTrigger value="empty-staff">Empty staff pages</TabsTrigger>
-          <TabsTrigger value="stale-scrapes">Stale scrapes</TabsTrigger>
-          <TabsTrigger value="nav-leaked">Nav-leaked names</TabsTrigger>
-          <TabsTrigger value="numeric-only">Numeric-only names</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="ga-premier">
-          <GaPremierPanel />
-        </TabsContent>
-        <TabsContent value="empty-staff">
-          <EmptyStaffPanel />
-        </TabsContent>
-        <TabsContent value="stale-scrapes">
-          <StaleScrapesPanel />
-        </TabsContent>
-        <TabsContent value="nav-leaked">
-          <NavLeakedNamesPanel />
-        </TabsContent>
-        <TabsContent value="numeric-only">
-          <NumericOnlyNamesPanel />
-        </TabsContent>
-      </Tabs>
-    </main>
-  );
+/**
+ * The old monolithic Data Quality page has been split into per-check routes
+ * under `/data-quality/*`. The 5 panels now live in `pages/dataquality/*`
+ * (each a thin wrapper around the panel components below). The legacy
+ * `/data-quality` route redirects to the first sub-page so existing
+ * bookmarks keep working.
+ */
+export default function DataQualityRedirect() {
+  return <Navigate to="/data-quality/nav-leaked" replace />;
 }
 
 // ---------------------------------------------------------------------------
 // GA Premier orphan cleanup
 // ---------------------------------------------------------------------------
 
-function GaPremierPanel() {
+export function GaPremierPanel() {
   const [dryRun, setDryRun] = useState(true);
   const [limit, setLimit] = useState(500);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -318,7 +281,7 @@ function GaPremierPanel() {
 // Empty staff pages
 // ---------------------------------------------------------------------------
 
-function EmptyStaffPanel() {
+export function EmptyStaffPanel() {
   const [windowDays, setWindowDays] = useState(EMPTY_STAFF_DEFAULT_WINDOW_DAYS);
   const [appliedWindowDays, setAppliedWindowDays] = useState(
     EMPTY_STAFF_DEFAULT_WINDOW_DAYS,
@@ -456,7 +419,7 @@ function EmptyStaffTable({
 // Stale scrapes
 // ---------------------------------------------------------------------------
 
-function StaleScrapesPanel() {
+export function StaleScrapesPanel() {
   const [thresholdDays, setThresholdDays] = useState(
     STALE_SCRAPES_DEFAULT_THRESHOLD_DAYS,
   );
@@ -604,10 +567,12 @@ function StaleScrapesTable({
 
 type NavLeakedState = "open" | "resolved" | "dismissed";
 
-function NavLeakedNamesPanel() {
+export function NavLeakedNamesPanel() {
   const [state, setState] = useState<NavLeakedState>("open");
   const [appliedState, setAppliedState] = useState<NavLeakedState>("open");
   const [page, setPage] = useState(1);
+  const [cursor, setCursor] = useState(0);
+  const queryClient = useQueryClient();
 
   const query = useGetNavLeakedNames({
     page,
@@ -615,9 +580,65 @@ function NavLeakedNamesPanel() {
     state: appliedState,
   });
 
+  // Auto-advance is implicit: the resolved row drops out of the result set
+  // on refetch, so the existing cursor index naturally points to what was
+  // the *next* row. We just clamp on data churn so cursor never points past
+  // the array end.
+  useEffect(() => {
+    const len = query.data?.rows.length ?? 0;
+    if (cursor >= len) setCursor(Math.max(0, len - 1));
+  }, [query.data?.rows.length, cursor]);
+
+  // Shortcut-only resolve hook (the per-row buttons keep their own copy so
+  // the spinner stays scoped to the clicked row). Both share the same
+  // invalidation, which is keyed off the base query key, so either entry
+  // point updates the table.
+  const shortcutResolve = useResolveRosterQualityFlag({
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({
+          queryKey: getGetNavLeakedNamesQueryKey().slice(0, 1),
+        }),
+    },
+  });
+
+  const rows = query.data?.rows ?? [];
+  const total = query.data?.total ?? 0;
+  const pageStart = (query.data?.page ?? page) - 1;
+  const positionInPage = rows.length === 0 ? 0 : cursor + 1;
+  const positionGlobal =
+    rows.length === 0
+      ? 0
+      : pageStart * PANEL_DEFAULT_PAGE_SIZE + cursor + 1;
+
+  useQueueShortcuts({
+    enabled: appliedState === "open" && rows.length > 0,
+    onNext: () => setCursor((c) => Math.min(rows.length - 1, c + 1)),
+    onPrev: () => setCursor((c) => Math.max(0, c - 1)),
+    onPrimary: () => {
+      const row = rows[cursor];
+      if (row && row.resolvedAt === null) {
+        shortcutResolve.mutate({
+          id: row.id,
+          data: { reason: "resolved" },
+        });
+      }
+    },
+    onSecondary: () => {
+      const row = rows[cursor];
+      if (row && row.resolvedAt === null) {
+        shortcutResolve.mutate({
+          id: row.id,
+          data: { reason: "dismissed" },
+        });
+      }
+    },
+  });
+
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPage(1);
+    setCursor(0);
     setAppliedState(state);
   }
 
@@ -699,7 +720,32 @@ function NavLeakedNamesPanel() {
       )}
 
       {query.isSuccess && query.data.rows.length > 0 && (
-        <NavLeakedNamesTable data={query.data} onPage={(p) => setPage(p)} />
+        <>
+          {appliedState === "open" ? (
+            <p
+              className="mb-2 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+              aria-live="polite"
+            >
+              Working{" "}
+              <span className="tabular-nums">
+                {positionGlobal} of {total.toLocaleString()}
+              </span>
+              <span className="text-indigo-400">·</span>
+              <span className="text-indigo-500">
+                row {positionInPage} on page · J/K to move, M confirm, R dismiss
+              </span>
+            </p>
+          ) : null}
+          <NavLeakedNamesTable
+            data={query.data}
+            cursor={cursor}
+            onCursor={setCursor}
+            onPage={(p) => {
+              setPage(p);
+              setCursor(0);
+            }}
+          />
+        </>
       )}
     </section>
   );
@@ -707,9 +753,18 @@ function NavLeakedNamesPanel() {
 
 function NavLeakedNamesTable({
   data,
+  cursor,
+  onCursor,
   onPage,
 }: {
   data: NavLeakedNamesResponse;
+  cursor: number;
+  /**
+   * Sync the parent panel's cursor when the operator clicks a row's
+   * Confirm/Dismiss button with the mouse — keeps mouse + keyboard in
+   * lockstep so the next M/R press operates on whatever was just touched.
+   */
+  onCursor: (idx: number) => void;
   onPage: (p: number) => void;
 }) {
   const queryClient = useQueryClient();
@@ -744,8 +799,16 @@ function NavLeakedNamesTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.rows.map((row) => (
-              <TableRow key={row.id}>
+            {data.rows.map((row, rowIdx) => (
+              <TableRow
+                key={row.id}
+                aria-current={rowIdx === cursor ? "true" : undefined}
+                className={
+                  rowIdx === cursor
+                    ? "bg-indigo-50/60 ring-2 ring-inset ring-indigo-300"
+                    : undefined
+                }
+              >
                 <TableCell className="font-medium">
                   {row.clubNameCanonical ?? (
                     <span className="text-neutral-400">
@@ -788,12 +851,13 @@ function NavLeakedNamesTable({
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          onCursor(rowIdx);
                           resolve.mutate({
                             id: row.id,
                             data: { reason: "resolved" },
-                          })
-                        }
+                          });
+                        }}
                         disabled={
                           resolve.isPending && resolve.variables?.id === row.id
                         }
@@ -808,12 +872,13 @@ function NavLeakedNamesTable({
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          onCursor(rowIdx);
                           resolve.mutate({
                             id: row.id,
                             data: { reason: "dismissed" },
-                          })
-                        }
+                          });
+                        }}
                         disabled={
                           resolve.isPending && resolve.variables?.id === row.id
                         }
@@ -883,10 +948,12 @@ function ResolvedBadge({
 
 type NumericOnlyState = "open" | "resolved" | "dismissed";
 
-function NumericOnlyNamesPanel() {
+export function NumericOnlyNamesPanel() {
   const [state, setState] = useState<NumericOnlyState>("open");
   const [appliedState, setAppliedState] = useState<NumericOnlyState>("open");
   const [page, setPage] = useState(1);
+  const [cursor, setCursor] = useState(0);
+  const queryClient = useQueryClient();
 
   const query = useGetNumericOnlyNames({
     page,
@@ -894,9 +961,57 @@ function NumericOnlyNamesPanel() {
     state: appliedState,
   });
 
+  useEffect(() => {
+    const len = query.data?.rows.length ?? 0;
+    if (cursor >= len) setCursor(Math.max(0, len - 1));
+  }, [query.data?.rows.length, cursor]);
+
+  const shortcutResolve = useResolveRosterQualityFlag({
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({
+          queryKey: getGetNumericOnlyNamesQueryKey().slice(0, 1),
+        }),
+    },
+  });
+
+  const rows = query.data?.rows ?? [];
+  const total = query.data?.total ?? 0;
+  const pageStart = (query.data?.page ?? page) - 1;
+  const positionInPage = rows.length === 0 ? 0 : cursor + 1;
+  const positionGlobal =
+    rows.length === 0
+      ? 0
+      : pageStart * PANEL_DEFAULT_PAGE_SIZE + cursor + 1;
+
+  useQueueShortcuts({
+    enabled: appliedState === "open" && rows.length > 0,
+    onNext: () => setCursor((c) => Math.min(rows.length - 1, c + 1)),
+    onPrev: () => setCursor((c) => Math.max(0, c - 1)),
+    onPrimary: () => {
+      const row = rows[cursor];
+      if (row && row.resolvedAt === null) {
+        shortcutResolve.mutate({
+          id: row.id,
+          data: { reason: "resolved" },
+        });
+      }
+    },
+    onSecondary: () => {
+      const row = rows[cursor];
+      if (row && row.resolvedAt === null) {
+        shortcutResolve.mutate({
+          id: row.id,
+          data: { reason: "dismissed" },
+        });
+      }
+    },
+  });
+
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPage(1);
+    setCursor(0);
     setAppliedState(state);
   }
 
@@ -978,7 +1093,32 @@ function NumericOnlyNamesPanel() {
       )}
 
       {query.isSuccess && query.data.rows.length > 0 && (
-        <NumericOnlyNamesTable data={query.data} onPage={(p) => setPage(p)} />
+        <>
+          {appliedState === "open" ? (
+            <p
+              className="mb-2 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+              aria-live="polite"
+            >
+              Working{" "}
+              <span className="tabular-nums">
+                {positionGlobal} of {total.toLocaleString()}
+              </span>
+              <span className="text-indigo-400">·</span>
+              <span className="text-indigo-500">
+                row {positionInPage} on page · J/K to move, M confirm, R dismiss
+              </span>
+            </p>
+          ) : null}
+          <NumericOnlyNamesTable
+            data={query.data}
+            cursor={cursor}
+            onCursor={setCursor}
+            onPage={(p) => {
+              setPage(p);
+              setCursor(0);
+            }}
+          />
+        </>
       )}
     </section>
   );
@@ -986,9 +1126,14 @@ function NumericOnlyNamesPanel() {
 
 function NumericOnlyNamesTable({
   data,
+  cursor,
+  onCursor,
   onPage,
 }: {
   data: NumericOnlyNamesResponse;
+  cursor: number;
+  /** See NavLeakedNamesTable — sync mouse clicks to the keyboard cursor. */
+  onCursor: (idx: number) => void;
   onPage: (p: number) => void;
 }) {
   const queryClient = useQueryClient();
@@ -1020,8 +1165,16 @@ function NumericOnlyNamesTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.rows.map((row) => (
-              <TableRow key={row.id}>
+            {data.rows.map((row, rowIdx) => (
+              <TableRow
+                key={row.id}
+                aria-current={rowIdx === cursor ? "true" : undefined}
+                className={
+                  rowIdx === cursor
+                    ? "bg-indigo-50/60 ring-2 ring-inset ring-indigo-300"
+                    : undefined
+                }
+              >
                 <TableCell className="font-medium">
                   {row.clubNameCanonical ?? (
                     <span className="text-neutral-400">
@@ -1064,12 +1217,13 @@ function NumericOnlyNamesTable({
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          onCursor(rowIdx);
                           resolve.mutate({
                             id: row.id,
                             data: { reason: "resolved" },
-                          })
-                        }
+                          });
+                        }}
                         disabled={
                           resolve.isPending && resolve.variables?.id === row.id
                         }
@@ -1084,12 +1238,13 @@ function NumericOnlyNamesTable({
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          onCursor(rowIdx);
                           resolve.mutate({
                             id: row.id,
                             data: { reason: "dismissed" },
-                          })
-                        }
+                          });
+                        }}
                         disabled={
                           resolve.isPending && resolve.variables?.id === row.id
                         }

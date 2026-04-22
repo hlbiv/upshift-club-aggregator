@@ -25,6 +25,7 @@ import type {
   ClubStaffResponse,
   CoachQualityFlagsResponse,
   CoachSearchResponse,
+  CollegeListResponse,
   CoverageLeagueDetailResponse,
   CoverageLeaguesResponse,
   CoverageResponse,
@@ -50,6 +51,7 @@ import type {
   LeagueListResponse,
   ListClubDuplicatesParams,
   ListClubsParams,
+  ListCollegesParams,
   ListScrapeHealthParams,
   ListScrapeRunsParams,
   ListScraperScheduleRunsParams,
@@ -188,6 +190,37 @@ export const searchClubs = async (
   options?: RequestInit,
 ): Promise<SearchResponse> => {
   return customFetch<SearchResponse>(getSearchClubsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Returns colleges ordered alphabetically by name. The `q` parameter runs an ILIKE substring match against the canonical name and is what the dashboard's global search uses.
+
+ * @summary Paginated, filterable list of NCAA colleges
+ */
+export const getListCollegesUrl = (params?: ListCollegesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/colleges?${stringifiedParams}`
+    : `/api/colleges`;
+};
+
+export const listColleges = async (
+  params?: ListCollegesParams,
+  options?: RequestInit,
+): Promise<CollegeListResponse> => {
+  return customFetch<CollegeListResponse>(getListCollegesUrl(params), {
     ...options,
     method: "GET",
   });

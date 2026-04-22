@@ -6,7 +6,8 @@ import {
   type ScrapeRunLog,
   type ScrapeRunLogList,
 } from "@workspace/api-client-react";
-import AdminNav from "../components/AdminNav";
+import { AppShell } from "../components/AppShell";
+import { PageHeader } from "../components/primitives/PageHeader";
 
 /**
  * Scraper health dashboard.
@@ -20,16 +21,11 @@ export default function ScraperHealthPage() {
   const runsQuery = useListScrapeRuns({ limit: 50 });
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
-      <AdminNav />
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold text-neutral-900">
-          Scraper health
-        </h1>
-        <p className="text-sm text-neutral-500">
-          Rolling status per entity and the 50 most recent runs.
-        </p>
-      </header>
+    <AppShell>
+      <PageHeader
+        title="Scraper health"
+        description="Rolling status per entity and the 50 most recent runs."
+      />
 
       <section className="mb-10" aria-labelledby="rollup-heading">
         <h2
@@ -58,7 +54,7 @@ export default function ScraperHealthPage() {
           error={runsQuery.error}
         />
       </section>
-    </main>
+    </AppShell>
   );
 }
 

@@ -5,7 +5,8 @@ import {
   type CoverageLeagueDetailResponse,
   type GetCoverageLeagueDetailStatus,
 } from "@workspace/api-client-react";
-import AdminNav from "../components/AdminNav";
+import { AppShell } from "../components/AppShell";
+import { PageHeader } from "../components/primitives/PageHeader";
 
 /**
  * Coverage drilldown — per-club detail for one league.
@@ -41,22 +42,17 @@ export default function CoverageLeaguePage() {
   });
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
-      <AdminNav />
-      <header className="mb-6">
-        <nav aria-label="Breadcrumb" className="mb-2 text-sm text-neutral-500">
-          <Link to="/coverage" className="hover:underline">
-            Coverage
-          </Link>{" "}
-          / <span className="text-neutral-700">League #{leagueId}</span>
-        </nav>
-        <h1 className="text-2xl font-semibold text-neutral-900">
-          {query.data?.league.name ?? `League #${leagueId}`}
-        </h1>
-        <p className="text-sm text-neutral-500">
-          Per-club coverage within this league. Oldest last-scraped first.
-        </p>
-      </header>
+    <AppShell>
+      <nav aria-label="Breadcrumb" className="mb-2 text-sm text-slate-500">
+        <Link to="/coverage" className="hover:underline">
+          Coverage
+        </Link>{" "}
+        / <span className="text-slate-700">League #{leagueId}</span>
+      </nav>
+      <PageHeader
+        title={query.data?.league.name ?? `League #${leagueId}`}
+        description="Per-club coverage within this league. Oldest last-scraped first."
+      />
 
       <div
         role="radiogroup"
@@ -95,7 +91,7 @@ export default function CoverageLeaguePage() {
         page={page}
         onPageChange={setPage}
       />
-    </main>
+    </AppShell>
   );
 }
 

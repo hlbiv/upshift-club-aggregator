@@ -1,5 +1,16 @@
 uploads = []
-generated = []
+
+[[generated]]
+id = "683KwKGUtkOKCqsAZMfoY"
+uri = "file://artifacts/landing/src/assets/network-hero.png"
+type = "image"
+title = "abstract data network visualization"
+
+[[generated]]
+id = "zKmFoIYGya-fnp_mjPlGq"
+uri = "file://artifacts/landing/src/assets/pipeline.png"
+type = "image"
+title = "structured data pipeline abstract"
 
 [[outputs]]
 id = "btRNziqDyG_u-UKfkds6r"

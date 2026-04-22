@@ -23,7 +23,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
-import AdminNav from "../components/AdminNav";
+import { AppShell } from "../components/AppShell";
+import { PageHeader } from "../components/primitives/PageHeader";
+import {
+  StatusBadge as StatusBadgePrimitive,
+  toneForScrapeStatus,
+} from "../components/primitives/StatusBadge";
 
 /**
  * Scheduler admin page.
@@ -117,16 +122,11 @@ export default function SchedulerPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
-      <AdminNav />
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold text-neutral-900">Scheduler</h1>
-        <p className="text-sm text-neutral-500">
-          Trigger scraper jobs on demand and inspect the last 10 runs per job.
-          Cron schedules are edited in the Replit console — this page only
-          handles <em>Run now</em>.
-        </p>
-      </header>
+    <AppShell>
+      <PageHeader
+        title="Scheduler"
+        description="Trigger scraper jobs on demand and inspect the last 10 runs per job. Cron schedules are edited in the Replit console — this page only handles Run now."
+      />
 
       {schedulesQuery.isLoading ? (
         <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-10 text-center text-sm text-neutral-500">
@@ -272,7 +272,7 @@ export default function SchedulerPage() {
           {toast}
         </div>
       )}
-    </main>
+    </AppShell>
   );
 }
 
@@ -418,33 +418,15 @@ function Td({ children }: { children: React.ReactNode }) {
 }
 
 function StatusBadge({ status }: { status: SchedulerJob["status"] }) {
-  const base = "inline-block rounded px-2 py-0.5 text-xs font-medium";
-  switch (status) {
-    case "pending":
-      return (
-        <span className={`${base} bg-yellow-100 text-yellow-800`}>pending</span>
-      );
-    case "running":
-      return (
-        <span className={`${base} animate-pulse bg-blue-100 text-blue-800`}>
-          running
-        </span>
-      );
-    case "success":
-      return (
-        <span className={`${base} bg-green-100 text-green-800`}>success</span>
-      );
-    case "failed":
-      return <span className={`${base} bg-red-100 text-red-800`}>failed</span>;
-    case "canceled":
-      return (
-        <span className={`${base} bg-neutral-200 text-neutral-700`}>
-          canceled
-        </span>
-      );
-    default:
-      return <span className={`${base} text-neutral-500`}>{status}</span>;
-  }
+  // Route through the design-system primitive so the scheduler matches the
+  // tone palette used everywhere else (Overview attention list, scraper
+  // health table, dedup detail, etc).
+  return (
+    <StatusBadgePrimitive
+      tone={toneForScrapeStatus(status)}
+      label={status}
+    />
+  );
 }
 
 function formatDate(iso: string | null): string {
