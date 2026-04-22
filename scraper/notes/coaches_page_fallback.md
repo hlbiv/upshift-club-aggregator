@@ -119,37 +119,58 @@ including incidental tests added across the file since Task #34).
 
 ---
 
-## Production-impact projection
+## Live measurement — Task #34 residual (3 schools)
 
-We have not yet re-run a full NCAA D1 + D2 + D3 crawl since the Task
-#34 inline extension shipped, so the production baseline is still the
-0.17% pre-Task-#34 number. Task #37 ("Measure how many head coaches
-we now find in a real crawl") is now unblocked by both PR-7 (Task #34)
-and PR-9 (this change) and should be run next to size the actual
-production lift.
+Re-running the targeted probe against the exact 3-school residual that
+Task #34 identified as fully JS-rendered (zero inline staff markup at
+any selector), via [`probe_coaches_fallback.py`](probe_coaches_fallback.py)
+on 2026-04-22:
 
-Projected lift on top of Task #34 (from the 28-page probe sample):
+| School | Inline (Task #34) | Fallback (PR-9) | Source URL |
+| --- | --- | --- | --- |
+| Pepperdine (men) | MISS | **Tyler LaTorre (Head Coach)** | `https://pepperdinewaves.com/sports/mens-soccer/staff` |
+| George Mason (men) | MISS | MISS | (4 candidates probed, all returned no static staff markup) |
+| Virginia Tech (men) | MISS | MISS | (4 candidates probed, all returned no static staff markup) |
 
 ```
-Task #34 baseline:                   23/28 (82.1%) hit rate
-+ PR-9 fallback theoretical max:     26/28 (92.9%) — recovers Pepperdine,
-                                                    George Mason, Virginia Tech
-                                                    if their /coaches pages
-                                                    are server-rendered.
-Hard residual (still uncoverable):    2/28 (7.1%)  — Stanford (named
-                                                    directorship), Michigan
-                                                    (no online staff listing).
+Inline-only baseline (Task #34 residual): 0/3  (0%)
+With PR-9 fallback:                       1/3  (33%)
+Net additional captures from PR-9:        +1
 ```
 
-Real production hit rate is likely lower than 92.9% because:
-- The probe sample skewed SIDEARM-heavy (25/28). The long-tail of
-  non-SIDEARM CMSs may not respond to any of the four candidate paths.
-- Some schools' separate staff pages may also be JS-rendered (the
-  Playwright fallback path is roster-only and does not extend to the
-  fallback probe).
+### What this tells us
 
-A safer projection: **+5-8 percentage points** on production hit rate
-on top of whatever Task #34 actually produced. Task #37 will measure
-both numbers in a single crawl and confirm whether further work
-(PR-10 = Playwright-render the /coaches page when its static HTML
-also misses) is justified.
+- **PR-9 works as designed.** Pepperdine matches the exact pattern
+  the design targets: the roster page is a Vue/React shell, but
+  `/staff` is server-rendered with a legacy SIDEARM staff card. The
+  fallback found `Tyler LaTorre — Head Coach` on the third candidate
+  URL (`/staff`, after `/coaches` and `/coaches-and-staff` 404'd) and
+  the writer would tag the row with `source='ncaa_coaches_page'` and
+  `source_url=https://pepperdinewaves.com/sports/mens-soccer/staff`.
+- **The remaining 2/3 are a deeper problem.** George Mason and
+  Virginia Tech serve JS-rendered HTML on **every** candidate URL,
+  not just the roster page. Static fetches see a shell on `/coaches`,
+  `/coaches-and-staff`, `/staff`, AND `/staff-directory`. PR-9 cannot
+  recover these without rendering — that's PR-10 (the
+  `Render JS-only coaches pages` follow-up filed alongside this task).
+- The probe-sample-extrapolation projection ("recovers all 3 of the
+  Task #34 residual") was too optimistic: real-world recovery on the
+  Task #34 residual is **33% (1/3)**, not the projected 100%. The
+  remaining 2/3 require Playwright on the fallback probe.
+
+## Production-impact estimate
+
+The Task #34 residual is itself only ~10% of D1 schools (3/28 in the
+probe sample). PR-9 recovers ~33% of that residual:
+
+```
+Task #34 inline-only baseline:                 ~82% hit rate
++ PR-9 fallback (33% of the 18% residual):     ~88% projected hit rate
+Net production lift from PR-9:                 ~+6 pp
+```
+
+Task #37 ("Measure how many head coaches we now find in a real
+crawl") is now unblocked by both PR-7 (Task #34) and PR-9 (this
+change). It should be run next to confirm the projected ~88% lands
+in production and to scope whether PR-10 (Playwright on the fallback)
+is justified for the remaining ~12%.

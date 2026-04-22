@@ -2391,12 +2391,14 @@ def scrape_college_rosters(
     logger.info(
         "coach extraction hits: sidearm-staff-member=%d s-person-card=%d "
         "sidearm-roster-coach=%d roster-staff-members-card-item=%d "
-        "vue-embedded-json=%d misses=%d  (hit_rate=%.1f%% of %d pages)",
+        "vue-embedded-json=%d coaches-page-fallback=%d misses=%d  "
+        "(hit_rate=%.1f%% of %d pages)",
         coach_strategy_hits["sidearm-staff-member"],
         coach_strategy_hits["s-person-card"],
         coach_strategy_hits["sidearm-roster-coach"],
         coach_strategy_hits["roster-staff-members-card-item"],
         coach_strategy_hits["vue-embedded-json"],
+        coach_strategy_hits["coaches-page-fallback"],
         coach_strategy_hits["miss"],
         hit_pct,
         total_pages,
