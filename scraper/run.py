@@ -1266,7 +1266,6 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
     from extractors.naia_directory import (
         _normalize_naia_name,
         discover_naia_program_url,
-        fetch_naia_programs as _unused_fetch,  # noqa: F401  (parity import)
         parse_naia_index_slugs,
         directory_url as naia_directory_url,
         USER_AGENT as _NAIA_UA,
