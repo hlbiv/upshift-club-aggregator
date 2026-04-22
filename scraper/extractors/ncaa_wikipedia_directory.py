@@ -3,11 +3,18 @@ ncaa_wikipedia_directory.py — Seed ``colleges`` from Wikipedia's D2/D3/NAIA/NJ
 soccer-program list pages.
 
 PR-1 (ncaa_directory.py) shipped a stats.ncaa.org-backed D1 seeder.
-Stats.ncaa.org blocks our scraper (IP+UA fingerprinting) for non-D1
-divisions too, so for D2/D3/NAIA/NJCAA we use Wikipedia's public
+Stats.ncaa.org 403s our scraper for non-D1 divisions too, so for
+D2/D3/NAIA we use Wikipedia's public
 ``List_of_NCAA_Division_*_soccer_programs`` / ``List_of_NAIA_*``
 tables. Same ``CollegeSeed`` dataclass + ``upsert_college`` writer —
 just a different source module.
+
+D1 coverage: the canonical D1 seeder is still stats.ncaa.org
+(richer conference metadata). Wikipedia is a **fallback** for D1
+when stats.ncaa.org IP/UA-blocks us — confirmed-failing state as
+of April 2026, manifesting as D1 mens seed coverage dropping to
+~30% of the real universe. Operator runs
+``--source ncaa-seed-wikipedia --division D1`` to top up.
 
 Wikipedia's "List of ..." tables are consistently ``<table
 class="wikitable">`` with a header row (``<th>Institution/School``,
@@ -61,12 +68,21 @@ log = logging.getLogger("ncaa_wikipedia_directory")
 _WIKIPEDIA_BASE = "https://en.wikipedia.org/wiki"
 
 _DIVISION_SOURCES: dict[tuple[str, str], str] = {
+    ("D1", "mens"):   f"{_WIKIPEDIA_BASE}/List_of_NCAA_Division_I_men%27s_soccer_programs",
+    ("D1", "womens"): f"{_WIKIPEDIA_BASE}/List_of_NCAA_Division_I_women%27s_soccer_programs",
     ("D2", "mens"):   f"{_WIKIPEDIA_BASE}/List_of_NCAA_Division_II_men%27s_soccer_programs",
     ("D2", "womens"): f"{_WIKIPEDIA_BASE}/List_of_NCAA_Division_II_women%27s_soccer_programs",
     ("D3", "mens"):   f"{_WIKIPEDIA_BASE}/List_of_NCAA_Division_III_men%27s_soccer_programs",
     ("D3", "womens"): f"{_WIKIPEDIA_BASE}/List_of_NCAA_Division_III_women%27s_soccer_programs",
     ("NAIA", "mens"):   f"{_WIKIPEDIA_BASE}/List_of_NAIA_men%27s_soccer_programs",
     ("NAIA", "womens"): f"{_WIKIPEDIA_BASE}/List_of_NAIA_women%27s_soccer_programs",
+    # D1 note: the canonical seed source for D1 is stats.ncaa.org
+    # (``_handle_ncaa_seed_d1``), which carries richer conference
+    # metadata. Wikipedia support is a fallback for when stats.ncaa.org
+    # IP/UA-blocks the scraper — confirmed-failing state as of April
+    # 2026. Operator runs ``--source ncaa-seed-wikipedia --division D1``
+    # in that case. The D1 Wikipedia pages are just "List of NCAA
+    # Division I ... soccer programs", same shape as D2/D3.
     # NJCAA Wikipedia coverage is fragmented (per-region pages, no
     # single consolidated "List of NJCAA ... soccer programs"). If
     # the operator wants NJCAA they'll need to supply a curated CSV
