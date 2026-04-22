@@ -1558,11 +1558,17 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
     from extractors.naia_directory import (
         _normalize_naia_name,
         discover_naia_program_url,
+        fuzzy_match_naia_slug,
+        parse_naia_index_slug_records,
         parse_naia_index_slugs,
         directory_url as naia_directory_url,
         USER_AGENT as _NAIA_UA,
         supported_genders as naia_supported_genders,
     )
+    try:
+        from config import FUZZY_THRESHOLD as _NAIA_FUZZY_THRESHOLD  # type: ignore
+    except ImportError:
+        _NAIA_FUZZY_THRESHOLD = 88
 
     try:
         import psycopg2  # type: ignore
@@ -1609,6 +1615,7 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
     # configured the wrapper falls back to a direct request, so the
     # same code path works in dev (empty config) and prod.
     slugs_by_gender: dict[str, dict[str, str]] = {}
+    records_by_gender: dict[str, list[dict]] = {}
     for g in genders:
         idx_url = naia_directory_url(g)
         try:
@@ -1627,6 +1634,7 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
                 g, idx_url, exc,
             )
             slugs_by_gender[g] = {}
+            records_by_gender[g] = []
             continue
         if resp.status_code != 200:
             logger.warning(
@@ -1634,8 +1642,10 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
                 idx_url, resp.status_code, g,
             )
             slugs_by_gender[g] = {}
+            records_by_gender[g] = []
             continue
         slugs_by_gender[g] = parse_naia_index_slugs(resp.text, g)
+        records_by_gender[g] = parse_naia_index_slug_records(resp.text, g)
         logger.info(
             "[naia-resolve-urls] %s index: %d slug(s) parsed",
             g, len(slugs_by_gender[g]),
@@ -1665,6 +1675,7 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
     missed_slug = 0
     missed_website = 0
     errors = 0
+    fuzzy_matched = 0
     unresolved_names: list[str] = []
 
     try:
@@ -1672,7 +1683,7 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
         try:
             with conn.cursor() as cur:
                 select_sql = """
-                    SELECT id, name, gender_program
+                    SELECT id, name, gender_program, state
                     FROM colleges
                     WHERE division = 'NAIA'
                       AND soccer_program_url IS NULL
@@ -1690,20 +1701,41 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
             )
 
             for row in rows:
-                college_id, name, gender_program = row
-                # Two-pass slug join: try the exact lowercased DB name
-                # against naia.org's anchor text first, then fall back
-                # to the normalized form (strips punctuation +
-                # University/College/Institute suffixes). The slug map
-                # exposes both forms as keys so either lookup hits the
-                # same slug — handles the common drift between our DB's
-                # full school names ("Wayland Baptist University") and
-                # naia.org's short anchor text ("Wayland Baptist").
+                college_id, name, gender_program, db_state = row
+                # Three-pass slug join:
+                #   1) exact lowercased DB name against naia.org anchor text
+                #   2) suffix-normalized form (drops University/College/Institute)
+                #   3) fuzzy token_sort_ratio >= FUZZY_THRESHOLD (88), gated
+                #      on state when state is known on both sides — catches
+                #      "St. Ambrose"/"Saint Ambrose", "Mount Marty"/"Mt. Marty",
+                #      etc. that survive normalization.
                 gender_slugs = slugs_by_gender.get(gender_program, {})
                 lower_name = (name or "").lower()
                 slug = gender_slugs.get(lower_name)
                 if not slug:
                     slug = gender_slugs.get(_normalize_naia_name(name or ""))
+                if slug:
+                    logger.debug(
+                        "[naia-resolve-urls] exact match: %s -> %s",
+                        name, slug,
+                    )
+                else:
+                    fuzzy_hit = fuzzy_match_naia_slug(
+                        name or "",
+                        db_state,
+                        records_by_gender.get(gender_program, []),
+                        threshold=_NAIA_FUZZY_THRESHOLD,
+                    )
+                    if fuzzy_hit is not None:
+                        slug, matched_name, matched_state, score = fuzzy_hit
+                        fuzzy_matched += 1
+                        logger.info(
+                            "[naia-resolve-urls] fuzzy match accepted: "
+                            "%s (%s) -> %s (%s) score=%d slug=%s",
+                            name, db_state or "?",
+                            matched_name, matched_state or "?",
+                            score, slug,
+                        )
                 if not slug:
                     missed_slug += 1
                     unresolved_names.append(f"{name} (no slug)")

@@ -334,6 +334,119 @@ def _normalize_naia_name(name: str) -> str:
     return s
 
 
+def parse_naia_index_slug_records(
+    html: str, gender: str
+) -> list[dict]:
+    """Per-program slug records from one gender's naia.org index page.
+
+    Walks the same anchors as ``parse_naia_index_slugs`` but emits a
+    list of dicts ``{slug, name, normalized, state}`` so callers can
+    fuzzy-match across name drift while gating on state. ``state`` may
+    be None when the anchor lacks a parenthetical (rare on naia.org).
+    First occurrence per (lowercased name) wins, mirroring
+    ``parse_naia_index_slugs``.
+    """
+    if gender not in _GENDER_SOURCES:
+        raise ValueError(f"gender must be 'mens' or 'womens' (got {gender!r})")
+
+    soup = BeautifulSoup(html, "html.parser")
+    records: list[dict] = []
+    seen_keys: set[str] = set()
+    for anchor in soup.find_all("a", href=_TEAM_HREF_RE):
+        href = anchor.get("href") or ""
+        match = _TEAM_HREF_RE.search(href)
+        if not match:
+            continue
+        slug = match.group(1)
+        raw_text = anchor.get_text()
+        name, state = _name_and_state_from_anchor_text(raw_text)
+        if not name or len(name) < 2:
+            continue
+        key = name.lower()
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        records.append({
+            "slug": slug,
+            "name": name,
+            "normalized": _normalize_naia_name(name),
+            "state": state,
+        })
+    return records
+
+
+_NAIA_ABBREV_MAP = {
+    "st": "saint",
+    "mt": "mount",
+    "ft": "fort",
+}
+
+
+def _expand_naia_abbreviations(normalized: str) -> str:
+    """Expand St./Mt./Ft. → Saint/Mount/Fort on a normalized name.
+
+    Run AFTER ``_normalize_naia_name`` (lowercased, punctuation
+    stripped). This is the small extra step that lets a token-sort
+    fuzzy ratio actually clear FUZZY_THRESHOLD on the abbreviation
+    drift cases the task calls out — "St. Ambrose"/"Saint Ambrose"
+    only score ~70 on token_sort_ratio without it.
+    """
+    if not normalized:
+        return ""
+    tokens = normalized.split()
+    return " ".join(_NAIA_ABBREV_MAP.get(t, t) for t in tokens)
+
+
+def fuzzy_match_naia_slug(
+    name: str,
+    state: Optional[str],
+    records: list[dict],
+    threshold: int = 88,
+) -> Optional[tuple[str, str, Optional[str], int]]:
+    """Best fuzzy slug match for ``name`` across ``records``.
+
+    Returns ``(slug, matched_name, matched_state, score)`` for the
+    highest-scoring record whose ``token_sort_ratio`` against the
+    normalized name is ``>= threshold``, or None if nothing clears the
+    bar. Gated by state when state is known on both sides — records
+    with a state different from ``state`` (case-insensitive 2-letter
+    compare) are excluded entirely. Records with state=None are always
+    eligible (fall back to name-only match).
+
+    Used by ``naia-resolve-urls`` as the second-pass after exact + suffix
+    normalization both miss. Threshold defaults to project-wide
+    FUZZY_THRESHOLD=88.
+    """
+    if not name or not records:
+        return None
+    try:
+        from rapidfuzz import fuzz  # type: ignore
+    except ImportError:
+        return None
+
+    normalized = _expand_naia_abbreviations(_normalize_naia_name(name))
+    if not normalized:
+        return None
+
+    db_state = (state or "").strip().upper() or None
+
+    best: Optional[tuple[str, str, Optional[str], int]] = None
+    for rec in records:
+        rec_state = (rec.get("state") or "").strip().upper() or None
+        # State gate: only enforce when BOTH sides have a state.
+        if db_state and rec_state and db_state != rec_state:
+            continue
+        rec_norm = _expand_naia_abbreviations(rec.get("normalized") or "")
+        if not rec_norm:
+            continue
+        score = int(fuzz.token_sort_ratio(normalized, rec_norm))
+        if score < threshold:
+            continue
+        if best is None or score > best[3]:
+            best = (rec["slug"], rec["name"], rec.get("state"), score)
+    return best
+
+
 def parse_naia_index_slugs(
     html: str, gender: str
 ) -> dict[str, str]:

@@ -688,3 +688,135 @@ class TestNormalizeNaiaNameForSlugJoin:
         # false-positive joins.
         unrelated = "Some Nonexistent University"
         assert slugs.get(_normalize_naia_name(unrelated)) is None
+
+
+# ---------------------------------------------------------------------------
+# parse_naia_index_slug_records / fuzzy_match_naia_slug
+# ---------------------------------------------------------------------------
+
+
+from extractors.naia_directory import (  # noqa: E402
+    fuzzy_match_naia_slug,
+    parse_naia_index_slug_records,
+)
+
+
+class TestParseNaiaIndexSlugRecords:
+    def test_records_carry_slug_name_normalized_state(self):
+        recs = parse_naia_index_slug_records(_read(MENS_FIXTURE), "mens")
+        assert len(recs) > 0
+        for r in recs:
+            assert set(r.keys()) == {"slug", "name", "normalized", "state"}
+            assert r["slug"]
+            assert r["name"]
+            assert r["normalized"] == r["normalized"].lower()
+
+    def test_state_extracted_when_anchor_has_parenthetical(self):
+        recs = parse_naia_index_slug_records(_read(MENS_FIXTURE), "mens")
+        states = {r["state"] for r in recs if r["state"]}
+        assert "KS" in states or len(states) > 0
+
+    def test_dedupe_by_lowercased_name(self):
+        html = (
+            "<html><body>"
+            '<a href="/sports/msoc/2021-22/teams/baker">Baker (KS)</a>'
+            '<a href="/sports/msoc/2021-22/teams/baker">Baker (KS)</a>'
+            "</body></html>"
+        )
+        recs = parse_naia_index_slug_records(html, "mens")
+        assert len(recs) == 1
+
+    def test_invalid_gender_raises(self):
+        with pytest.raises(ValueError):
+            parse_naia_index_slug_records("<html></html>", "coed")
+
+    def test_skips_short_or_empty_anchor_text(self):
+        html = (
+            "<html><body>"
+            '<a href="/sports/msoc/2021-22/teams/x"></a>'
+            '<a href="/sports/msoc/2021-22/teams/y">A</a>'
+            '<a href="/sports/msoc/2021-22/teams/z">Real School (CA)</a>'
+            "</body></html>"
+        )
+        recs = parse_naia_index_slug_records(html, "mens")
+        assert [r["slug"] for r in recs] == ["z"]
+
+
+class TestFuzzyMatchNaiaSlug:
+    def _records(self):
+        return [
+            {"slug": "saint-ambrose", "name": "Saint Ambrose",
+             "normalized": "saint ambrose", "state": "IA"},
+            {"slug": "mt-marty", "name": "Mt. Marty",
+             "normalized": "mt marty", "state": "SD"},
+            {"slug": "st-francis-il", "name": "St. Francis (IL)",
+             "normalized": "st francis il", "state": "IL"},
+            {"slug": "baker", "name": "Baker",
+             "normalized": "baker", "state": "KS"},
+            {"slug": "no-state", "name": "Mystery School",
+             "normalized": "mystery school", "state": None},
+        ]
+
+    def test_st_vs_saint_matches(self):
+        hit = fuzzy_match_naia_slug("St. Ambrose", "IA", self._records())
+        assert hit is not None
+        slug, matched_name, matched_state, score = hit
+        assert slug == "saint-ambrose"
+        assert matched_state == "IA"
+        assert score >= 88
+
+    def test_mt_vs_mount_matches(self):
+        hit = fuzzy_match_naia_slug("Mount Marty", "SD", self._records())
+        assert hit is not None
+        assert hit[0] == "mt-marty"
+
+    def test_state_mismatch_excludes_record(self):
+        # Force a "Baker" lookup attributed to the wrong state — fuzzy
+        # match against the KS Baker record must NOT fire.
+        hit = fuzzy_match_naia_slug("Baker University", "CA", self._records())
+        assert hit is None
+
+    def test_unknown_db_state_still_allows_match(self):
+        hit = fuzzy_match_naia_slug("St. Ambrose", None, self._records())
+        assert hit is not None
+        assert hit[0] == "saint-ambrose"
+
+    def test_unknown_record_state_still_eligible(self):
+        hit = fuzzy_match_naia_slug("Mystry School", "CA", self._records())
+        # name fuzz should still hit on the no-state record
+        assert hit is not None
+        assert hit[0] == "no-state"
+
+    def test_returns_none_below_threshold(self):
+        hit = fuzzy_match_naia_slug(
+            "Completely Unrelated Place", "KS", self._records()
+        )
+        assert hit is None
+
+    def test_returns_none_for_empty_inputs(self):
+        assert fuzzy_match_naia_slug("", "IA", self._records()) is None
+        assert fuzzy_match_naia_slug("Baker", "KS", []) is None
+
+    def test_picks_highest_scoring_record(self):
+        recs = [
+            {"slug": "low", "name": "Saint Ambros",
+             "normalized": "saint ambros", "state": "IA"},
+            {"slug": "high", "name": "Saint Ambrose",
+             "normalized": "saint ambrose", "state": "IA"},
+        ]
+        hit = fuzzy_match_naia_slug("St. Ambrose", "IA", recs)
+        assert hit is not None
+        assert hit[0] == "high"
+
+    def test_threshold_is_configurable(self):
+        # An obviously different name should still hit if threshold is 0
+        hit = fuzzy_match_naia_slug(
+            "Baker University", "KS", self._records(), threshold=0
+        )
+        assert hit is not None
+        assert hit[0] == "baker"
+
+    def test_state_compare_is_case_insensitive(self):
+        hit = fuzzy_match_naia_slug("St. Ambrose", "ia", self._records())
+        assert hit is not None
+        assert hit[0] == "saint-ambrose"
