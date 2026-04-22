@@ -1,3 +1,4 @@
+import { CheckCircle2, AlertTriangle, XCircle, Activity } from "lucide-react";
 import {
   useListScrapeHealth,
   useListScrapeRuns,
@@ -8,6 +9,12 @@ import {
 } from "@workspace/api-client-react";
 import { AppShell } from "../components/AppShell";
 import { PageHeader } from "../components/primitives/PageHeader";
+import { KpiStrip } from "../components/primitives/KpiStrip";
+import { KpiCard } from "../components/primitives/KpiCard";
+import {
+  StatusBadge as StatusBadgePrimitive,
+  toneForScrapeStatus,
+} from "../components/primitives/StatusBadge";
 
 /**
  * Scraper health dashboard.
@@ -20,12 +27,53 @@ export default function ScraperHealthPage() {
   const healthQuery = useListScrapeHealth();
   const runsQuery = useListScrapeRuns({ limit: 50 });
 
+  // KPI rollup from the health rows. We bucket by `lastStatus` so the
+  // strip mirrors the StatusBadge tones (ok / warn / fail / running)
+  // and operators can eyeball "is anything red" without scanning the
+  // table.
+  const rollup = summarizeHealth(healthQuery.data?.rows);
+
   return (
     <AppShell>
       <PageHeader
         title="Scraper health"
         description="Rolling status per entity and the 50 most recent runs."
       />
+
+      <KpiStrip cols={4}>
+        <KpiCard
+          label="Tracked entities"
+          icon={Activity}
+          tone="neutral"
+          value={rollup.total.toLocaleString()}
+          isLoading={healthQuery.isLoading}
+          isError={healthQuery.isError}
+        />
+        <KpiCard
+          label="OK"
+          icon={CheckCircle2}
+          tone="ok"
+          value={rollup.ok.toLocaleString()}
+          isLoading={healthQuery.isLoading}
+          isError={healthQuery.isError}
+        />
+        <KpiCard
+          label="Partial"
+          icon={AlertTriangle}
+          tone="warn"
+          value={rollup.partial.toLocaleString()}
+          isLoading={healthQuery.isLoading}
+          isError={healthQuery.isError}
+        />
+        <KpiCard
+          label="Failed"
+          icon={XCircle}
+          tone={rollup.failed > 0 ? "fail" : "neutral"}
+          value={rollup.failed.toLocaleString()}
+          isLoading={healthQuery.isLoading}
+          isError={healthQuery.isError}
+        />
+      </KpiStrip>
 
       <section className="mb-10" aria-labelledby="rollup-heading">
         <h2
@@ -210,26 +258,31 @@ function StatusBadge({
       </span>
     );
   }
-  const base = "inline-block rounded px-2 py-0.5 text-xs font-medium";
-  // ok → green success; partial → amber (it finished but not cleanly);
-  // failed → red; running → blue pulse.
-  if (status === "ok") {
-    return <span className={`${base} bg-green-100 text-green-800`}>ok</span>;
-  }
-  if (status === "partial") {
-    return (
-      <span className={`${base} bg-amber-100 text-amber-800`}>partial</span>
-    );
-  }
-  if (status === "failed") {
-    return <span className={`${base} bg-red-100 text-red-800`}>failed</span>;
-  }
-  // status === "running"
+  // Route through the design-system primitive so health rows match the
+  // tone palette used on Scheduler / Dedup / Overview attention list.
   return (
-    <span className={`${base} animate-pulse bg-blue-100 text-blue-800`}>
-      running
-    </span>
+    <StatusBadgePrimitive
+      tone={toneForScrapeStatus(status)}
+      label={status}
+    />
   );
+}
+
+function summarizeHealth(rows: ScrapeHealthRow[] | undefined): {
+  total: number;
+  ok: number;
+  partial: number;
+  failed: number;
+} {
+  const acc = { total: 0, ok: 0, partial: 0, failed: 0 };
+  if (!rows) return acc;
+  for (const r of rows) {
+    acc.total += 1;
+    if (r.lastStatus === "ok") acc.ok += 1;
+    else if (r.lastStatus === "partial") acc.partial += 1;
+    else if (r.lastStatus === "failed") acc.failed += 1;
+  }
+  return acc;
 }
 
 function FailureCount({

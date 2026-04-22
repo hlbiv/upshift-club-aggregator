@@ -7,6 +7,10 @@ import {
 } from "@workspace/api-client-react";
 import { AppShell } from "../components/AppShell";
 import { PageHeader } from "../components/primitives/PageHeader";
+import {
+  StatusBadge as StatusBadgePrimitive,
+  toneForDedupStatus,
+} from "../components/primitives/StatusBadge";
 import { useQueueShortcuts } from "../hooks/useQueueShortcuts";
 
 /**
@@ -346,19 +350,13 @@ function Td({
 }
 
 export function StatusBadge({ status }: { status: ClubDuplicate["status"] }) {
-  const base = "inline-block rounded px-2 py-0.5 text-xs font-medium";
-  if (status === "pending") {
-    return (
-      <span className={`${base} bg-yellow-100 text-yellow-800`}>pending</span>
-    );
-  }
-  if (status === "merged") {
-    return (
-      <span className={`${base} bg-green-100 text-green-800`}>merged</span>
-    );
-  }
+  // Route through the design-system primitive so dedup pills match the
+  // tone palette used on Scheduler / ScraperHealth / Overview.
   return (
-    <span className={`${base} bg-neutral-200 text-neutral-700`}>rejected</span>
+    <StatusBadgePrimitive
+      tone={toneForDedupStatus(status)}
+      label={status}
+    />
   );
 }
 
