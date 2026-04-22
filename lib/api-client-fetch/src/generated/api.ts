@@ -29,6 +29,7 @@ import type {
   CollegeListResponse,
   CoverageLeagueDetailResponse,
   CoverageLeaguesResponse,
+  CoverageLeaguesSummaryResponse,
   CoverageResponse,
   CoverageTrendResponse,
   DuplicateReviewDecision,
@@ -1232,6 +1233,40 @@ export const getCoverageLeagues = async (
 ): Promise<CoverageLeaguesResponse> => {
   return customFetch<CoverageLeaguesResponse>(
     getGetCoverageLeaguesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * Returns global rollups across every league in `leagues_master`, deduplicated by canonical club so a club affiliated with N leagues counts once. Used by the Coverage page's KpiStrip so operators can see "X of Y clubs have a roster snapshot" without paginating through the per-league table.
+Counts:
+  * `leaguesTotal` — every row in `leagues_master`.
+  * `clubsTotal` — distinct `canonical_clubs.id` reachable via
+    any `club_affiliations` row.
+  * `clubsWithRosterSnapshot` — distinct affiliated clubs with
+    at least one `club_roster_snapshots` row.
+  * `clubsWithCoachDiscovery` — distinct affiliated clubs with
+    at least one `coach_discoveries` row.
+  * `clubsNeverScraped` — distinct affiliated clubs with no
+    `scrape_health` row (`entity_type='club'`) or NULL
+    `last_scraped_at`.
+  * `clubsStale14d` — distinct affiliated clubs with
+    `scrape_health.last_scraped_at < now() - 14 days`.
+
+ * @summary Aggregate coverage totals across every league
+ */
+export const getGetCoverageLeaguesSummaryUrl = () => {
+  return `/api/v1/admin/coverage/leagues/summary`;
+};
+
+export const getCoverageLeaguesSummary = async (
+  options?: RequestInit,
+): Promise<CoverageLeaguesSummaryResponse> => {
+  return customFetch<CoverageLeaguesSummaryResponse>(
+    getGetCoverageLeaguesSummaryUrl(),
     {
       ...options,
       method: "GET",

@@ -49,6 +49,7 @@ import { db as defaultDb } from "@workspace/db";
 import {
   CoverageLeaguesRequest,
   CoverageLeaguesResponse,
+  CoverageLeaguesSummaryResponse,
   CoverageLeagueDetailRequest,
   CoverageLeagueDetailResponse,
   type CoverageLeagueDetailStatus,
@@ -79,11 +80,27 @@ export interface CoverageLeagueDetailAggRow {
   scrapeConfidence: number | null;
 }
 
+export interface CoverageLeaguesSummary {
+  leaguesTotal: number;
+  clubsTotal: number;
+  clubsWithRosterSnapshot: number;
+  clubsWithCoachDiscovery: number;
+  clubsNeverScraped: number;
+  clubsStale14d: number;
+}
+
 export interface CoverageDeps {
   listLeagues: (args: {
     page: number;
     pageSize: number;
   }) => Promise<{ rows: CoverageLeagueAggRow[]; total: number }>;
+
+  /**
+   * Aggregate coverage rollup across every league. Counts are
+   * deduplicated by canonical club so a club that appears in N
+   * leagues counts once.
+   */
+  summarizeLeagues: () => Promise<CoverageLeaguesSummary>;
 
   /**
    * Resolves the `(id, name)` pair for the requested league. Returns null
@@ -158,6 +175,21 @@ export function makeListLeaguesHandler(deps: CoverageDeps) {
           pageSize,
         }),
       );
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export function makeSummaryHandler(deps: CoverageDeps) {
+  return async (
+    _req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const summary = await deps.summarizeLeagues();
+      res.json(CoverageLeaguesSummaryResponse.parse(summary));
     } catch (err) {
       next(err);
     }
@@ -335,6 +367,80 @@ export const prodCoverageDeps: CoverageDeps = {
     return { rows, total };
   },
 
+  summarizeLeagues: async () => {
+    // Single statement so the dashboard's KpiStrip + per-league
+    // table stay consistent: both queries see the same snapshot of
+    // `scrape_health.last_scraped_at` (it ticks during runs).
+    //
+    // `leagues_master` is left of the affiliation join so leagues
+    // with zero affiliated clubs still count in `leaguesTotal`.
+    // Subset counts use FILTER on the canonical-club id so a club
+    // that appears in N league affiliations counts exactly once.
+    const result = await defaultDb.execute<{
+      leagues_total: string;
+      clubs_total: string;
+      clubs_with_roster_snapshot: string;
+      clubs_with_coach_discovery: string;
+      clubs_never_scraped: string;
+      clubs_stale_14d: string;
+    }>(sql`
+      WITH joined AS (
+        SELECT
+          lm.id        AS league_id,
+          cc.id        AS club_id,
+          EXISTS (
+            SELECT 1 FROM club_roster_snapshots crs WHERE crs.club_id = cc.id
+          ) AS has_roster_snapshot,
+          EXISTS (
+            SELECT 1 FROM coach_discoveries cd WHERE cd.club_id = cc.id
+          ) AS has_coach_discovery,
+          sh.last_scraped_at
+        FROM leagues_master lm
+        LEFT JOIN club_affiliations ca
+          ON ca.source_name = lm.league_name
+        LEFT JOIN canonical_clubs cc
+          ON cc.id = ca.club_id
+        LEFT JOIN scrape_health sh
+          ON sh.entity_type = 'club' AND sh.entity_id = cc.id
+      )
+      SELECT
+        COUNT(DISTINCT league_id)::text AS leagues_total,
+        COUNT(DISTINCT club_id)::text   AS clubs_total,
+        COUNT(DISTINCT club_id) FILTER (WHERE has_roster_snapshot)::text
+          AS clubs_with_roster_snapshot,
+        COUNT(DISTINCT club_id) FILTER (WHERE has_coach_discovery)::text
+          AS clubs_with_coach_discovery,
+        COUNT(DISTINCT club_id) FILTER (
+          WHERE club_id IS NOT NULL AND last_scraped_at IS NULL
+        )::text AS clubs_never_scraped,
+        COUNT(DISTINCT club_id) FILTER (
+          WHERE last_scraped_at IS NOT NULL
+            AND last_scraped_at < now() - make_interval(days => ${STALE_THRESHOLD_DAYS})
+        )::text AS clubs_stale_14d
+      FROM joined
+    `);
+
+    const row = Array.from(
+      result as unknown as Array<{
+        leagues_total: string;
+        clubs_total: string;
+        clubs_with_roster_snapshot: string;
+        clubs_with_coach_discovery: string;
+        clubs_never_scraped: string;
+        clubs_stale_14d: string;
+      }>,
+    )[0];
+
+    return {
+      leaguesTotal: Number(row?.leagues_total ?? 0),
+      clubsTotal: Number(row?.clubs_total ?? 0),
+      clubsWithRosterSnapshot: Number(row?.clubs_with_roster_snapshot ?? 0),
+      clubsWithCoachDiscovery: Number(row?.clubs_with_coach_discovery ?? 0),
+      clubsNeverScraped: Number(row?.clubs_never_scraped ?? 0),
+      clubsStale14d: Number(row?.clubs_stale_14d ?? 0),
+    };
+  },
+
   findLeague: async ({ leagueId }) => {
     const result = await defaultDb.execute<{
       id: number;
@@ -447,6 +553,9 @@ export const prodCoverageDeps: CoverageDeps = {
 export function makeCoverageRouter(deps: CoverageDeps): IRouter {
   const router: IRouter = Router();
   router.get("/leagues", makeListLeaguesHandler(deps));
+  // Static path must be registered before the `:leagueId` param route
+  // so Express doesn't capture "summary" as the leagueId.
+  router.get("/leagues/summary", makeSummaryHandler(deps));
   router.get("/leagues/:leagueId", makeLeagueDetailHandler(deps));
   return router;
 }

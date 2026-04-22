@@ -1,11 +1,23 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  Building2,
+  Layers,
+  Users,
+  UserCheck,
+  Ban,
+  Clock3,
+} from "lucide-react";
+import {
   useGetCoverageLeagues,
+  useGetCoverageLeaguesSummary,
   type CoverageLeaguesResponse,
+  type CoverageLeaguesSummaryResponse,
 } from "@workspace/api-client-react";
 import { AppShell } from "../components/AppShell";
 import { PageHeader } from "../components/primitives/PageHeader";
+import { KpiStrip } from "../components/primitives/KpiStrip";
+import { KpiCard } from "../components/primitives/KpiCard";
 
 /**
  * Coverage overview.
@@ -26,12 +38,19 @@ const PAGE_SIZE = 20;
 export default function CoveragePage() {
   const [page, setPage] = useState(1);
   const query = useGetCoverageLeagues({ page, page_size: PAGE_SIZE });
+  const summaryQuery = useGetCoverageLeaguesSummary();
 
   return (
     <AppShell>
       <PageHeader
         title="Coverage"
         description="Per-league rollup of club coverage. Worst-covered leagues first. Click through for per-club drilldown."
+      />
+
+      <SummaryStrip
+        data={summaryQuery.data}
+        isLoading={summaryQuery.isLoading}
+        isError={summaryQuery.isError}
       />
 
       <LeaguesTable
@@ -42,6 +61,87 @@ export default function CoveragePage() {
         onPageChange={setPage}
       />
     </AppShell>
+  );
+}
+
+/**
+ * Top-of-page rollup matching the Scraper Health pattern: counts
+ * come from the dedicated `/leagues/summary` endpoint (deduped by
+ * canonical club so a club affiliated with N leagues counts once)
+ * so the strip never silently disagrees with the per-league table
+ * just because the table is paginated worst-first.
+ *
+ * `clubsNeverScraped` flips to the `fail` tone only when > 0; the
+ * stale bucket flips to `warn` only when > 0. A fully-covered
+ * project keeps the strip calm.
+ */
+function SummaryStrip({
+  data,
+  isLoading,
+  isError,
+}: {
+  data: CoverageLeaguesSummaryResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  const leagues = data?.leaguesTotal ?? 0;
+  const clubs = data?.clubsTotal ?? 0;
+  const withRoster = data?.clubsWithRosterSnapshot ?? 0;
+  const withCoach = data?.clubsWithCoachDiscovery ?? 0;
+  const neverScraped = data?.clubsNeverScraped ?? 0;
+  const stale = data?.clubsStale14d ?? 0;
+
+  return (
+    <KpiStrip cols={6}>
+      <KpiCard
+        label="Leagues"
+        icon={Layers}
+        tone="neutral"
+        value={leagues.toLocaleString()}
+        isLoading={isLoading}
+        isError={isError}
+      />
+      <KpiCard
+        label="Clubs"
+        icon={Building2}
+        tone="neutral"
+        value={clubs.toLocaleString()}
+        isLoading={isLoading}
+        isError={isError}
+      />
+      <KpiCard
+        label="With roster"
+        icon={Users}
+        tone="ok"
+        value={withRoster.toLocaleString()}
+        isLoading={isLoading}
+        isError={isError}
+      />
+      <KpiCard
+        label="With coach"
+        icon={UserCheck}
+        tone="ok"
+        value={withCoach.toLocaleString()}
+        isLoading={isLoading}
+        isError={isError}
+      />
+      <KpiCard
+        label="Never scraped"
+        icon={Ban}
+        tone={neverScraped > 0 ? "fail" : "neutral"}
+        value={neverScraped.toLocaleString()}
+        isLoading={isLoading}
+        isError={isError}
+      />
+      <KpiCard
+        label="Stale 14d"
+        icon={Clock3}
+        tone={stale > 0 ? "warn" : "neutral"}
+        value={stale.toLocaleString()}
+        isLoading={isLoading}
+        isError={isError}
+      />
+    </KpiStrip>
   );
 }
 

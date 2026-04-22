@@ -681,6 +681,23 @@ export const CoverageLeaguesResponse = z.object({
 export type CoverageLeaguesResponse = z.infer<typeof CoverageLeaguesResponse>;
 
 /**
+ * Aggregate coverage rollup across every league. Powers the Coverage
+ * page's KpiStrip. Counts are deduplicated by canonical club so a
+ * club affiliated with N leagues counts once.
+ */
+export const CoverageLeaguesSummaryResponse = z.object({
+  leaguesTotal: z.number().int(),
+  clubsTotal: z.number().int(),
+  clubsWithRosterSnapshot: z.number().int(),
+  clubsWithCoachDiscovery: z.number().int(),
+  clubsNeverScraped: z.number().int(),
+  clubsStale14d: z.number().int(),
+});
+export type CoverageLeaguesSummaryResponse = z.infer<
+  typeof CoverageLeaguesSummaryResponse
+>;
+
+/**
  * Status filter for the per-league drilldown. `all` (default) returns every
  * club affiliated with the league; `never_scraped` keeps only those with no
  * `scrape_health.last_scraped_at`; `stale` keeps only those with a non-null

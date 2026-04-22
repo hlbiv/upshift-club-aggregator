@@ -1599,6 +1599,37 @@ export const GetCoverageLeaguesResponse = zod.object({
 });
 
 /**
+ * Returns global rollups across every league in `leagues_master`, deduplicated by canonical club so a club affiliated with N leagues counts once. Used by the Coverage page's KpiStrip so operators can see "X of Y clubs have a roster snapshot" without paginating through the per-league table.
+Counts:
+  * `leaguesTotal` — every row in `leagues_master`.
+  * `clubsTotal` — distinct `canonical_clubs.id` reachable via
+    any `club_affiliations` row.
+  * `clubsWithRosterSnapshot` — distinct affiliated clubs with
+    at least one `club_roster_snapshots` row.
+  * `clubsWithCoachDiscovery` — distinct affiliated clubs with
+    at least one `coach_discoveries` row.
+  * `clubsNeverScraped` — distinct affiliated clubs with no
+    `scrape_health` row (`entity_type='club'`) or NULL
+    `last_scraped_at`.
+  * `clubsStale14d` — distinct affiliated clubs with
+    `scrape_health.last_scraped_at < now() - 14 days`.
+
+ * @summary Aggregate coverage totals across every league
+ */
+export const GetCoverageLeaguesSummaryResponse = zod
+  .object({
+    leaguesTotal: zod.number(),
+    clubsTotal: zod.number(),
+    clubsWithRosterSnapshot: zod.number(),
+    clubsWithCoachDiscovery: zod.number(),
+    clubsNeverScraped: zod.number(),
+    clubsStale14d: zod.number(),
+  })
+  .describe(
+    "Aggregate coverage rollup across every league. Used by the Coverage page's KpiStrip. Counts are deduplicated by canonical club so a club affiliated with N leagues counts once.\n",
+  );
+
+/**
  * Paginated list of the canonical clubs affiliated with the given league, each row carrying its last-scraped timestamp, consecutive failures, coach count, roster-snapshot presence, staff-page URL, and scrape confidence.
 `status` filters:
   * `all` (default) — every affiliated club.

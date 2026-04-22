@@ -18,9 +18,11 @@ import type { Request, Response } from "express";
 import {
   makeListLeaguesHandler,
   makeLeagueDetailHandler,
+  makeSummaryHandler,
   type CoverageDeps,
   type CoverageLeagueAggRow,
   type CoverageLeagueDetailAggRow,
+  type CoverageLeaguesSummary,
 } from "../routes/admin/coverage";
 import type { CoverageLeagueDetailStatus } from "@hlbiv/api-zod/admin";
 
@@ -84,15 +86,30 @@ type DetailCall = {
 
 function makeDeps(opts: {
   leagues?: { rows: CoverageLeagueAggRow[]; total: number };
+  summary?: CoverageLeaguesSummary;
   knownLeagues?: Record<number, { id: number; name: string }>;
   detail?: { rows: CoverageLeagueDetailAggRow[]; total: number };
   listLeaguesCalls?: ListLeaguesCall[];
+  summaryCalls?: number[];
   detailCalls?: DetailCall[];
 }): CoverageDeps {
   return {
     listLeagues: async ({ page, pageSize }) => {
       opts.listLeaguesCalls?.push({ page, pageSize });
       return opts.leagues ?? { rows: [], total: 0 };
+    },
+    summarizeLeagues: async () => {
+      opts.summaryCalls?.push(Date.now());
+      return (
+        opts.summary ?? {
+          leaguesTotal: 0,
+          clubsTotal: 0,
+          clubsWithRosterSnapshot: 0,
+          clubsWithCoachDiscovery: 0,
+          clubsNeverScraped: 0,
+          clubsStale14d: 0,
+        }
+      );
     },
     findLeague: async ({ leagueId }) => {
       return opts.knownLeagues?.[leagueId] ?? null;
@@ -367,6 +384,68 @@ async function run() {
         detailCalls[0]?.pageSize === 20,
       "detail-defaults",
       `expected default status=all, page=1, pageSize=20 — got ${JSON.stringify(detailCalls)}`,
+    );
+  }
+
+  // --- 8. summary — returns aggregate rollup -----------------------------
+  {
+    const summaryCalls: number[] = [];
+    const summary: CoverageLeaguesSummary = {
+      leaguesTotal: 127,
+      clubsTotal: 4321,
+      clubsWithRosterSnapshot: 3100,
+      clubsWithCoachDiscovery: 2400,
+      clubsNeverScraped: 220,
+      clubsStale14d: 510,
+    };
+    const deps = makeDeps({ summary, summaryCalls });
+    const handler = makeSummaryHandler(deps);
+    const res = makeRes();
+    await handler(makeReq({}), res as unknown as Response, () => {});
+    assert(
+      res.statusCode === 200,
+      "summary-ok",
+      `expected 200, got ${res.statusCode}`,
+    );
+    const body = res.body as Partial<CoverageLeaguesSummary>;
+    assert(
+      body.leaguesTotal === 127 &&
+        body.clubsTotal === 4321 &&
+        body.clubsWithRosterSnapshot === 3100 &&
+        body.clubsWithCoachDiscovery === 2400 &&
+        body.clubsNeverScraped === 220 &&
+        body.clubsStale14d === 510,
+      "summary-ok",
+      `summary shape mismatch: ${JSON.stringify(body)}`,
+    );
+    assert(
+      summaryCalls.length === 1,
+      "summary-ok",
+      `expected exactly 1 summary call, got ${summaryCalls.length}`,
+    );
+  }
+
+  // --- 9. summary — zeros are valid (empty DB / fresh deploy) -------------
+  {
+    const deps = makeDeps({});
+    const handler = makeSummaryHandler(deps);
+    const res = makeRes();
+    await handler(makeReq({}), res as unknown as Response, () => {});
+    assert(
+      res.statusCode === 200,
+      "summary-zeros",
+      `expected 200, got ${res.statusCode}`,
+    );
+    const body = res.body as Partial<CoverageLeaguesSummary>;
+    assert(
+      body.leaguesTotal === 0 &&
+        body.clubsTotal === 0 &&
+        body.clubsWithRosterSnapshot === 0 &&
+        body.clubsWithCoachDiscovery === 0 &&
+        body.clubsNeverScraped === 0 &&
+        body.clubsStale14d === 0,
+      "summary-zeros",
+      `expected all-zero summary, got ${JSON.stringify(body)}`,
     );
   }
 

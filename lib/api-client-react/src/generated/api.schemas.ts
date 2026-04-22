@@ -844,6 +844,19 @@ export interface CoverageLeaguesResponse {
 }
 
 /**
+ * Aggregate coverage rollup across every league. Used by the Coverage page's KpiStrip. Counts are deduplicated by canonical club so a club affiliated with N leagues counts once.
+
+ */
+export interface CoverageLeaguesSummaryResponse {
+  leaguesTotal: number;
+  clubsTotal: number;
+  clubsWithRosterSnapshot: number;
+  clubsWithCoachDiscovery: number;
+  clubsNeverScraped: number;
+  clubsStale14d: number;
+}
+
+/**
  * Per-club coverage detail within a single league.
  */
 export interface CoverageLeagueDetailRow {

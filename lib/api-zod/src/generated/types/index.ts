@@ -53,6 +53,7 @@ export * from "./coverageLeagueDetailResponseLeague";
 export * from "./coverageLeagueDetailRow";
 export * from "./coverageLeagueRow";
 export * from "./coverageLeaguesResponse";
+export * from "./coverageLeaguesSummaryResponse";
 export * from "./coverageResponse";
 export * from "./coverageResponseSummary";
 export * from "./coverageResponseSummaryWebsiteCoverage";

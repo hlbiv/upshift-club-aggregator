@@ -40,6 +40,7 @@ import type {
   CollegeListResponse,
   CoverageLeagueDetailResponse,
   CoverageLeaguesResponse,
+  CoverageLeaguesSummaryResponse,
   CoverageResponse,
   CoverageTrendResponse,
   DuplicateReviewDecision,
@@ -4124,6 +4125,100 @@ export function useGetCoverageLeagues<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetCoverageLeaguesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns global rollups across every league in `leagues_master`, deduplicated by canonical club so a club affiliated with N leagues counts once. Used by the Coverage page's KpiStrip so operators can see "X of Y clubs have a roster snapshot" without paginating through the per-league table.
+Counts:
+  * `leaguesTotal` — every row in `leagues_master`.
+  * `clubsTotal` — distinct `canonical_clubs.id` reachable via
+    any `club_affiliations` row.
+  * `clubsWithRosterSnapshot` — distinct affiliated clubs with
+    at least one `club_roster_snapshots` row.
+  * `clubsWithCoachDiscovery` — distinct affiliated clubs with
+    at least one `coach_discoveries` row.
+  * `clubsNeverScraped` — distinct affiliated clubs with no
+    `scrape_health` row (`entity_type='club'`) or NULL
+    `last_scraped_at`.
+  * `clubsStale14d` — distinct affiliated clubs with
+    `scrape_health.last_scraped_at < now() - 14 days`.
+
+ * @summary Aggregate coverage totals across every league
+ */
+export const getGetCoverageLeaguesSummaryUrl = () => {
+  return `/api/v1/admin/coverage/leagues/summary`;
+};
+
+export const getCoverageLeaguesSummary = async (
+  options?: RequestInit,
+): Promise<CoverageLeaguesSummaryResponse> => {
+  return customFetch<CoverageLeaguesSummaryResponse>(
+    getGetCoverageLeaguesSummaryUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetCoverageLeaguesSummaryQueryKey = () => {
+  return [`/api/v1/admin/coverage/leagues/summary`] as const;
+};
+
+export const getGetCoverageLeaguesSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCoverageLeaguesSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCoverageLeaguesSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCoverageLeaguesSummaryQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCoverageLeaguesSummary>>
+  > = ({ signal }) => getCoverageLeaguesSummary({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCoverageLeaguesSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCoverageLeaguesSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCoverageLeaguesSummary>>
+>;
+export type GetCoverageLeaguesSummaryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Aggregate coverage totals across every league
+ */
+
+export function useGetCoverageLeaguesSummary<
+  TData = Awaited<ReturnType<typeof getCoverageLeaguesSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCoverageLeaguesSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCoverageLeaguesSummaryQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

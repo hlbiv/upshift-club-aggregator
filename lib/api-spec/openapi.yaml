@@ -1745,6 +1745,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/coverage/leagues/summary:
+    get:
+      operationId: getCoverageLeaguesSummary
+      tags: [admin]
+      summary: Aggregate coverage totals across every league
+      description: >
+        Returns global rollups across every league in `leagues_master`,
+        deduplicated by canonical club so a club affiliated with N
+        leagues counts once. Used by the Coverage page's KpiStrip so
+        operators can see "X of Y clubs have a roster snapshot" without
+        paginating through the per-league table.
+
+        Counts:
+          * `leaguesTotal` — every row in `leagues_master`.
+          * `clubsTotal` — distinct `canonical_clubs.id` reachable via
+            any `club_affiliations` row.
+          * `clubsWithRosterSnapshot` — distinct affiliated clubs with
+            at least one `club_roster_snapshots` row.
+          * `clubsWithCoachDiscovery` — distinct affiliated clubs with
+            at least one `coach_discoveries` row.
+          * `clubsNeverScraped` — distinct affiliated clubs with no
+            `scrape_health` row (`entity_type='club'`) or NULL
+            `last_scraped_at`.
+          * `clubsStale14d` — distinct affiliated clubs with
+            `scrape_health.last_scraped_at < now() - 14 days`.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      responses:
+        "200":
+          description: Aggregate coverage rollup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverageLeaguesSummaryResponse"
+
   /v1/admin/coverage/leagues/{leagueId}:
     get:
       operationId: getCoverageLeagueDetail
@@ -3585,6 +3621,33 @@ components:
         - total
         - page
         - pageSize
+
+    CoverageLeaguesSummaryResponse:
+      type: object
+      description: >
+        Aggregate coverage rollup across every league. Used by the
+        Coverage page's KpiStrip. Counts are deduplicated by canonical
+        club so a club affiliated with N leagues counts once.
+      properties:
+        leaguesTotal:
+          type: integer
+        clubsTotal:
+          type: integer
+        clubsWithRosterSnapshot:
+          type: integer
+        clubsWithCoachDiscovery:
+          type: integer
+        clubsNeverScraped:
+          type: integer
+        clubsStale14d:
+          type: integer
+      required:
+        - leaguesTotal
+        - clubsTotal
+        - clubsWithRosterSnapshot
+        - clubsWithCoachDiscovery
+        - clubsNeverScraped
+        - clubsStale14d
 
     CoverageLeagueDetailRow:
       type: object
