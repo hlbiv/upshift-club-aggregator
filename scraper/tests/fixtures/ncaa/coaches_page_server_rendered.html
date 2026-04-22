@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<!--
+  Fixture for the PR-9 coaches-page fallback. Represents a
+  server-rendered ``/coaches`` page returned by an athletics CMS
+  whose roster page itself is JS-rendered (Pepperdine, George
+  Mason, Virginia Tech all match this shape — the roster is
+  hydrated client-side but the staff page ships static HTML).
+
+  Markup follows the legacy SIDEARM ``.sidearm-staff-member``
+  shape — the dominant pattern on dedicated /coaches pages even
+  on tenants whose roster pages have moved to the modern
+  ``.s-person-card`` grid. Includes both an Associate Head Coach
+  and a Head Coach card so the test verifies the strict-coach
+  guard correctly returns the Head, not the Associate.
+-->
+<html lang="en">
+<head><title>Men's Soccer Coaches - Test U</title></head>
+<body>
+<main>
+  <h1>Men's Soccer Coaching Staff</h1>
+
+  <div class="sidearm-staff-member">
+    <h3><a href="/sports/mens-soccer/roster/coaches/jordan-park/9001">Jordan Park</a></h3>
+    <div class="sidearm-staff-member-title">Associate Head Coach</div>
+    <a href="mailto:jordan.park@example.edu">jordan.park@example.edu</a>
+  </div>
+
+  <div class="sidearm-staff-member">
+    <h3><a href="/sports/mens-soccer/roster/coaches/marcus-reyes/9002">Marcus Reyes</a></h3>
+    <div class="sidearm-staff-member-title">Head Coach</div>
+    <a href="mailto:marcus.reyes@example.edu">marcus.reyes@example.edu</a>
+    <span>(555) 123-4567</span>
+  </div>
+
+  <div class="sidearm-staff-member">
+    <h3><a href="/sports/mens-soccer/roster/coaches/elena-quinn/9003">Elena Quinn</a></h3>
+    <div class="sidearm-staff-member-title">Assistant Coach</div>
+  </div>
+</main>
+</body>
+</html>

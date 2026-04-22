@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<!--
+  Fixture representing a JS-rendered roster page where the static
+  HTML contains zero player or coach markup. The Task #34 probe
+  identified Pepperdine, George Mason, and Virginia Tech as
+  matching this exact shape — a Vue/React shell with a #app mount
+  point and inline JSON config that lacks the literal "Head Coach"
+  string in any selector ``extract_head_coach_from_html`` knows.
+
+  Used by the PR-9 fallback test as the baseline "inline path
+  cannot succeed" page; the test asserts ``extract_head_coach_from_html``
+  returns None against this and that ``probe_coaches_pages`` then
+  recovers the head coach from a separate /coaches URL.
+-->
+<html lang="en">
+<head>
+  <title>Men's Soccer Roster - Test U</title>
+  <link rel="stylesheet" href="/dist/app.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Shell only. Roster cards hydrate from /website-api/rosters. -->
+  </div>
+  <script>window.__INITIAL_STATE__ = {"sport":"mens-soccer","season":"2025-26"};</script>
+  <script src="/dist/app.js" defer></script>
+</body>
+</html>

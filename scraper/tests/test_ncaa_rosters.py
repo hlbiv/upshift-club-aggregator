@@ -26,6 +26,9 @@ from extractors.ncaa_rosters import (  # noqa: E402
     scrape_college_rosters,
     _fetch_colleges,
     extract_head_coach_from_html,
+    compose_coaches_urls,
+    probe_coaches_pages,
+    _coaches_cache_key,
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "ncaa"
@@ -362,6 +365,149 @@ class TestExtractHeadCoachInline:
 # ---------------------------------------------------------------------------
 # normalize_year — exhaustive edge cases
 # ---------------------------------------------------------------------------
+
+
+class TestComposeCoachesUrls:
+    """Pure URL-discovery for the PR-9 coaches-page fallback."""
+
+    def test_basic_roster_url(self):
+        urls = compose_coaches_urls("https://athletics.example.edu/sports/mens-soccer/roster")
+        assert urls == [
+            "https://athletics.example.edu/sports/mens-soccer/coaches",
+            "https://athletics.example.edu/sports/mens-soccer/coaches-and-staff",
+            "https://athletics.example.edu/sports/mens-soccer/staff",
+            "https://athletics.example.edu/sports/mens-soccer/staff-directory",
+        ]
+
+    def test_strips_trailing_slash_after_roster(self):
+        urls = compose_coaches_urls("https://x.edu/sports/wsoc/roster/")
+        assert urls[0] == "https://x.edu/sports/wsoc/coaches"
+
+    def test_handles_url_without_roster_suffix(self):
+        # When the input doesn't end in /roster, candidates are appended
+        # as-is to the base. Real callers only ever pass /roster URLs,
+        # but the function should not corrupt other inputs.
+        urls = compose_coaches_urls("https://x.edu/sports/mens-soccer")
+        assert urls[0] == "https://x.edu/sports/mens-soccer/coaches"
+
+    def test_strips_query_and_fragment(self):
+        urls = compose_coaches_urls(
+            "https://x.edu/sports/mens-soccer/roster?season=2025#top"
+        )
+        assert urls[0] == "https://x.edu/sports/mens-soccer/coaches"
+
+    def test_case_insensitive_roster_strip(self):
+        urls = compose_coaches_urls("https://x.edu/sports/mens-soccer/Roster")
+        assert urls[0] == "https://x.edu/sports/mens-soccer/coaches"
+
+    def test_empty_url_raises(self):
+        with pytest.raises(ValueError):
+            compose_coaches_urls("")
+
+    def test_cache_key_is_program_scoped(self):
+        # Men's and women's at the same host should NOT collide.
+        mk = _coaches_cache_key("https://x.edu/sports/mens-soccer/roster")
+        wk = _coaches_cache_key("https://x.edu/sports/womens-soccer/roster")
+        assert mk != wk
+        # But repeat calls for the same program should match (case +
+        # trailing slash + roster suffix all normalized).
+        assert mk == _coaches_cache_key("https://x.edu/sports/mens-soccer/Roster/")
+
+
+class TestProbeCoachesPages:
+    """End-to-end test for the PR-9 fallback's HTTP + extract loop.
+
+    Mocks ``fetch_with_retry`` to simulate an athletics CMS where the
+    roster page is JS-rendered (returns a shell with no inline coach
+    markup) but ``/coaches`` server-renders a head-coach card.
+    """
+
+    def _fake_session(self):
+        return mock.MagicMock()
+
+    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    def test_finds_head_coach_when_roster_misses(self, mock_fetch):
+        coaches_html = _read("coaches_page_server_rendered.html")
+        # First candidate (/coaches) returns the staff page; nothing
+        # else should be probed because the loop returns on first hit.
+        mock_fetch.return_value = coaches_html
+
+        result = probe_coaches_pages(
+            self._fake_session(),
+            "https://athletics.example.edu/sports/mens-soccer/roster",
+        )
+        assert result is not None
+        assert result["name"] == "Marcus Reyes"
+        assert result["title"] == "Head Coach"
+        assert result["_strategy"] == "coaches-page-fallback:sidearm-staff-member"
+        assert result["_source_url"] == (
+            "https://athletics.example.edu/sports/mens-soccer/coaches"
+        )
+        # Only the first candidate URL should have been fetched.
+        assert mock_fetch.call_count == 1
+
+    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    def test_inline_extractor_gives_up_on_js_shell(self, _mock_fetch):
+        # Sanity check: the JS-shell fixture genuinely has no inline
+        # coach markup, so the inline extractor returns None and the
+        # fallback is the only path that can recover the coach.
+        shell = _read("js_rendered_roster_shell.html")
+        assert extract_head_coach_from_html(shell) is None
+
+    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    def test_returns_none_when_all_candidates_miss(self, mock_fetch):
+        # Every candidate returns either nothing or HTML with no head
+        # coach markup. Should exhaust all 4 candidates and return None.
+        mock_fetch.return_value = _read("js_rendered_roster_shell.html")
+        result = probe_coaches_pages(
+            self._fake_session(),
+            "https://x.edu/sports/mens-soccer/roster",
+        )
+        assert result is None
+        assert mock_fetch.call_count == 4  # 4 candidates, all probed
+
+    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    def test_skips_too_short_responses(self, mock_fetch):
+        # A 200 with a tiny body (e.g. an error JSON) should be
+        # treated as a miss without trying to parse it.
+        mock_fetch.return_value = "<html><body>Not Found</body></html>"
+        result = probe_coaches_pages(
+            self._fake_session(),
+            "https://x.edu/sports/mens-soccer/roster",
+        )
+        assert result is None
+        assert mock_fetch.call_count == 4
+
+    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    def test_cache_short_circuits_repeat_probe(self, mock_fetch):
+        coaches_html = _read("coaches_page_server_rendered.html")
+        mock_fetch.return_value = coaches_html
+        cache: dict = {}
+        url = "https://x.edu/sports/mens-soccer/roster"
+
+        first = probe_coaches_pages(self._fake_session(), url, cache=cache)
+        assert first is not None
+        first_calls = mock_fetch.call_count
+
+        # Second call against the same program must come from cache —
+        # zero additional HTTP hits — and return an equivalent result.
+        second = probe_coaches_pages(self._fake_session(), url, cache=cache)
+        assert second == first
+        assert mock_fetch.call_count == first_calls
+
+    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    def test_cache_records_negative_result(self, mock_fetch):
+        # Negative results must also be cached, so a host with no
+        # staff page doesn't get re-probed (4 wasted fetches per repeat).
+        mock_fetch.return_value = ""
+        cache: dict = {}
+        url = "https://x.edu/sports/mens-soccer/roster"
+
+        assert probe_coaches_pages(self._fake_session(), url, cache=cache) is None
+        first_calls = mock_fetch.call_count
+
+        assert probe_coaches_pages(self._fake_session(), url, cache=cache) is None
+        assert mock_fetch.call_count == first_calls  # cached miss
 
 
 class TestYearNormalization:

@@ -1326,6 +1326,152 @@ def extract_head_coach_from_html(html: str) -> Optional[Dict[str, Optional[str]]
 
 
 # ---------------------------------------------------------------------------
+# Coaches-page fallback (PR-9)
+#
+# When ``extract_head_coach_from_html`` returns None against the roster
+# page itself, a small ordered list of likely staff URLs (``/coaches``,
+# ``/staff``, ``/staff-directory``, ``/coaches-and-staff``) is probed and
+# the same extractor is run against each. Most JS-rendered roster pages
+# (Pepperdine, George Mason, Virginia Tech) ship a server-rendered staff
+# page even when the roster itself is hydrated client-side.
+#
+# Per-host caching is critical: many programs share an athletics host
+# (e.g. all Stanford teams live at gostanford.com) and the school-wide
+# ``/staff-directory`` is identical for every team. We also cache
+# negative results (404 / no head coach found) so we don't re-probe the
+# same host once for every sport on every run.
+# ---------------------------------------------------------------------------
+
+# Ordered candidate paths appended to the program base. Order matters:
+# program-scoped staff pages first (most precise — return *that* sport's
+# head coach), then athletics-wide staff directory as a last resort.
+# Conservative deliberately: we'd rather miss than mis-attribute (e.g.
+# pulling the women's coach onto the men's program).
+_COACHES_PATH_CANDIDATES: tuple = (
+    "coaches",
+    "coaches-and-staff",
+    "staff",
+    "staff-directory",
+)
+
+# Maximum number of candidate URLs probed per call. Caps worst-case
+# extra HTTP load at 4 fetches per cache-miss school. With per-host
+# caching this is a one-time cost across all of that host's programs.
+_MAX_COACHES_PROBES_PER_CALL = 4
+
+# Polite inter-fetch delay when probing multiple candidates against the
+# same host. Same cadence as the inter-school RATE_LIMIT_DELAY but
+# applied between candidate URLs within a single school's probe.
+_COACHES_PROBE_DELAY = 0.75
+
+
+def compose_coaches_urls(roster_url: str) -> List[str]:
+    """Pure: derive an ordered list of candidate staff-page URLs.
+
+    Given a roster URL like ``https://host/sports/mens-soccer/roster``,
+    returns candidates in priority order:
+
+      1. ``https://host/sports/mens-soccer/coaches``
+      2. ``https://host/sports/mens-soccer/coaches-and-staff``
+      3. ``https://host/sports/mens-soccer/staff``
+      4. ``https://host/sports/mens-soccer/staff-directory``
+
+    Sport-scoped paths only — we deliberately do NOT fall back to the
+    athletics-wide ``/staff-directory`` because pulling the wrong sport's
+    head coach is worse than missing the row entirely (downstream
+    upserts are keyed on ``college_id`` and would mis-attribute).
+
+    Strips any trailing ``/roster`` (case-insensitive, with or without
+    trailing slash) and any embedded query / fragment to derive the
+    program base. Raises ``ValueError`` for empty input.
+    """
+    if not roster_url:
+        raise ValueError("roster_url must be non-empty")
+    # Drop query + fragment before path manipulation
+    base = roster_url.split("?", 1)[0].split("#", 1)[0]
+    base = re.sub(r"/roster/?$", "", base, flags=re.IGNORECASE)
+    base = base.rstrip("/")
+    if not base:
+        raise ValueError(f"could not derive base from {roster_url!r}")
+    return [f"{base}/{path}" for path in _COACHES_PATH_CANDIDATES]
+
+
+def probe_coaches_pages(
+    session: requests.Session,
+    roster_url: str,
+    *,
+    cache: Optional[Dict[str, Optional[Dict[str, Optional[str]]]]] = None,
+) -> Optional[Dict[str, Optional[str]]]:
+    """Fetch candidate /coaches pages and run the inline extractor.
+
+    Returns the first head-coach dict produced by
+    ``extract_head_coach_from_html`` against any candidate URL, or
+    ``None`` if every candidate either 404s, fails to fetch, or yields
+    no head coach. Reuses ``extract_head_coach_from_html`` so all
+    semantic guards (`_is_strict_head_coach`, `_NON_HEAD_COACH_RE`)
+    apply identically.
+
+    The returned dict has ``_strategy`` rewritten to
+    ``coaches-page-fallback:<original_strategy>`` and adds a
+    ``_source_url`` key naming the page that hit, so the caller can
+    record provenance distinct from the roster page.
+
+    ``cache`` is an optional dict keyed by the cache key returned by
+    ``_coaches_cache_key`` (host + program path), used to short-circuit
+    repeat probes within a single run. The same value type is stored
+    in the cache as is returned: a coach dict on hit, ``None`` on
+    confirmed miss. Pass an empty dict to enable caching across
+    multiple calls; omit to disable.
+    """
+    if cache is not None:
+        key = _coaches_cache_key(roster_url)
+        if key in cache:
+            return cache[key]
+
+    candidates = compose_coaches_urls(roster_url)[:_MAX_COACHES_PROBES_PER_CALL]
+    result: Optional[Dict[str, Optional[str]]] = None
+
+    for i, candidate in enumerate(candidates):
+        if i > 0:
+            time.sleep(_COACHES_PROBE_DELAY)
+        try:
+            html = fetch_with_retry(session, candidate)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(
+                "[ncaa-coaches-fallback] fetch error for %s: %s", candidate, exc
+            )
+            continue
+        if not html or len(html) < 500:
+            continue
+        coach = extract_head_coach_from_html(html)
+        if coach is None:
+            continue
+        coach = dict(coach)
+        original_strategy = coach.get("_strategy", "unknown")
+        coach["_strategy"] = f"coaches-page-fallback:{original_strategy}"
+        coach["_source_url"] = candidate
+        result = coach
+        break
+
+    if cache is not None:
+        cache[_coaches_cache_key(roster_url)] = result
+    return result
+
+
+def _coaches_cache_key(roster_url: str) -> str:
+    """Cache key for ``probe_coaches_pages``.
+
+    Keys on host + program path (everything before ``/roster``). This
+    means men's soccer and women's soccer at the same school get
+    independent cache entries (they have distinct program paths) but
+    multiple runs against the same program reuse the result.
+    """
+    base = roster_url.split("?", 1)[0].split("#", 1)[0]
+    base = re.sub(r"/roster/?$", "", base, flags=re.IGNORECASE)
+    return base.rstrip("/").lower()
+
+
+# ---------------------------------------------------------------------------
 # Playwright fallback for JS-rendered rosters
 # ---------------------------------------------------------------------------
 
@@ -1993,8 +2139,16 @@ def scrape_college_rosters(
         "sidearm-roster-coach": 0,
         "roster-staff-members-card-item": 0,
         "vue-embedded-json": 0,
+        "coaches-page-fallback": 0,
         "miss": 0,
     }
+
+    # Per-host coaches-page probe cache (PR-9). Shared across all
+    # colleges in the run so multi-program hosts (Stanford fields ~30
+    # sports at gostanford.com) only pay the probe cost once per
+    # program. Negative results are cached too — see
+    # ``probe_coaches_pages`` docstring.
+    coaches_probe_cache: Dict[str, Optional[Dict[str, Optional[str]]]] = {}
 
     # Set up per-division run loggers
     divisions_seen: set = set()
@@ -2083,14 +2237,46 @@ def scrape_college_rosters(
                     # out-of-order historical runs can't regress the
                     # current-directory view.
                     head_coach = extract_head_coach_from_html(html)
+                    fallback_source_url: Optional[str] = None
+                    # PR-9: when inline extraction misses on the
+                    # current-season roster, probe a small allowlist of
+                    # /coaches and /staff URLs derived from the same
+                    # base. Restricted to current-season because
+                    # historical staff pages are extremely rare and the
+                    # extra HTTP cost isn't worth the near-zero hit
+                    # rate. Per-host caching (via coaches_probe_cache)
+                    # ensures multi-program hosts only pay the probe
+                    # cost once per program across the whole run.
+                    if head_coach is None and is_current:
+                        fallback = probe_coaches_pages(
+                            session, target_url, cache=coaches_probe_cache,
+                        )
+                        if fallback is not None:
+                            head_coach = fallback
                     if head_coach:
                         head_coach = dict(head_coach)
                         strategy_hit = head_coach.pop("_strategy", "unknown")
-                        coach_strategy_hits[strategy_hit] = (
-                            coach_strategy_hits.get(strategy_hit, 0) + 1
+                        fallback_source_url = head_coach.pop("_source_url", None)
+                        # Bucket all coaches-page-fallback variants
+                        # (regardless of which inline strategy fired
+                        # against the staff HTML) into a single counter
+                        # so the end-of-run breakdown remains readable.
+                        bucket = (
+                            "coaches-page-fallback"
+                            if strategy_hit.startswith("coaches-page-fallback")
+                            else strategy_hit
                         )
-                        head_coach.setdefault("source_url", target_url)
-                        head_coach.setdefault("source", "ncaa_roster_page")
+                        coach_strategy_hits[bucket] = (
+                            coach_strategy_hits.get(bucket, 0) + 1
+                        )
+                        head_coach.setdefault(
+                            "source_url", fallback_source_url or target_url,
+                        )
+                        head_coach.setdefault(
+                            "source",
+                            "ncaa_coaches_page" if fallback_source_url
+                            else "ncaa_roster_page",
+                        )
                         try:
                             _ncaa_roster_writer.upsert_coach_tenures(
                                 [head_coach],
