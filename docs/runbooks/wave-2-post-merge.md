@@ -4,6 +4,38 @@ Run these in order from the Replit shell. Assumes `DATABASE_URL` and `$REPL_HOME
 
 ---
 
+## Current state snapshot (verified 2026-04-22 against live DB)
+
+The schema portion of this runbook is **already applied** in this environment.
+Use this snapshot to skip to the still-outstanding sections instead of running
+every step from scratch.
+
+| Item | State | Notes |
+|---|---|---|
+| §1 git pull / pnpm install | ✅ done | Branch is on `master`, working tree clean. |
+| §2 schema push (5 new tables + `triggered_by`) | ✅ done | All five tables present (`raw_html_archive`, `commitments`, `ynt_call_ups`, `odp_roster_entries`, `hs_rosters`); `scrape_run_logs.triggered_by` exists with default `'manual'`. |
+| §3 Replit Secrets (auth/ratelimit/docs flags) | ⚠️ prod-only | API server boots with `[api-key-auth] DISABLED in development mode` — flags only take effect in prod. Verify after deploy. |
+| §4 API smoke tests | ⏸️ prod-only | Auth gate / rate-limit headers / `/api/docs` all expect prod behavior; dev returns 200 unguarded by design. Re-run against the deployed `.replit.app` URL. |
+| §5 Object Storage bucket `upshift-raw-html` | ❓ user-side | `raw_html_archive` table exists but has 0 rows despite 276 scrape runs in the last 7 days — bucket likely not yet created or `ARCHIVE_RAW_HTML_ENABLED` not set. Create bucket in Replit console + flip the secret. |
+| §6 Scheduled Deployments (3 cron jobs) | ❓ user-side | Scripts exist at `scraper/scheduled/{nightly_tier1,weekly_state,hourly_linker}.sh`. Wire in Replit console per `docs/replit-scheduled-deployments.md`. |
+| §7 Mint API key + sync sibling repo | ⏸️ partial | 4 `api_keys` rows already exist; `UPSHIFT_DATA_API_KEY` already in this env. Sibling repo (`hlbiv/upshift-studio`) lives on a separate Replit — sync there. |
+| §8 Linker sanity | ⏸️ outstanding | 2,607 `event_teams` rows still have NULL `canonical_club_id`; 0 commitments with NULL `club_id`. Run `python3 scraper/run.py --source link-canonical-clubs --dry-run --limit 100` once scrapers have populated fresh data. |
+
+### Known gap not covered above
+
+`events_source_enum` currently has **4 values** (`gotsport, sincsports, manual, other`),
+but `scraper/run.py` already references a `usclub_sanctioned` source handler and the
+codebase has runners for `totalglobalsports_events` — neither value is in the enum,
+so those runs land in `'other'` (currently 176 of 217 events). Splitting the enum
+(adding `totalglobalsports`, `usclub_sanctioned`, optionally introducing a
+separate `roster_source_enum` for `club_roster_snapshots.source`) is a separate
+forward-only migration. The `scripts/src/migrations/0002_split_events_source_enum.sql`
+file referenced in some task descriptions does **not** exist in this repo and
+should be authored as a dedicated PR with explicit backfill rules — do not roll
+it into this post-merge pass.
+
+---
+
 ## 1. Pull and install
 
 ```bash
