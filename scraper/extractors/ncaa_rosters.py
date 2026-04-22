@@ -2310,6 +2310,32 @@ def scrape_college_rosters(
                                     conn.rollback()
                                 except Exception:
                                     pass
+
+                            # PR-#56: clear any stale "miss" row now that
+                            # we have a head coach for this (college,
+                            # gender_program) pair. Keeps the dashboard
+                            # honest as a current-state queue, not a
+                            # historical audit log.
+                            try:
+                                cur = conn.cursor()
+                                cur.execute(
+                                    """
+                                    DELETE FROM coach_misses
+                                    WHERE college_id = %s
+                                      AND gender_program = %s
+                                    """,
+                                    (college["id"], college_gender),
+                                )
+                                conn.commit()
+                            except Exception as exc:
+                                logger.warning(
+                                    "  coach_misses resolve failed for %s: %s",
+                                    college["name"], exc,
+                                )
+                                try:
+                                    conn.rollback()
+                                except Exception:
+                                    pass
                     else:
                         # No head coach extracted from this page — track so
                         # the end-of-run breakdown accurately reflects

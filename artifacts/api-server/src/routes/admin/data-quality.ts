@@ -1463,9 +1463,11 @@ export const staleScrapesHandler: RequestHandler = async (req, res, next) => {
  * GET /v1/admin/data-quality/coach-misses?division=D1&gender=womens&page=1&page_size=20
  *
  * Rows from `coach_misses` (populated by the NCAA roster scraper when env
- * `COACH_MISSES_REPORT_ENABLED=true`). For each (college, gender_program)
- * pair we surface the most recent miss only — operators care about the
- * current state of the queue, not historical re-misses on the same school.
+ * `COACH_MISSES_REPORT_ENABLED=true`). The table holds at most one row per
+ * (college_id, gender_program) — the scraper UPSERTs on miss and DELETEs
+ * the row on the next successful extraction, so this endpoint returns the
+ * **current** queue of schools we don't have a head coach for, not a
+ * historical audit log.
  *
  * The newline-separated `probed_urls` text column is split into
  * `probedUrls: string[]` at the API boundary so the dashboard never sees
@@ -1498,18 +1500,14 @@ export const coachMissesHandler: RequestHandler = async (req, res, next) => {
       ? sql`AND cm.gender_program = ${gender}`
       : sql``;
 
-    // Most-recent miss per (college, gender_program). DISTINCT ON keeps
-    // the top row per partition after ORDER BY — Postgres-specific but
-    // we're not portable. The total count uses the same DISTINCT key
-    // so pagination math stays consistent.
+    // The unique constraint on (college_id, gender_program) guarantees
+    // one row per pair, so the count and page queries can hit the table
+    // directly — no DISTINCT ON window needed. Both queries share the
+    // same predicate so pagination stays consistent.
     const countResult = await defaultDb.execute<{ count: number }>(sql`
       SELECT count(*)::int AS count
-      FROM (
-        SELECT DISTINCT ON (cm.college_id, cm.gender_program) cm.id
-        FROM ${coachMisses} cm
-        WHERE 1 = 1 ${divisionPredicate} ${genderPredicate}
-        ORDER BY cm.college_id, cm.gender_program, cm.recorded_at DESC, cm.id DESC
-      ) AS uniq
+      FROM ${coachMisses} cm
+      WHERE 1 = 1 ${divisionPredicate} ${genderPredicate}
     `);
     const countRow = (countResult as unknown as Array<{ count: number }>)[0];
     const total = Number(countRow?.count ?? 0);
@@ -1524,31 +1522,19 @@ export const coachMissesHandler: RequestHandler = async (req, res, next) => {
       scrape_run_log_id: number | null;
       recorded_at: Date | string;
     }>(sql`
-      WITH latest AS (
-        SELECT DISTINCT ON (cm.college_id, cm.gender_program)
-          cm.college_id,
-          cm.division,
-          cm.gender_program,
-          cm.roster_url,
-          cm.probed_urls,
-          cm.scrape_run_log_id,
-          cm.recorded_at
-        FROM ${coachMisses} cm
-        WHERE 1 = 1 ${divisionPredicate} ${genderPredicate}
-        ORDER BY cm.college_id, cm.gender_program, cm.recorded_at DESC, cm.id DESC
-      )
       SELECT
-        l.college_id,
+        cm.college_id,
         co.name AS college_name,
-        l.division,
-        l.gender_program,
-        l.roster_url,
-        l.probed_urls,
-        l.scrape_run_log_id,
-        l.recorded_at
-      FROM latest l
-      LEFT JOIN ${colleges} co ON co.id = l.college_id
-      ORDER BY l.recorded_at DESC, l.college_id ASC
+        cm.division,
+        cm.gender_program,
+        cm.roster_url,
+        cm.probed_urls,
+        cm.scrape_run_log_id,
+        cm.recorded_at
+      FROM ${coachMisses} cm
+      LEFT JOIN ${colleges} co ON co.id = cm.college_id
+      WHERE 1 = 1 ${divisionPredicate} ${genderPredicate}
+      ORDER BY cm.recorded_at DESC, cm.college_id ASC
       LIMIT ${pageSize} OFFSET ${offset}
     `);
 

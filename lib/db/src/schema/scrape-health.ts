@@ -156,9 +156,14 @@ export const scrapeHealth = pgTable(
  * existing convention in `raw_html_archive` — ad-hoc extractor calls
  * outside a run lifecycle still record a miss with NULL run_log_id).
  *
- * Idempotency: unique on (scrape_run_log_id, college_id, gender_program)
- * so the writer can use ON CONFLICT DO UPDATE and re-runs of the same
- * scheduled invocation don't multiply rows.
+ * Current-state semantics: at most one row per (college_id,
+ * gender_program). The scraper INSERT ... ON CONFLICT DO UPDATEs to
+ * refresh the row each miss, and DELETEs the row on the next
+ * successful extraction. This keeps the dashboard view honest — a
+ * school listed here is one we *currently* have no head coach for, not
+ * a school that ever missed at some point in history. If a per-run
+ * audit log of misses is later needed, that's a separate
+ * append-only table.
  */
 export const coachMisses = pgTable(
   "coach_misses",
@@ -182,8 +187,7 @@ export const coachMisses = pgTable(
       .notNull(),
   },
   (t) => [
-    unique("coach_misses_run_college_gender_uq").on(
-      t.scrapeRunLogId,
+    unique("coach_misses_college_gender_uq").on(
       t.collegeId,
       t.genderProgram,
     ),
