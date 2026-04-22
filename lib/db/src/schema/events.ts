@@ -27,9 +27,35 @@ import { canonicalClubs } from "./index";
  * `tryouts.source` and the various coach/college/alias `source` columns
  * are intentionally kept as free-form text — different value sets.
  */
+// Value order matches the on-disk enum after 0002_split_events_source_enum.sql
+// applies its `ALTER TYPE ... ADD VALUE` statements (Postgres appends new
+// values to the end of the type's value list). Keep the order in sync —
+// drizzle-kit compares by order when checking for drift.
 export const eventsSourceEnum = pgEnum("events_source_enum", [
   "gotsport",
   "sincsports",
+  "manual",
+  "other",
+  "totalglobalsports",
+  "usclub_sanctioned",
+]);
+
+// Separate enum for `club_roster_snapshots.source` so roster-specific
+// runners (maxpreps, ncaa, soccerwire, …) don't have to overload the
+// events enum. Created and the snapshot column retyped by
+// 0002_split_events_source_enum.sql. Keep this list in sync with the
+// CREATE TYPE statement in that migration.
+export const rosterSourceEnum = pgEnum("roster_source_enum", [
+  "gotsport",
+  "sincsports",
+  "maxpreps",
+  "ncaa",
+  "naia",
+  "njcaa",
+  "odp",
+  "soccerwire",
+  "club_website",
+  "duda_360player",
   "manual",
   "other",
 ]);

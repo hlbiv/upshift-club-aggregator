@@ -24,7 +24,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 import { canonicalClubs } from "./index";
-import { events, eventsSourceEnum } from "./events";
+import { events, rosterSourceEnum } from "./events";
 
 export const clubRosterSnapshots = pgTable(
   "club_roster_snapshots",
@@ -66,7 +66,10 @@ export const clubRosterSnapshots = pgTable(
     prevClub: text("prev_club"),
     league: text("league"),
     scrapedAt: timestamp("scraped_at").defaultNow().notNull(),
-    source: eventsSourceEnum("source"),
+    // Retyped from `events_source_enum` to `roster_source_enum` by
+    // 0002_split_events_source_enum.sql so roster runners (maxpreps,
+    // ncaa, soccerwire, …) don't have to overload the events enum.
+    source: rosterSourceEnum("source"),
     eventId: integer("event_id").references(() => events.id, {
       onDelete: "set null",
     }),

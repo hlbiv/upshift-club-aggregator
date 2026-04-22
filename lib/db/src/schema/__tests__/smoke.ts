@@ -786,6 +786,56 @@ assertTable(schema.videoSources, "video_sources", {
 });
 
 // ---------------------------------------------------------------------------
+// Enum value-set regression tests
+//   Both enums are managed by 0002_split_events_source_enum.sql. The
+//   value lists below MUST match the CREATE TYPE / ALTER TYPE … ADD VALUE
+//   statements in that file. If you change one, change both — Postgres
+//   rejects writes against the wrong label.
+// ---------------------------------------------------------------------------
+
+{
+  const expectedEvents = [
+    "gotsport",
+    "sincsports",
+    "manual",
+    "other",
+    "totalglobalsports",
+    "usclub_sanctioned",
+  ];
+  const actualEvents = (schema.eventsSourceEnum as any).enumValues as string[];
+  assert(
+    Array.isArray(actualEvents)
+      && actualEvents.length === expectedEvents.length
+      && expectedEvents.every((v, i) => actualEvents[i] === v),
+    "events_source_enum",
+    `value list drift — expected ${JSON.stringify(expectedEvents)}, got ${JSON.stringify(actualEvents)}`,
+  );
+
+  const expectedRoster = [
+    "gotsport",
+    "sincsports",
+    "maxpreps",
+    "ncaa",
+    "naia",
+    "njcaa",
+    "odp",
+    "soccerwire",
+    "club_website",
+    "duda_360player",
+    "manual",
+    "other",
+  ];
+  const actualRoster = (schema.rosterSourceEnum as any).enumValues as string[];
+  assert(
+    Array.isArray(actualRoster)
+      && actualRoster.length === expectedRoster.length
+      && expectedRoster.every((v, i) => actualRoster[i] === v),
+    "roster_source_enum",
+    `value list drift — expected ${JSON.stringify(expectedRoster)}, got ${JSON.stringify(actualRoster)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 

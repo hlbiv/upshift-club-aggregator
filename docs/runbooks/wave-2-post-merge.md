@@ -21,18 +21,56 @@ every step from scratch.
 | §7 Mint API key + sync sibling repo | ⏸️ partial | 4 `api_keys` rows already exist; `UPSHIFT_DATA_API_KEY` already in this env. Sibling repo (`hlbiv/upshift-studio`) lives on a separate Replit — sync there. |
 | §8 Linker sanity | ⏸️ outstanding | 2,607 `event_teams` rows still have NULL `canonical_club_id`; 0 commitments with NULL `club_id`. Run `python3 scraper/run.py --source link-canonical-clubs --dry-run --limit 100` once scrapers have populated fresh data. |
 
-### Known gap not covered above
+### Known gap — RESOLVED 2026-04-22
 
-`events_source_enum` currently has **4 values** (`gotsport, sincsports, manual, other`),
-but `scraper/run.py` already references a `usclub_sanctioned` source handler and the
-codebase has runners for `totalglobalsports_events` — neither value is in the enum,
-so those runs land in `'other'` (currently 176 of 217 events). Splitting the enum
-(adding `totalglobalsports`, `usclub_sanctioned`, optionally introducing a
-separate `roster_source_enum` for `club_roster_snapshots.source`) is a separate
-forward-only migration. The `scripts/src/migrations/0002_split_events_source_enum.sql`
-file referenced in some task descriptions does **not** exist in this repo and
-should be authored as a dedicated PR with explicit backfill rules — do not roll
-it into this post-merge pass.
+`events_source_enum` was widened to 6 values and a sibling `roster_source_enum`
+was introduced by `scripts/src/migrations/0002_split_events_source_enum.sql`.
+Apply with:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f \
+  scripts/src/migrations/0002_split_events_source_enum.sql
+```
+
+**Forward-only.** Postgres has no `DROP VALUE` for enums — adding values is
+irreversible without recreating the type.
+
+**`events_source_enum` (6 values):**
+`gotsport, sincsports, manual, other, totalglobalsports, usclub_sanctioned`
+
+**`roster_source_enum` (12 values, brand-new type):**
+`gotsport, sincsports, maxpreps, ncaa, naia, njcaa, odp, soccerwire,
+club_website, duda_360player, manual, other`. The
+`club_roster_snapshots.source` column is retyped from `events_source_enum`
+to `roster_source_enum` in the same migration (table was empty at retype time).
+
+**Events backfill — host-pattern → enum-value mapping:**
+
+| Host pattern (case-insensitive)              | New `events.source` |
+|----------------------------------------------|---------------------|
+| `public.totalglobalsports.com`               | `totalglobalsports` |
+| `*.usclubsoccer.org` (any subdomain or root) | `usclub_sanctioned` |
+| `system.gotsport.com` / `events.gotsport.com`| `gotsport`          |
+| `*.sincsports.com`                           | `sincsports`        |
+
+Anything else stays `'other'`. The original task spec targeted a residual
+of <30 `'other'` rows, but the actual host distribution shows ~170 of the
+176 `'other'` rows are legitimate misc-club tournament sites
+(`socalelitefc.com`, `slsgsoccer.org`, `rebelssoccerclub.com`, …) that
+don't correspond to any platform-level runner. **Actual residual after
+backfill: 168 rows of legitimate `'other'`** (not a bug).
+
+**Before/after counts (2026-04-22 dev DB):**
+- Before: `other` 176, `gotsport` 24, `sincsports` 17, `manual` 0, total 217
+- After:  `other` 168, `gotsport` 27 (+3), `sincsports` 17, `totalglobalsports` 4, `usclub_sanctioned` 1, total 217
+
+**Follow-ups not covered by this migration** (separate PRs, called out in §9):
+- The three roster scrapers (`soccerwire`, `club_website`, `duda_360player`)
+  currently leave `club_roster_snapshots.source` NULL — emitting their
+  enum values is a per-scraper change, not a schema change.
+- A dashboard filter on the new enum values is a separate dashboard task.
+- `usclub_sanctioned` is intentionally absent from `roster_source_enum` —
+  that handler seeds events, not rosters.
 
 ---
 
