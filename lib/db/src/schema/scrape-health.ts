@@ -17,6 +17,7 @@ import {
   smallint,
   real,
   timestamp,
+  date,
   unique,
   uniqueIndex,
   check,
@@ -193,6 +194,39 @@ export const coachMisses = pgTable(
     ),
     index("coach_misses_recorded_at_idx").on(t.recordedAt.desc()),
     index("coach_misses_college_id_idx").on(t.collegeId),
+  ],
+);
+
+/**
+ * coverage_history — daily snapshot of the global coverage rollup that
+ * powers the Coverage page's KpiStrip.
+ *
+ * Columns mirror the live `summarizeLeagues` rollup so the history series
+ * is drop-in comparable to the current snapshot. One row per UTC day,
+ * keyed by `snapshot_date`. The summary endpoint upserts today's row on
+ * each call (`ON CONFLICT (snapshot_date) DO UPDATE`); subsequent calls
+ * within the same day cheaply rewrite the same six counters with the
+ * latest values rather than re-aggregating into a separate timeseries
+ * pipeline. Reads (the trend endpoint) just `SELECT ... ORDER BY
+ * snapshot_date DESC LIMIT N` — index-only by the unique key.
+ */
+export const coverageHistory = pgTable(
+  "coverage_history",
+  {
+    id: serial("id").primaryKey(),
+    snapshotDate: date("snapshot_date").notNull(),
+    leaguesTotal: integer("leagues_total").notNull(),
+    clubsTotal: integer("clubs_total").notNull(),
+    clubsWithRosterSnapshot: integer("clubs_with_roster_snapshot").notNull(),
+    clubsWithCoachDiscovery: integer("clubs_with_coach_discovery").notNull(),
+    clubsNeverScraped: integer("clubs_never_scraped").notNull(),
+    clubsStale14d: integer("clubs_stale_14d").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("coverage_history_snapshot_date_uq").on(t.snapshotDate),
   ],
 );
 

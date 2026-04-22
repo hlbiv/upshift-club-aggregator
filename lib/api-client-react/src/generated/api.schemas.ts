@@ -857,6 +857,29 @@ export interface CoverageLeaguesSummaryResponse {
 }
 
 /**
+ * One day's snapshot of the global coverage rollup. Same six counters as CoverageLeaguesSummaryResponse so the trend series is drop-in comparable to the live current snapshot.
+
+ */
+export interface CoverageHistoryRow {
+  /** ISO date (YYYY-MM-DD) of the snapshot. */
+  snapshotDate: string;
+  leaguesTotal: number;
+  clubsTotal: number;
+  clubsWithRosterSnapshot: number;
+  clubsWithCoachDiscovery: number;
+  clubsNeverScraped: number;
+  clubsStale14d: number;
+}
+
+/**
+ * Daily snapshot timeseries, oldest-first. May contain fewer than the requested `days` rows on a fresh deploy.
+
+ */
+export interface CoverageLeaguesHistoryResponse {
+  rows: CoverageHistoryRow[];
+}
+
+/**
  * Per-club coverage detail within a single league.
  */
 export interface CoverageLeagueDetailRow {
@@ -1324,6 +1347,14 @@ export type GetCoverageLeaguesParams = {
    * @maximum 100
    */
   page_size?: number;
+};
+
+export type GetCoverageLeaguesHistoryParams = {
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
 };
 
 export type GetCoverageLeagueDetailParams = {

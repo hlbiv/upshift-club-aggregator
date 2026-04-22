@@ -39,6 +39,7 @@ import type {
   CoachSearchResponse,
   CollegeListResponse,
   CoverageLeagueDetailResponse,
+  CoverageLeaguesHistoryResponse,
   CoverageLeaguesResponse,
   CoverageLeaguesSummaryResponse,
   CoverageResponse,
@@ -54,6 +55,7 @@ import type {
   GetCoachMissesParams,
   GetCoachQualityFlagsParams,
   GetCoverageLeagueDetailParams,
+  GetCoverageLeaguesHistoryParams,
   GetCoverageLeaguesParams,
   GetEmptyStaffPagesParams,
   GetGrowthCoverageTrendParams,
@@ -4219,6 +4221,118 @@ export function useGetCoverageLeaguesSummary<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetCoverageLeaguesSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Daily timeseries of the same six counters returned by `/v1/admin/coverage/leagues/summary`. One row per UTC day, oldest first, capped at `days` rows (default 30, max 365). Powers the sparkline + delta badges on the Coverage page's KpiStrip so operators can spot week-over-week regressions at a glance.
+History is recorded by an idempotent upsert inside the summary endpoint: each call rewrites today's row with the latest counters (`ON CONFLICT (snapshot_date) DO UPDATE`). On a fresh deploy the series starts the first day the summary endpoint is called.
+
+ * @summary Daily snapshot timeseries of the global coverage rollup
+ */
+export const getGetCoverageLeaguesHistoryUrl = (
+  params?: GetCoverageLeaguesHistoryParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/coverage/leagues/history?${stringifiedParams}`
+    : `/api/v1/admin/coverage/leagues/history`;
+};
+
+export const getCoverageLeaguesHistory = async (
+  params?: GetCoverageLeaguesHistoryParams,
+  options?: RequestInit,
+): Promise<CoverageLeaguesHistoryResponse> => {
+  return customFetch<CoverageLeaguesHistoryResponse>(
+    getGetCoverageLeaguesHistoryUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetCoverageLeaguesHistoryQueryKey = (
+  params?: GetCoverageLeaguesHistoryParams,
+) => {
+  return [
+    `/api/v1/admin/coverage/leagues/history`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetCoverageLeaguesHistoryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCoverageLeaguesHistory>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetCoverageLeaguesHistoryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoverageLeaguesHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCoverageLeaguesHistoryQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCoverageLeaguesHistory>>
+  > = ({ signal }) =>
+    getCoverageLeaguesHistory(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCoverageLeaguesHistory>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCoverageLeaguesHistoryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCoverageLeaguesHistory>>
+>;
+export type GetCoverageLeaguesHistoryQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Daily snapshot timeseries of the global coverage rollup
+ */
+
+export function useGetCoverageLeaguesHistory<
+  TData = Awaited<ReturnType<typeof getCoverageLeaguesHistory>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetCoverageLeaguesHistoryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoverageLeaguesHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCoverageLeaguesHistoryQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

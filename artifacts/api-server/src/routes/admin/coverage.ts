@@ -50,6 +50,8 @@ import {
   CoverageLeaguesRequest,
   CoverageLeaguesResponse,
   CoverageLeaguesSummaryResponse,
+  CoverageLeaguesHistoryRequest,
+  CoverageLeaguesHistoryResponse,
   CoverageLeagueDetailRequest,
   CoverageLeagueDetailResponse,
   type CoverageLeagueDetailStatus,
@@ -89,6 +91,17 @@ export interface CoverageLeaguesSummary {
   clubsStale14d: number;
 }
 
+export interface CoverageHistoryRow {
+  /** ISO calendar date (YYYY-MM-DD) — one row per UTC day. */
+  snapshotDate: string;
+  leaguesTotal: number;
+  clubsTotal: number;
+  clubsWithRosterSnapshot: number;
+  clubsWithCoachDiscovery: number;
+  clubsNeverScraped: number;
+  clubsStale14d: number;
+}
+
 export interface CoverageDeps {
   listLeagues: (args: {
     page: number;
@@ -99,8 +112,22 @@ export interface CoverageDeps {
    * Aggregate coverage rollup across every league. Counts are
    * deduplicated by canonical club so a club that appears in N
    * leagues counts once.
+   *
+   * Production also persists today's rollup into `coverage_history`
+   * via an idempotent upsert (one row per UTC day) so the trends
+   * series stays in sync with whatever the strip is showing right
+   * now. Tests are free to skip the upsert.
    */
   summarizeLeagues: () => Promise<CoverageLeaguesSummary>;
+
+  /**
+   * Daily timeseries of the global coverage rollup, oldest-first,
+   * capped at `days`. Returns an empty array if the history table is
+   * empty (fresh deploy, before the first summary call).
+   */
+  getCoverageHistory: (args: {
+    days: number;
+  }) => Promise<CoverageHistoryRow[]>;
 
   /**
    * Resolves the `(id, name)` pair for the requested league. Returns null
@@ -190,6 +217,29 @@ export function makeSummaryHandler(deps: CoverageDeps) {
     try {
       const summary = await deps.summarizeLeagues();
       res.json(CoverageLeaguesSummaryResponse.parse(summary));
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export function makeHistoryHandler(deps: CoverageDeps) {
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const parsed = CoverageLeaguesHistoryRequest.safeParse({
+        days: toNumberOrUndefined(req.query.days),
+      });
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid query params" });
+        return;
+      }
+      const { days } = parsed.data;
+      const rows = await deps.getCoverageHistory({ days });
+      res.json(CoverageLeaguesHistoryResponse.parse({ rows }));
     } catch (err) {
       next(err);
     }
@@ -431,7 +481,7 @@ export const prodCoverageDeps: CoverageDeps = {
       }>,
     )[0];
 
-    return {
+    const summary: CoverageLeaguesSummary = {
       leaguesTotal: Number(row?.leagues_total ?? 0),
       clubsTotal: Number(row?.clubs_total ?? 0),
       clubsWithRosterSnapshot: Number(row?.clubs_with_roster_snapshot ?? 0),
@@ -439,6 +489,95 @@ export const prodCoverageDeps: CoverageDeps = {
       clubsNeverScraped: Number(row?.clubs_never_scraped ?? 0),
       clubsStale14d: Number(row?.clubs_stale_14d ?? 0),
     };
+
+    // Persist today's snapshot. Idempotent within the UTC day — repeated
+    // calls just rewrite the same row with the latest counters. We
+    // intentionally don't fail the read if the upsert errors (e.g. the
+    // table is missing on a deploy that hasn't migrated yet); the
+    // KpiStrip is more important than the trend strip.
+    try {
+      await defaultDb.execute(sql`
+        INSERT INTO coverage_history (
+          snapshot_date,
+          leagues_total,
+          clubs_total,
+          clubs_with_roster_snapshot,
+          clubs_with_coach_discovery,
+          clubs_never_scraped,
+          clubs_stale_14d
+        ) VALUES (
+          (now() AT TIME ZONE 'UTC')::date,
+          ${summary.leaguesTotal},
+          ${summary.clubsTotal},
+          ${summary.clubsWithRosterSnapshot},
+          ${summary.clubsWithCoachDiscovery},
+          ${summary.clubsNeverScraped},
+          ${summary.clubsStale14d}
+        )
+        ON CONFLICT (snapshot_date) DO UPDATE SET
+          leagues_total = EXCLUDED.leagues_total,
+          clubs_total = EXCLUDED.clubs_total,
+          clubs_with_roster_snapshot = EXCLUDED.clubs_with_roster_snapshot,
+          clubs_with_coach_discovery = EXCLUDED.clubs_with_coach_discovery,
+          clubs_never_scraped = EXCLUDED.clubs_never_scraped,
+          clubs_stale_14d = EXCLUDED.clubs_stale_14d,
+          recorded_at = now()
+      `);
+    } catch (err) {
+      console.error("[coverage] failed to upsert coverage_history", err);
+    }
+
+    return summary;
+  },
+
+  getCoverageHistory: async ({ days }) => {
+    // Oldest-first so the dashboard can pass straight into a sparkline.
+    // Fetch the most recent `days` rows, then reverse to ASC.
+    const result = await defaultDb.execute<{
+      snapshot_date: Date | string;
+      leagues_total: string;
+      clubs_total: string;
+      clubs_with_roster_snapshot: string;
+      clubs_with_coach_discovery: string;
+      clubs_never_scraped: string;
+      clubs_stale_14d: string;
+    }>(sql`
+      SELECT
+        snapshot_date,
+        leagues_total::text                AS leagues_total,
+        clubs_total::text                  AS clubs_total,
+        clubs_with_roster_snapshot::text   AS clubs_with_roster_snapshot,
+        clubs_with_coach_discovery::text   AS clubs_with_coach_discovery,
+        clubs_never_scraped::text          AS clubs_never_scraped,
+        clubs_stale_14d::text              AS clubs_stale_14d
+      FROM coverage_history
+      ORDER BY snapshot_date DESC
+      LIMIT ${days}
+    `);
+    const list = Array.from(
+      result as unknown as Array<{
+        snapshot_date: Date | string;
+        leagues_total: string;
+        clubs_total: string;
+        clubs_with_roster_snapshot: string;
+        clubs_with_coach_discovery: string;
+        clubs_never_scraped: string;
+        clubs_stale_14d: string;
+      }>,
+    );
+    const rows: CoverageHistoryRow[] = list.map((r) => ({
+      snapshotDate:
+        r.snapshot_date instanceof Date
+          ? r.snapshot_date.toISOString().slice(0, 10)
+          : String(r.snapshot_date).slice(0, 10),
+      leaguesTotal: Number(r.leagues_total ?? 0),
+      clubsTotal: Number(r.clubs_total ?? 0),
+      clubsWithRosterSnapshot: Number(r.clubs_with_roster_snapshot ?? 0),
+      clubsWithCoachDiscovery: Number(r.clubs_with_coach_discovery ?? 0),
+      clubsNeverScraped: Number(r.clubs_never_scraped ?? 0),
+      clubsStale14d: Number(r.clubs_stale_14d ?? 0),
+    }));
+    return rows.reverse();
   },
 
   findLeague: async ({ leagueId }) => {
@@ -553,9 +692,10 @@ export const prodCoverageDeps: CoverageDeps = {
 export function makeCoverageRouter(deps: CoverageDeps): IRouter {
   const router: IRouter = Router();
   router.get("/leagues", makeListLeaguesHandler(deps));
-  // Static path must be registered before the `:leagueId` param route
-  // so Express doesn't capture "summary" as the leagueId.
+  // Static paths must be registered before the `:leagueId` param route
+  // so Express doesn't capture "summary"/"history" as the leagueId.
   router.get("/leagues/summary", makeSummaryHandler(deps));
+  router.get("/leagues/history", makeHistoryHandler(deps));
   router.get("/leagues/:leagueId", makeLeagueDetailHandler(deps));
   return router;
 }

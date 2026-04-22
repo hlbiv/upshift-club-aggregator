@@ -19,10 +19,12 @@ import {
   makeListLeaguesHandler,
   makeLeagueDetailHandler,
   makeSummaryHandler,
+  makeHistoryHandler,
   type CoverageDeps,
   type CoverageLeagueAggRow,
   type CoverageLeagueDetailAggRow,
   type CoverageLeaguesSummary,
+  type CoverageHistoryRow,
 } from "../routes/admin/coverage";
 import type { CoverageLeagueDetailStatus } from "@hlbiv/api-zod/admin";
 
@@ -89,9 +91,11 @@ function makeDeps(opts: {
   summary?: CoverageLeaguesSummary;
   knownLeagues?: Record<number, { id: number; name: string }>;
   detail?: { rows: CoverageLeagueDetailAggRow[]; total: number };
+  history?: CoverageHistoryRow[];
   listLeaguesCalls?: ListLeaguesCall[];
   summaryCalls?: number[];
   detailCalls?: DetailCall[];
+  historyCalls?: Array<{ days: number }>;
 }): CoverageDeps {
   return {
     listLeagues: async ({ page, pageSize }) => {
@@ -110,6 +114,10 @@ function makeDeps(opts: {
           clubsStale14d: 0,
         }
       );
+    },
+    getCoverageHistory: async ({ days }) => {
+      opts.historyCalls?.push({ days });
+      return opts.history ?? [];
     },
     findLeague: async ({ leagueId }) => {
       return opts.knownLeagues?.[leagueId] ?? null;
@@ -446,6 +454,97 @@ async function run() {
         body.clubsStale14d === 0,
       "summary-zeros",
       `expected all-zero summary, got ${JSON.stringify(body)}`,
+    );
+  }
+
+  // --- 10. history — returns rows with default days ----------------------
+  {
+    const historyCalls: Array<{ days: number }> = [];
+    const history: CoverageHistoryRow[] = [
+      {
+        snapshotDate: "2026-04-20",
+        leaguesTotal: 100,
+        clubsTotal: 1000,
+        clubsWithRosterSnapshot: 800,
+        clubsWithCoachDiscovery: 700,
+        clubsNeverScraped: 50,
+        clubsStale14d: 30,
+      },
+      {
+        snapshotDate: "2026-04-21",
+        leaguesTotal: 100,
+        clubsTotal: 1010,
+        clubsWithRosterSnapshot: 820,
+        clubsWithCoachDiscovery: 720,
+        clubsNeverScraped: 45,
+        clubsStale14d: 25,
+      },
+    ];
+    const deps = makeDeps({ history, historyCalls });
+    const handler = makeHistoryHandler(deps);
+    const res = makeRes();
+    await handler(makeReq({}), res as unknown as Response, () => {});
+    assert(
+      res.statusCode === 200,
+      "history-default",
+      `expected 200, got ${res.statusCode}`,
+    );
+    const body = res.body as { rows?: CoverageHistoryRow[] };
+    assert(
+      Array.isArray(body.rows) && body.rows.length === 2,
+      "history-default",
+      `expected 2 rows, got ${body.rows?.length}`,
+    );
+    assert(
+      body.rows?.[0]?.snapshotDate === "2026-04-20" &&
+        body.rows?.[1]?.snapshotDate === "2026-04-21",
+      "history-default",
+      "expected oldest-first ordering",
+    );
+    assert(
+      historyCalls.length === 1 && historyCalls[0]?.days === 30,
+      "history-default",
+      `expected default days=30, got ${JSON.stringify(historyCalls)}`,
+    );
+  }
+
+  // --- 11. history — custom days param ------------------------------------
+  {
+    const historyCalls: Array<{ days: number }> = [];
+    const deps = makeDeps({ historyCalls });
+    const handler = makeHistoryHandler(deps);
+    const res = makeRes();
+    await handler(
+      makeReq({ query: { days: "7" } }),
+      res as unknown as Response,
+      () => {},
+    );
+    assert(
+      res.statusCode === 200,
+      "history-custom-days",
+      `expected 200, got ${res.statusCode}`,
+    );
+    assert(
+      historyCalls.length === 1 && historyCalls[0]?.days === 7,
+      "history-custom-days",
+      `expected days=7, got ${JSON.stringify(historyCalls)}`,
+    );
+  }
+
+  // --- 12. history — bogus days → 400 -------------------------------------
+  {
+    const deps = makeDeps({});
+    const handler = makeHistoryHandler(deps);
+    const res = makeRes();
+    await handler(
+      makeReq({ query: { days: "-5" } }),
+      res as unknown as Response,
+      () => {},
+    );
+    assert(
+      res.statusCode === 400,
+      "history-bogus-days",
+      `expected 400, got ${res.statusCode}`,
     );
   }
 

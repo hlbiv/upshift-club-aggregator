@@ -11,13 +11,15 @@ import {
 import {
   useGetCoverageLeagues,
   useGetCoverageLeaguesSummary,
+  useGetCoverageLeaguesHistory,
   type CoverageLeaguesResponse,
   type CoverageLeaguesSummaryResponse,
+  type CoverageLeaguesHistoryResponse,
 } from "@workspace/api-client-react";
 import { AppShell } from "../components/AppShell";
 import { PageHeader } from "../components/primitives/PageHeader";
 import { KpiStrip } from "../components/primitives/KpiStrip";
-import { KpiCard } from "../components/primitives/KpiCard";
+import { KpiCard, type KpiTrend } from "../components/primitives/KpiCard";
 
 /**
  * Coverage overview.
@@ -39,6 +41,7 @@ export default function CoveragePage() {
   const [page, setPage] = useState(1);
   const query = useGetCoverageLeagues({ page, page_size: PAGE_SIZE });
   const summaryQuery = useGetCoverageLeaguesSummary();
+  const historyQuery = useGetCoverageLeaguesHistory({ days: 30 });
 
   return (
     <AppShell>
@@ -49,6 +52,7 @@ export default function CoveragePage() {
 
       <SummaryStrip
         data={summaryQuery.data}
+        history={historyQuery.data}
         isLoading={summaryQuery.isLoading}
         isError={summaryQuery.isError}
       />
@@ -77,10 +81,12 @@ export default function CoveragePage() {
  */
 function SummaryStrip({
   data,
+  history,
   isLoading,
   isError,
 }: {
   data: CoverageLeaguesSummaryResponse | undefined;
+  history: CoverageLeaguesHistoryResponse | undefined;
   isLoading: boolean;
   isError: boolean;
 }) {
@@ -90,6 +96,11 @@ function SummaryStrip({
   const withCoach = data?.clubsWithCoachDiscovery ?? 0;
   const neverScraped = data?.clubsNeverScraped ?? 0;
   const stale = data?.clubsStale14d ?? 0;
+
+  // Build per-counter trend slots from the history series. We deliberately
+  // don't show a trend for "Leagues" (it changes ~never) but include it in
+  // the history payload anyway so a future page can opt in.
+  const trends = buildTrends(history?.rows);
 
   return (
     <KpiStrip cols={6}>
@@ -108,6 +119,7 @@ function SummaryStrip({
         value={clubs.toLocaleString()}
         isLoading={isLoading}
         isError={isError}
+        trend={trends.clubsTotal}
       />
       <KpiCard
         label="With roster"
@@ -116,6 +128,7 @@ function SummaryStrip({
         value={withRoster.toLocaleString()}
         isLoading={isLoading}
         isError={isError}
+        trend={trends.clubsWithRosterSnapshot}
       />
       <KpiCard
         label="With coach"
@@ -124,6 +137,7 @@ function SummaryStrip({
         value={withCoach.toLocaleString()}
         isLoading={isLoading}
         isError={isError}
+        trend={trends.clubsWithCoachDiscovery}
       />
       <KpiCard
         label="Never scraped"
@@ -132,6 +146,7 @@ function SummaryStrip({
         value={neverScraped.toLocaleString()}
         isLoading={isLoading}
         isError={isError}
+        trend={trends.clubsNeverScraped}
       />
       <KpiCard
         label="Stale 14d"
@@ -140,9 +155,43 @@ function SummaryStrip({
         value={stale.toLocaleString()}
         isLoading={isLoading}
         isError={isError}
+        trend={trends.clubsStale14d}
       />
     </KpiStrip>
   );
+}
+
+/**
+ * Slice the history series into per-counter `KpiTrend` objects. Returns
+ * `undefined` for a counter when the series is missing or empty so the
+ * KpiCard simply omits the trend slot (rather than rendering a "no trend
+ * yet" stub on every page load before the first summary write).
+ */
+function buildTrends(
+  rows: CoverageLeaguesHistoryResponse["rows"] | undefined,
+): {
+  clubsTotal?: KpiTrend;
+  clubsWithRosterSnapshot?: KpiTrend;
+  clubsWithCoachDiscovery?: KpiTrend;
+  clubsNeverScraped?: KpiTrend;
+  clubsStale14d?: KpiTrend;
+} {
+  if (!rows || rows.length === 0) return {};
+  const pick = (
+    key: keyof CoverageLeaguesHistoryResponse["rows"][number],
+    deltaDirection: "higher_better" | "lower_better",
+  ): KpiTrend => ({
+    history: rows.map((r) => Number(r[key] ?? 0)),
+    deltaDirection,
+    windowDays: 7,
+  });
+  return {
+    clubsTotal: pick("clubsTotal", "higher_better"),
+    clubsWithRosterSnapshot: pick("clubsWithRosterSnapshot", "higher_better"),
+    clubsWithCoachDiscovery: pick("clubsWithCoachDiscovery", "higher_better"),
+    clubsNeverScraped: pick("clubsNeverScraped", "lower_better"),
+    clubsStale14d: pick("clubsStale14d", "lower_better"),
+  };
 }
 
 function LeaguesTable({

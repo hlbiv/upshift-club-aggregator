@@ -1630,6 +1630,47 @@ export const GetCoverageLeaguesSummaryResponse = zod
   );
 
 /**
+ * Daily timeseries of the same six counters returned by `/v1/admin/coverage/leagues/summary`. One row per UTC day, oldest first, capped at `days` rows (default 30, max 365). Powers the sparkline + delta badges on the Coverage page's KpiStrip so operators can spot week-over-week regressions at a glance.
+History is recorded by an idempotent upsert inside the summary endpoint: each call rewrites today's row with the latest counters (`ON CONFLICT (snapshot_date) DO UPDATE`). On a fresh deploy the series starts the first day the summary endpoint is called.
+
+ * @summary Daily snapshot timeseries of the global coverage rollup
+ */
+export const getCoverageLeaguesHistoryQueryDaysDefault = 30;
+export const getCoverageLeaguesHistoryQueryDaysMax = 365;
+
+export const GetCoverageLeaguesHistoryQueryParams = zod.object({
+  days: zod.coerce
+    .number()
+    .min(1)
+    .max(getCoverageLeaguesHistoryQueryDaysMax)
+    .default(getCoverageLeaguesHistoryQueryDaysDefault),
+});
+
+export const GetCoverageLeaguesHistoryResponse = zod
+  .object({
+    rows: zod.array(
+      zod
+        .object({
+          snapshotDate: zod
+            .string()
+            .describe("ISO date (YYYY-MM-DD) of the snapshot."),
+          leaguesTotal: zod.number(),
+          clubsTotal: zod.number(),
+          clubsWithRosterSnapshot: zod.number(),
+          clubsWithCoachDiscovery: zod.number(),
+          clubsNeverScraped: zod.number(),
+          clubsStale14d: zod.number(),
+        })
+        .describe(
+          "One day's snapshot of the global coverage rollup. Same six counters as CoverageLeaguesSummaryResponse so the trend series is drop-in comparable to the live current snapshot.\n",
+        ),
+    ),
+  })
+  .describe(
+    "Daily snapshot timeseries, oldest-first. May contain fewer than the requested `days` rows on a fresh deploy.\n",
+  );
+
+/**
  * Paginated list of the canonical clubs affiliated with the given league, each row carrying its last-scraped timestamp, consecutive failures, coach count, roster-snapshot presence, staff-page URL, and scrape confidence.
 `status` filters:
   * `all` (default) — every affiliated club.
