@@ -1264,6 +1264,7 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
     than NCAA because every row requires an HTML GET, not a HEAD).
     """
     from extractors.naia_directory import (
+        _normalize_naia_name,
         discover_naia_program_url,
         fetch_naia_programs as _unused_fetch,  # noqa: F401  (parity import)
         parse_naia_index_slugs,
@@ -1399,9 +1400,19 @@ def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
 
             for row in rows:
                 college_id, name, gender_program = row
-                slug = slugs_by_gender.get(gender_program, {}).get(
-                    (name or "").lower()
-                )
+                # Two-pass slug join: try the exact lowercased DB name
+                # against naia.org's anchor text first, then fall back
+                # to the normalized form (strips punctuation +
+                # University/College/Institute suffixes). The slug map
+                # exposes both forms as keys so either lookup hits the
+                # same slug — handles the common drift between our DB's
+                # full school names ("Wayland Baptist University") and
+                # naia.org's short anchor text ("Wayland Baptist").
+                gender_slugs = slugs_by_gender.get(gender_program, {})
+                lower_name = (name or "").lower()
+                slug = gender_slugs.get(lower_name)
+                if not slug:
+                    slug = gender_slugs.get(_normalize_naia_name(name or ""))
                 if not slug:
                     missed_slug += 1
                     unresolved_names.append(f"{name} (no slug)")

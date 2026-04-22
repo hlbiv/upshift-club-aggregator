@@ -654,3 +654,37 @@ class TestNormalizeNaiaNameForSlugJoin:
     def test_strips_college_suffix(self):
         from extractors.naia_directory import _normalize_naia_name
         assert _normalize_naia_name("Aquinas College") == "aquinas"
+
+    def test_handler_two_pass_lookup_resolves_drifted_db_name(self):
+        """End-to-end check of the run.py handler's two-pass slug join:
+        DB name has a 'University' suffix that naia.org's anchor text
+        drops. Pass 1 (lower(name)) misses; pass 2 (normalized name)
+        hits the same slug. Verifies the slug map + handler lookup
+        contract that drives ``soccer_program_url`` fill-rate."""
+        from extractors.naia_directory import _normalize_naia_name
+
+        slugs = parse_naia_index_slugs(_read(MENS_FIXTURE), "mens")
+        # Simulate a DB row whose name drifted from naia.org's short form.
+        db_name = "Wayland Baptist University"
+
+        # Pass 1: exact lowercased lookup (what _handle_naia_resolve_urls
+        # tries first). This MUST miss for the test to be meaningful —
+        # the drift case the fallback exists to cover.
+        slug_pass1 = slugs.get(db_name.lower())
+        assert slug_pass1 is None, (
+            "test setup invalid: pass-1 should miss for drifted name "
+            "(if it hits the fallback isn't being exercised)"
+        )
+
+        # Pass 2: normalized lookup (the fallback). Must hit.
+        slug_pass2 = slugs.get(_normalize_naia_name(db_name))
+        assert slug_pass2 == "wayland", (
+            f"normalized fallback failed: got {slug_pass2!r} for "
+            f"{db_name!r}; expected 'wayland'"
+        )
+
+        # And the same fallback must NOT hit for an unrelated name —
+        # guards against the fallback being a wildcard that creates
+        # false-positive joins.
+        unrelated = "Some Nonexistent University"
+        assert slugs.get(_normalize_naia_name(unrelated)) is None
