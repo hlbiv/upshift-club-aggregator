@@ -1235,6 +1235,272 @@ def _handle_ncaa_resolve_urls(args: argparse.Namespace) -> None:
         )
 
 
+def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
+    """Resolve NAIA ``colleges.website`` + ``soccer_program_url`` via naia.org.
+
+    NAIA is unlike NCAA: the seed flow (``naia_directory.parse_naia_index``)
+    upserts (name, state) only — there is no ``website`` column on
+    naia.org's index page. So ``ncaa-resolve-urls`` (which requires
+    ``website IS NOT NULL``) skips every NAIA row.
+
+    This handler closes that gap with a two-phase per-program lookup:
+
+      1. Fetch each gender's naia.org index ONCE to build a
+         ``lower(name) -> slug`` map (``parse_naia_index_slugs``).
+      2. For every NAIA college row missing ``soccer_program_url``,
+         look up its slug, fetch the per-team detail page, extract the
+         athletics-website outbound link, and probe SIDEARM via the
+         shared ``resolve_soccer_program_url``. Backfill ``website``
+         (always when extracted) and ``soccer_program_url`` (when the
+         SIDEARM probe hits).
+
+    Joining via ``lower(college.name)`` is fragile across naia.org
+    name-format drift (e.g. "Wayland Baptist" vs "Wayland Baptist
+    University"); misses are logged for operator review and fall back
+    to manual fill — same escape hatch as ``ncaa-resolve-urls``.
+
+    Respects ``--limit N``, ``--gender mens|womens|both``, ``--dry-run``.
+    Rate-limits at 1.5s between detail-page fetches (slightly slower
+    than NCAA because every row requires an HTML GET, not a HEAD).
+    """
+    from extractors.naia_directory import (
+        discover_naia_program_url,
+        fetch_naia_programs as _unused_fetch,  # noqa: F401  (parity import)
+        parse_naia_index_slugs,
+        directory_url as naia_directory_url,
+        USER_AGENT as _NAIA_UA,
+        supported_genders as naia_supported_genders,
+    )
+
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        logger.error("[naia-resolve-urls] psycopg2 not available; cannot query DB")
+        sys.exit(1)
+
+    gender_arg = getattr(args, "gender", None) or "both"
+    gender_arg = {"boys": "mens", "girls": "womens"}.get(gender_arg, gender_arg)
+    if gender_arg == "both":
+        genders = list(naia_supported_genders())
+    elif gender_arg in naia_supported_genders():
+        genders = [gender_arg]
+    else:
+        logger.error(
+            "--source naia-resolve-urls: --gender must be mens|womens|both (got %r)",
+            gender_arg,
+        )
+        sys.exit(2)
+
+    dry_run = bool(getattr(args, "dry_run", False))
+    limit = getattr(args, "limit", None)
+    rate_delay = 1.5
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.error("[naia-resolve-urls] DATABASE_URL env var not set")
+        sys.exit(1)
+
+    import requests as _requests
+    import time as _time
+    from utils import http as _proxy_http
+
+    session = _requests.Session()
+    session.headers.update({
+        "User-Agent": _NAIA_UA,
+        "Accept": "text/html,application/xhtml+xml,*/*",
+    })
+
+    # Phase 1: fetch the naia.org index once per gender to build the
+    # name → slug map. Routed through utils.http so naia.org calls go
+    # through proxy_config.yaml when populated (Replit egress IPs hit
+    # the WAF with HTTP 405 on direct calls). If proxies aren't
+    # configured the wrapper falls back to a direct request, so the
+    # same code path works in dev (empty config) and prod.
+    slugs_by_gender: dict[str, dict[str, str]] = {}
+    for g in genders:
+        idx_url = naia_directory_url(g)
+        try:
+            resp = _proxy_http.get(
+                idx_url,
+                timeout=20,
+                headers={
+                    "User-Agent": _NAIA_UA,
+                    "Accept": "text/html,application/xhtml+xml,*/*",
+                },
+                allow_redirects=True,
+            )
+        except _requests.RequestException as exc:
+            logger.warning(
+                "[naia-resolve-urls] index fetch failed for %s (%s): %s",
+                g, idx_url, exc,
+            )
+            slugs_by_gender[g] = {}
+            continue
+        if resp.status_code != 200:
+            logger.warning(
+                "[naia-resolve-urls] index fetch %s -> HTTP %d; skipping %s",
+                idx_url, resp.status_code, g,
+            )
+            slugs_by_gender[g] = {}
+            continue
+        slugs_by_gender[g] = parse_naia_index_slugs(resp.text, g)
+        logger.info(
+            "[naia-resolve-urls] %s index: %d slug(s) parsed",
+            g, len(slugs_by_gender[g]),
+        )
+
+    if not any(slugs_by_gender.values()):
+        logger.error(
+            "[naia-resolve-urls] no slugs available — aborting (likely "
+            "naia.org WAF block; configure proxy_config.yaml)"
+        )
+        try:
+            session.close()
+        except Exception:
+            pass
+        sys.exit(1)
+
+    run_log: Optional[ScrapeRunLogger] = None
+    if not dry_run:
+        run_log = ScrapeRunLogger(
+            scraper_key="naia-resolve-urls",
+            league_name="NAIA URL resolver",
+        )
+        run_log.start()
+
+    resolved = 0
+    websites_only = 0
+    missed_slug = 0
+    missed_website = 0
+    errors = 0
+    unresolved_names: list[str] = []
+
+    try:
+        conn = psycopg2.connect(database_url)
+        try:
+            with conn.cursor() as cur:
+                select_sql = """
+                    SELECT id, name, gender_program
+                    FROM colleges
+                    WHERE division = 'NAIA'
+                      AND soccer_program_url IS NULL
+                      AND gender_program = ANY(%s)
+                    ORDER BY name
+                """
+                if limit is not None:
+                    select_sql += f" LIMIT {int(limit)}"
+                cur.execute(select_sql, (genders,))
+                rows = cur.fetchall()
+
+            logger.info(
+                "[naia-resolve-urls] %d NAIA college(s) to resolve%s",
+                len(rows), " (dry-run)" if dry_run else "",
+            )
+
+            for row in rows:
+                college_id, name, gender_program = row
+                slug = slugs_by_gender.get(gender_program, {}).get(
+                    (name or "").lower()
+                )
+                if not slug:
+                    missed_slug += 1
+                    unresolved_names.append(f"{name} (no slug)")
+                    continue
+
+                try:
+                    website, program_url = discover_naia_program_url(
+                        slug, gender_program, session=session
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[naia-resolve-urls] discover error for %s: %s",
+                        name, exc,
+                    )
+                    errors += 1
+                    _time.sleep(rate_delay)
+                    continue
+
+                if website is None:
+                    missed_website += 1
+                    unresolved_names.append(f"{name} (no website)")
+                    _time.sleep(rate_delay)
+                    continue
+
+                if program_url is None:
+                    websites_only += 1
+                    if dry_run:
+                        logger.info(
+                            "[naia-resolve-urls] [dry-run] %s: website=%s "
+                            "(no SIDEARM hit)",
+                            name, website,
+                        )
+                    else:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE colleges SET website = "
+                                "COALESCE(website, %s) WHERE id = %s",
+                                (website, college_id),
+                            )
+                        conn.commit()
+                    _time.sleep(rate_delay)
+                    continue
+
+                if dry_run:
+                    logger.info(
+                        "[naia-resolve-urls] [dry-run] %s: website=%s "
+                        "program_url=%s",
+                        name, website, program_url,
+                    )
+                else:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE colleges SET "
+                            "website = COALESCE(website, %s), "
+                            "soccer_program_url = %s "
+                            "WHERE id = %s",
+                            (website, program_url, college_id),
+                        )
+                    conn.commit()
+
+                resolved += 1
+                _time.sleep(rate_delay)
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    logger.info(
+        "[naia-resolve-urls] done: resolved=%d websites_only=%d "
+        "missed_slug=%d missed_website=%d errors=%d%s",
+        resolved, websites_only, missed_slug, missed_website, errors,
+        " (dry-run)" if dry_run else "",
+    )
+    if unresolved_names:
+        logger.info(
+            "[naia-resolve-urls] unresolved (manual fill needed): %s",
+            ", ".join(unresolved_names[:25])
+            + (
+                f" … ({len(unresolved_names) - 25} more)"
+                if len(unresolved_names) > 25
+                else ""
+            ),
+        )
+
+    if run_log is not None:
+        run_log.finish_ok(
+            records_created=0,
+            records_updated=resolved + websites_only,
+            records_failed=errors + missed_slug + missed_website,
+        )
+
+
 def _handle_ncaa_seed_d1(args: argparse.Namespace) -> None:
     """Seed ``colleges`` from stats.ncaa.org's D1 men's + women's lists.
 
@@ -1831,6 +2097,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_seed_wikipedia_category": _handle_ncaa_seed_wikipedia_category,
     "naia-seed-official": _handle_naia_seed_official,
     "naia_seed_official": _handle_naia_seed_official,
+    "naia-resolve-urls": _handle_naia_resolve_urls,
+    "naia_resolve_urls": _handle_naia_resolve_urls,
     "ncaa-resolve-urls": _handle_ncaa_resolve_urls,
     "ncaa_resolve_urls": _handle_ncaa_resolve_urls,
 }
@@ -1881,6 +2149,7 @@ SOURCE_HELP: dict[str, str] = {
     "ncaa-seed-wikipedia-category": "seed colleges table from Wikipedia's MediaWiki category pages. Use when the plain 'List of ...' page doesn't exist (D3 as of April 2026). Requires --division D3. Optional --gender mens|womens (default: both); --dry-run. Partial coverage (only schools with their own Wikipedia article — ~60-80% of the real universe); remaining long tail lands in the kid's manual-entry CSV.",
     "naia-seed-official": "seed colleges table from naia.org's 2021-22 soccer teams index (last working listing endpoint — current-season listings 302-redirect to the first team). Covers ~95% of current NAIA membership; ~5-program/year churn means the rest comes in via manual entry. Optional --gender mens|womens (default: both); --dry-run.",
     "ncaa-resolve-urls": "resolve colleges.soccer_program_url by probing the canonical SIDEARM roster path for each college.website. Scoped by --division (default D1); --limit N for smoke-tests; --dry-run.",
+    "naia-resolve-urls": "resolve NAIA colleges.website + soccer_program_url via naia.org per-team detail pages (closes the gap left by ncaa-resolve-urls, which requires website IS NOT NULL — NAIA seeds carry no website). Phase-1 fetches the naia.org index per gender for a name→slug map; phase-2 GETs each detail page, extracts the athletics outbound link, and probes SIDEARM. Optional --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run. Production runs require proxy_config.yaml — Replit IPs hit naia.org's WAF (HTTP 405).",
 }
 
 

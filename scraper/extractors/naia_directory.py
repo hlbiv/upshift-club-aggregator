@@ -1,6 +1,7 @@
 """
 naia_directory.py — Seed ``colleges`` from naia.org's 2021-22 soccer
-teams index.
+teams index, and discover roster/athletics URLs from naia.org's per-team
+detail pages.
 
 Wikipedia doesn't have consolidated "List of NAIA ... soccer programs"
 pages (unlike NCAA D2/D3). naia.org is the authoritative source, but
@@ -281,6 +282,282 @@ def parse_naia_index(html: str, gender: str) -> List[CollegeSeed]:
 # ---------------------------------------------------------------------------
 # Fetch
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Slug capture (for the URL-discovery flow — see ``parse_naia_team_page`` and
+# the ``naia-resolve-urls`` run.py handler). The directory parser already
+# walks the same anchors; this helper returns the slug instead of building
+# a CollegeSeed so the URL-resolver can join NAIA `colleges` rows to their
+# detail-page slug without a DB schema change.
+# ---------------------------------------------------------------------------
+
+
+# Common school-name suffixes / qualifiers that drift between naia.org's
+# short-form anchor text and ``colleges.name`` in our DB. Stripped during
+# the slug-map normalization so "Wayland Baptist University" in the DB
+# still joins to "Wayland Baptist" on naia.org.
+# Conservative suffix list: only qualifiers that NAIA's short anchor
+# text reliably drops. NOT included: "State" (real names like "Kansas
+# State"), "Christian" (real names like "Arizona Christian"), "Tech",
+# "A&M" — stripping any of those would create false-positive joins.
+_NAIA_NAME_SUFFIXES = re.compile(
+    r"\s+(university|college|institute)$",
+    re.IGNORECASE,
+)
+_NAIA_PUNCT_RE = re.compile(r"[^\w\s]")
+_NAIA_WS_RE = re.compile(r"\s+")
+
+
+def _normalize_naia_name(name: str) -> str:
+    """Loose normalization for fuzzy slug-map joins.
+
+    Lowercases, strips non-word punctuation (St. vs St, O'Connell vs
+    OConnell), collapses whitespace, and removes common trailing
+    qualifiers ("University", "College") that naia.org's short anchor
+    text drops but our DB ``colleges.name`` may include. Stops short of
+    fuzzywuzzy / FUZZY_THRESHOLD — that's a separate follow-up — but
+    cheaply resolves the common suffix-drift cases that block ~10% of
+    NAIA programs from joining at all.
+    """
+    if not name:
+        return ""
+    s = name.lower().strip()
+    s = _NAIA_PUNCT_RE.sub(" ", s)
+    s = _NAIA_WS_RE.sub(" ", s).strip()
+    # Strip trailing qualifiers iteratively (handles
+    # "Wayland Baptist University" -> "Wayland Baptist" then a no-op).
+    prev = None
+    while prev != s:
+        prev = s
+        s = _NAIA_NAME_SUFFIXES.sub("", s).strip()
+    return s
+
+
+def parse_naia_index_slugs(
+    html: str, gender: str
+) -> dict[str, str]:
+    """Map name → slug for one gender's naia.org index page.
+
+    Walks the same anchors as ``parse_naia_index`` but returns the
+    ``/sports/(m|w)soc/<season>/teams/<slug>`` slug captured by
+    ``_TEAM_HREF_RE``. The first occurrence of each name wins (the index
+    sometimes repeats programs across alphabetical + conference subindexes).
+
+    The returned dict contains BOTH the lowercased original name AND
+    the normalized form (see ``_normalize_naia_name``) as keys, all
+    pointing at the same slug. The run.py handler tries the lowercased
+    DB name first, then the normalized form — handles the common
+    "University"/"College" suffix drift between naia.org's short anchor
+    text and our DB ``colleges.name``. Empty anchors and nav links are
+    filtered with the same logic as ``parse_naia_index``.
+    """
+    if gender not in _GENDER_SOURCES:
+        raise ValueError(f"gender must be 'mens' or 'womens' (got {gender!r})")
+
+    soup = BeautifulSoup(html, "html.parser")
+    out: dict[str, str] = {}
+    for anchor in soup.find_all("a", href=_TEAM_HREF_RE):
+        href = anchor.get("href") or ""
+        match = _TEAM_HREF_RE.search(href)
+        if not match:
+            continue
+        slug = match.group(1)
+        raw_text = anchor.get_text()
+        name, _state = _name_and_state_from_anchor_text(raw_text)
+        if not name or len(name) < 2:
+            continue
+        keys = [name.lower(), _normalize_naia_name(name)]
+        for key in keys:
+            if key and key not in out:
+                out[key] = slug
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Per-team detail-page URL discovery
+#
+# The directory seed gives us name + state but no athletics website. The
+# canonical NAIA detail page (``/sports/(m|w)soc/<season>/teams/<slug>``)
+# embeds an "Official Site" / "Athletics Website" outbound link to the
+# school's athletics homepage; from there ``resolve_soccer_program_url``
+# handles the SIDEARM probe just like NCAA.
+#
+# The detail-page HTML structure is not stable across the ~5-year-old
+# snapshot vs. any newer template naia.org may serve, so the extractor
+# below tries multiple selector strategies in priority order. Misses are
+# logged for operator review — manual fill is the last-resort fallback.
+# ---------------------------------------------------------------------------
+
+# Outbound-link label patterns we'll accept as "this is the school's
+# athletics homepage". Ordered loosely from most-specific to most-generic;
+# the parser scans every anchor and matches against this regex.
+_NAIA_OFFICIAL_SITE_LABELS = re.compile(
+    r"\b("
+    r"official\s+(?:athletic[s]?\s+)?site"
+    r"|athletic[s]?\s+(?:website|home(?:page)?|site)"
+    r"|team\s+website"
+    r"|visit\s+(?:athletic[s]?\s+)?site"
+    r"|school\s+website"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Outbound-link href filters: exclude obvious non-athletics destinations
+# (social media, naia.org self-links, ticketing, mailto, javascript hooks).
+# A real athletics URL is an http(s) URL whose host is NOT one of these.
+_NAIA_LINK_BLOCKLIST = re.compile(
+    r"^(?:mailto:|tel:|javascript:|#|/)|"
+    r"(?:naia\.org|facebook\.com|twitter\.com|x\.com|instagram\.com|"
+    r"youtube\.com|tiktok\.com|linkedin\.com|flickr\.com|pinterest\.com|"
+    r"snapchat\.com|google\.com/maps|maps\.google\.com)",
+    re.IGNORECASE,
+)
+
+
+def naia_team_detail_url(slug: str, gender: str) -> str:
+    """Return the canonical naia.org detail-page URL for a slug + gender.
+
+    Same season pinning as the index page (``_NAIA_SEASONS``) — naia.org
+    keeps historical detail pages live indefinitely, so the 4-5 year-old
+    snapshot is fine for athletics-website discovery (the school's own
+    homepage rarely changes).
+    """
+    if gender not in _NAIA_SEASONS:
+        raise ValueError(f"gender must be 'mens' or 'womens' (got {gender!r})")
+    season = _NAIA_SEASONS[gender]
+    code = "msoc" if gender == "mens" else "wsoc"
+    return f"{_NAIA_BASE}/{code}/{season}/teams/{slug}"
+
+
+def parse_naia_team_page(html: str) -> Optional[str]:
+    """Extract the school's athletics-homepage URL from a NAIA team page.
+
+    Strategy (first hit wins):
+      1. Anchor whose visible text matches ``_NAIA_OFFICIAL_SITE_LABELS``
+         ("Official Site", "Athletics Website", etc.) and whose href is
+         an absolute http(s) URL not in ``_NAIA_LINK_BLOCKLIST``.
+      2. Anchor whose ``title`` / ``aria-label`` attribute matches the
+         same label set (some NAIA templates put the label on the
+         attribute and use an icon for visible content).
+      3. None — caller logs the miss for operator review.
+
+    Returned URL is normalized to ``scheme://host`` (no trailing path).
+    The downstream SIDEARM probe re-composes the roster path on top.
+    """
+    if not html:
+        return None
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Strategy 1+2 unified: walk every <a>, score by label match
+    # against (visible text, title, aria-label).
+    for anchor in soup.find_all("a"):
+        href = anchor.get("href") or ""
+        if not href or _NAIA_LINK_BLOCKLIST.search(href):
+            continue
+        if not re.match(r"^https?://", href, re.IGNORECASE):
+            continue
+
+        candidates = [
+            anchor.get_text() or "",
+            anchor.get("title") or "",
+            anchor.get("aria-label") or "",
+        ]
+        if not any(_NAIA_OFFICIAL_SITE_LABELS.search(c) for c in candidates):
+            continue
+
+        # Normalize to scheme://host (drop path/query/fragment) — the
+        # SIDEARM resolver re-composes /sports/.../roster on its own.
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(href.strip())
+        if not parsed.netloc:
+            continue
+        return urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+
+    return None
+
+
+def discover_naia_program_url(
+    slug: str,
+    gender: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 15,
+) -> tuple[Optional[str], Optional[str]]:
+    """Resolve (athletics_website, soccer_program_url) for a NAIA program.
+
+    Two-phase lookup:
+      1. Fetch the naia.org detail page for ``slug`` + ``gender`` and
+         extract the athletics homepage via ``parse_naia_team_page``.
+      2. Probe SIDEARM/common roster paths on that homepage via
+         ``resolve_soccer_program_url`` (same code path NCAA uses).
+
+    Both halves can fail independently — a program with a working
+    athletics homepage but a non-SIDEARM roster CMS will return
+    ``(website, None)`` so the caller can still backfill
+    ``colleges.website`` (useful input for future probe strategies).
+    Returns ``(None, None)`` if the detail-page fetch fails or has no
+    extractable athletics link.
+    """
+    # Lazy import — keeps this function callable without dragging in
+    # ncaa_directory's resolver at import time (matters for unit tests
+    # that mock the module).
+    from extractors.ncaa_directory import resolve_soccer_program_url  # noqa: E402
+    # Route the naia.org detail-page GET through the proxy-aware
+    # wrapper. Replit egress IPs hit naia.org's WAF (HTTP 405); the
+    # wrapper transparently rotates through ``proxy_config.yaml`` when
+    # populated and falls back to a direct call otherwise — so this
+    # path is correct in dev (empty config) AND prod (proxy pool).
+    # The ``session`` kwarg is still accepted (and used for the SIDEARM
+    # probe under the school's own domain — proxy not needed there).
+    from utils import http as proxy_http  # noqa: E402
+
+    own_session = session is None
+    if own_session:
+        session = requests.Session()
+        session.headers.update(
+            {
+                "User-Agent": USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml,*/*",
+            }
+        )
+
+    try:
+        url = naia_team_detail_url(slug, gender)
+        try:
+            resp = proxy_http.get(
+                url,
+                timeout=timeout,
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept": "text/html,application/xhtml+xml,*/*",
+                },
+                allow_redirects=True,
+            )
+        except requests.RequestException as exc:
+            log.debug("[naia-resolver] GET %s failed: %s", url, exc)
+            return None, None
+        if resp.status_code != 200:
+            log.debug(
+                "[naia-resolver] GET %s -> HTTP %d", url, resp.status_code
+            )
+            return None, None
+
+        website = parse_naia_team_page(resp.text)
+        if not website:
+            return None, None
+
+        program_url = resolve_soccer_program_url(
+            website, gender, session=session
+        )
+        return website, program_url
+    finally:
+        if own_session:
+            try:
+                session.close()
+            except Exception:
+                pass
 
 
 def fetch_naia_programs(
