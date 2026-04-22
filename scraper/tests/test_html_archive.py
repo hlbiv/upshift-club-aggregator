@@ -164,9 +164,14 @@ def test_client_init_failure_when_sdk_missing(monkeypatch, caplog):
     import logging as py_logging
     monkeypatch.setenv("ARCHIVE_RAW_HTML_ENABLED", "true")
 
-    # Ensure no fake SDK is registered; the real one isn't installed
-    # in test environments, so the import fails cleanly.
+    # Ensure no fake SDK is registered. If the real replit-object-storage
+    # package is installed (which it is on Replit, by design), force the
+    # import to fail by stubbing sys.modules entries to None — Python
+    # treats a None entry as "import explicitly disabled" and raises
+    # ImportError on `from replit import object_storage`.
     _cleanup_fake_replit_sdk()
+    monkeypatch.setitem(sys.modules, "replit", None)
+    monkeypatch.setitem(sys.modules, "replit.object_storage", None)
 
     caplog.set_level(py_logging.WARNING, logger="html_archive")
 

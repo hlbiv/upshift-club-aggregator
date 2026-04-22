@@ -16,7 +16,7 @@ every step from scratch.
 | §2 schema push (5 new tables + `triggered_by`) | ✅ done | All five tables present (`raw_html_archive`, `commitments`, `ynt_call_ups`, `odp_roster_entries`, `hs_rosters`); `scrape_run_logs.triggered_by` exists with default `'manual'`. |
 | §3 Replit Secrets (auth/ratelimit/docs flags) | ⚠️ prod-only | API server boots with `[api-key-auth] DISABLED in development mode` — flags only take effect in prod. Verify after deploy. |
 | §4 API smoke tests | ⏸️ prod-only | Auth gate / rate-limit headers / `/api/docs` all expect prod behavior; dev returns 200 unguarded by design. Re-run against the deployed `.replit.app` URL. |
-| §5 Object Storage bucket `upshift-raw-html` | ❓ user-side | `raw_html_archive` table exists but has 0 rows despite 276 scrape runs in the last 7 days — bucket likely not yet created or `ARCHIVE_RAW_HTML_ENABLED` not set. Create bucket in Replit console + flip the secret. |
+| §5 Object Storage bucket | ✅ live 2026-04-22 | Bucket `replit-objstore-194c4023-284c-4a8f-936e-f1728c6af469` provisioned via `setupObjectStorage`; `ARCHIVE_RAW_HTML_ENABLED=true` set; SDK + Postgres write path smoked + cleaned up. Real-traffic rows still 0 because all current scrapers use custom extractors that don't call `archive_raw_html` (per-league refactor — see §9). |
 | §6 Scheduled Deployments (3 cron jobs) | ❓ user-side | Scripts exist at `scraper/scheduled/{nightly_tier1,weekly_state,hourly_linker}.sh`. Wire in Replit console per `docs/replit-scheduled-deployments.md`. |
 | §7 Mint API key + sync sibling repo | ⏸️ partial | 4 `api_keys` rows already exist; `UPSHIFT_DATA_API_KEY` already in this env. Sibling repo (`hlbiv/upshift-studio`) lives on a separate Replit — sync there. |
 | §8 Linker sanity | ⏸️ outstanding | 2,607 `event_teams` rows still have NULL `canonical_club_id`; 0 commitments with NULL `club_id`. Run `python3 scraper/run.py --source link-canonical-clubs --dry-run --limit 100` once scrapers have populated fresh data. |
@@ -224,6 +224,15 @@ The middleware tests that shipped with #62 already cover correctness — the smo
    ```
 
    Should be > 0. Both `requests`-based (`scraper_static.py`) and Playwright-based (`scraper_js.py`) paths archive through the same flag.
+
+### Verified live 2026-04-22
+
+- Bucket id: `replit-objstore-194c4023-284c-4a8f-936e-f1728c6af469` (provisioned via `setupObjectStorage`; the SDK resolves it from `DEFAULT_OBJECT_STORAGE_BUCKET_ID`, which `scraper/utils/html_archive.py` now passes explicitly to `Client(...)` so we don't rely on the `.replit` `[objectStorage]` block).
+- `ARCHIVE_RAW_HTML_ENABLED=true` is set in shared env.
+- `replit-object-storage>=1.0` added to `scraper/requirements.txt` (the previously imported `replit.object_storage` symbol came from the standalone PyPI package, not the `replit` umbrella).
+- First archived blobs (since cleaned up): `2026-04-22T13:58:13Z` (static path, `https://example.com/...`) and `2026-04-22T13:59:01Z` (Playwright path, `https://example.org/`).
+- Replay round-trip via `--source replay-html --run-id <id>` succeeded against a manufactured run on 2026-04-22 (`pages_replayed: 1`, blob fetched + sha256 verified). Note: `_handle_replay_html` in `scraper/run.py` was looking up `WHERE run_id = %s` against a column that's actually named `scrape_run_log_id`; fixed in this task.
+- Real-traffic gap: tier-1 + state scrapers all use custom extractors that fetch internally and never call `archive_raw_html` (the "26 per-league extractors" gap in §9). Real archive rows from `--tier 1` / `--scope state` will stay at 0 until those extractors are refactored to the `(html, url)` entry-point pattern. Until then, the only archive emitters in production are the generic `scraper_static.scrape_static` / `scraper_js.scrape_js` paths used when no custom extractor matches a league URL.
 
 ---
 

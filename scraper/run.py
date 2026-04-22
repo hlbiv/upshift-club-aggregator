@@ -761,7 +761,7 @@ def _handle_replay_html(args: argparse.Namespace) -> None:
             cur.execute(
                 "SELECT sha256, source_url "
                 "FROM raw_html_archive "
-                "WHERE run_id = %s "
+                "WHERE scrape_run_log_id = %s "
                 "ORDER BY archived_at ASC",
                 (run_id,),
             )

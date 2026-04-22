@@ -118,7 +118,8 @@ def _init_client() -> bool:
             return False
 
         try:
-            client = object_storage.Client()
+            bucket_id = os.environ.get("DEFAULT_OBJECT_STORAGE_BUCKET_ID") or None
+            client = object_storage.Client(bucket_id=bucket_id) if bucket_id else object_storage.Client()
             # The Replit SDK exposes buckets through the client. The
             # exact attribute shape has varied over minor releases, so
             # we accept either ``.Bucket(name)`` or ``.bucket(name)``.

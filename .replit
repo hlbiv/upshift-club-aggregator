@@ -63,3 +63,8 @@ command = "cd scraper && python3 run.py --rollup scrape-health"
 [nix]
 channel = "stable-25_05"
 packages = ["gitFull", "glibcLocales", "playwright-driver", "rapidfuzz-cpp", "taskflow", "xcodebuild", "zlib"]
+
+[userenv]
+
+[userenv.shared]
+ARCHIVE_RAW_HTML_ENABLED = "true"
