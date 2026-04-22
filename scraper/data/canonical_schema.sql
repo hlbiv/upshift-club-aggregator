@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS club_aliases (
 CREATE TABLE IF NOT EXISTS club_affiliations (
     id SERIAL PRIMARY KEY,
     club_id INTEGER REFERENCES canonical_clubs(id),
+    -- Stable FK back to leagues_master. Coverage rollups join on this id
+    -- (never on source_name) so a `leagues_master.league_name` rename
+    -- can't drop the league out of the count. New writers MUST resolve
+    -- and persist league_id; legacy NULL rows can be filled in via
+    -- `lib/db/src/backfill-affiliations-league-id.ts`.
+    league_id INTEGER REFERENCES leagues_master(id) ON DELETE SET NULL,
     gender_program TEXT,
     platform_name TEXT,
     platform_tier TEXT,
@@ -58,3 +64,5 @@ CREATE TABLE IF NOT EXISTS club_affiliations (
     verification_status TEXT DEFAULT 'verified',
     notes TEXT
 );
+CREATE INDEX IF NOT EXISTS club_affiliations_league_id_idx
+    ON club_affiliations(league_id);

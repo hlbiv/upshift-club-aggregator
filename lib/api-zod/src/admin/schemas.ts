@@ -638,9 +638,9 @@ export type ScraperSchedulesResponse = z.infer<typeof ScraperSchedulesResponse>;
  *
  * `/v1/admin/coverage/leagues` aggregates per-league club coverage — which
  * clubs have a roster snapshot, a coach discovery, or are stale / never
- * scraped. Join path: `leagues_master.league_name` ↔
- * `club_affiliations.source_name`. Exact-match; no alias table on the league
- * side today. See docstring on the route for the caveat.
+ * scraped. Join path: `leagues_master.id` ↔ `club_affiliations.league_id`
+ * — a stable id, so a `leagues_master.league_name` rename can't drop the
+ * league out of the rollup. See docstring on the route for the caveat.
  *
  * `/v1/admin/coverage/leagues/:leagueId` drilldown surfaces the per-club
  * roster-snapshot / coach-discovery / stale-scrape state for one league.

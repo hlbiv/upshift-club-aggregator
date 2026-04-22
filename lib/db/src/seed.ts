@@ -244,6 +244,7 @@ async function main() {
   }> = [];
   const affiliationInserts: Array<{
     clubId: number;
+    leagueId: number | null;
     genderProgram: string;
     platformName: string;
     platformTier: string;
@@ -282,6 +283,12 @@ async function main() {
         const meta = leagueMeta.get(row.leagueName);
         affiliationInserts.push({
           clubId,
+          // Resolve league_id at seed time so the per-league coverage
+          // joins survive a future `leagues_master.league_name` rename.
+          // Falls back to null if the seed CSV references a league that
+          // isn't in `leagues_master.csv` — those rows can be cleaned
+          // up later via `backfill-affiliations-league-id.ts`.
+          leagueId: leagueIdMap.get(row.leagueName) ?? null,
           genderProgram: meta?.gender || "",
           platformName: meta?.governing_body || meta?.league_family || "",
           platformTier: meta?.tier_numeric || "",

@@ -8,6 +8,7 @@ import {
   timestamp,
   real,
   check,
+  index,
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -112,6 +113,17 @@ export const clubAffiliations = pgTable(
     clubId: integer("club_id").references(() => canonicalClubs.id, {
       onDelete: "cascade",
     }),
+    // Stable FK back to leagues_master. Coverage rollups (and any other
+    // per-league join) MUST go through this id, not through `source_name`,
+    // so a label rename on `leagues_master.league_name` doesn't silently
+    // drop the affected league out of the count. New writers (seed +
+    // scrapers) are expected to populate it; legacy rows can be filled in
+    // via `backfill-affiliations-league-id.ts`. Kept nullable + ON DELETE
+    // SET NULL so a league directory cleanup never cascades into the
+    // affiliation history we already collected.
+    leagueId: integer("league_id").references(() => leaguesMaster.id, {
+      onDelete: "set null",
+    }),
     genderProgram: text("gender_program"),
     platformName: text("platform_name"),
     platformTier: text("platform_tier"),
@@ -125,6 +137,10 @@ export const clubAffiliations = pgTable(
   },
   (t) => [
     unique("club_affiliations_club_source_uq").on(t.clubId, t.sourceName),
+    // Coverage rollups join `ca.league_id = lm.id` for every page load
+    // of the admin Scrape Health screen. A btree index keeps that join
+    // cheap as `club_affiliations` grows.
+    index("club_affiliations_league_id_idx").on(t.leagueId),
   ],
 );
 

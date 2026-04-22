@@ -14,6 +14,8 @@
     "seed": "pnpm exec tsx src/seed.ts",
     "test:schema": "pnpm exec tsx src/schema/__tests__/smoke.ts",
     "test:integration": "pnpm exec tsx src/schema/__tests__/integration-pg.ts",
+    "test:coverage-league-id": "pnpm exec tsx src/schema/__tests__/coverage-league-id.ts",
+    "backfill:affiliations-league-id": "pnpm exec tsx src/backfill-affiliations-league-id.ts",
     "test:merge-clubs": "DATABASE_URL=postgres://unused@localhost/test pnpm exec tsx src/dedup/__tests__/merge-clubs.test.ts"
   },
   "dependencies": {

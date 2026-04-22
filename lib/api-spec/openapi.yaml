@@ -1699,8 +1699,9 @@ paths:
         Paginated rollup of every league in `leagues_master` alongside
         aggregate counts of its affiliated canonical clubs. `clubsTotal`
         counts clubs reachable via `club_affiliations` (join:
-        `leagues_master.league_name` = `club_affiliations.source_name`,
-        exact match — no league-side alias table today).
+        `leagues_master.id` = `club_affiliations.league_id` — a stable
+        id, so a `leagues_master.league_name` rename can't drop the
+        league out of the rollup).
 
         Subset counts:
           * `clubsWithRosterSnapshot` — clubs with >=1 row in
@@ -3670,8 +3671,9 @@ components:
       type: object
       description: >
         Per-league aggregate coverage stats. A club belongs to a league via
-        `club_affiliations.source_name = leagues_master.league_name` (exact
-        match — there is no `leagues_master.aliases` column today).
+        `club_affiliations.league_id = leagues_master.id` — joined on a
+        stable id rather than a name string, so a
+        `leagues_master.league_name` rename cannot drop the league.
       properties:
         leagueId:
           type: integer

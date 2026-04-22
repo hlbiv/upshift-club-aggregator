@@ -10,13 +10,15 @@
  * Join assumption
  * ---------------
  * The join between `leagues_master` and the clubs that belong to each
- * league runs through `club_affiliations.source_name =
- * leagues_master.league_name`, as an exact string match. There is no
- * `leagues_master.aliases` column today, so source-name drift (e.g. the
- * same league recorded as `"ECNL"` vs `"ECNL Boys"`) is NOT resolved —
- * each string is treated as its own league on both sides of the join.
- * If the schema grows a league-aliases table later, the CTE below is the
- * single place to plug that in.
+ * league runs through `club_affiliations.league_id = leagues_master.id`
+ * — a stable id, not the league name. This means a label rename on
+ * `leagues_master.league_name` (e.g. `"ECNL Boys"` → `"ECNL — Boys,
+ * 2025"`) cannot silently drop the affected league out of the per-league
+ * rollup or under-count the global "With roster / With coach" counters.
+ * Affiliation rows whose `league_id` is NULL (legacy rows that predate
+ * the column, or scraper writes that couldn't resolve a league) are
+ * intentionally excluded from coverage rollups — run
+ * `lib/db/src/backfill-affiliations-league-id.ts` to fill them in.
  *
  * Scrape-health coupling
  * ----------------------
@@ -378,11 +380,12 @@ export const prodCoverageDeps: CoverageDeps = {
   listLeagues: async ({ page, pageSize }) => {
     const offset = (page - 1) * pageSize;
 
-    // Per-league aggregate. The join key is exact on
-    // `leagues_master.league_name = club_affiliations.source_name`.
-    // Distinct clubs only — a league with a duplicate affiliation row must
-    // not double-count. Subset flags use EXISTS so a club with 10 snapshots
-    // still counts 1.
+    // Per-league aggregate. The join key is the stable
+    // `club_affiliations.league_id = leagues_master.id` — never the
+    // league name — so a `leagues_master.league_name` rename can't drop
+    // a league out of the rollup. Distinct clubs only — a league with a
+    // duplicate affiliation row must not double-count. Subset flags use
+    // EXISTS so a club with 10 snapshots still counts 1.
     const result = await defaultDb.execute<{
       league_id: number;
       league_name: string;
@@ -407,7 +410,7 @@ export const prodCoverageDeps: CoverageDeps = {
           sh.last_scraped_at
         FROM leagues_master lm
         LEFT JOIN club_affiliations ca
-          ON ca.source_name = lm.league_name
+          ON ca.league_id = lm.id
         LEFT JOIN canonical_clubs cc
           ON cc.id = ca.club_id
         LEFT JOIN scrape_health sh
@@ -505,7 +508,7 @@ export const prodCoverageDeps: CoverageDeps = {
           sh.last_scraped_at
         FROM leagues_master lm
         LEFT JOIN club_affiliations ca
-          ON ca.source_name = lm.league_name
+          ON ca.league_id = lm.id
         LEFT JOIN canonical_clubs cc
           ON cc.id = ca.club_id
         LEFT JOIN scrape_health sh
@@ -784,7 +787,7 @@ export const prodCoverageDeps: CoverageDeps = {
     return { id: Number(hit.id), name: hit.league_name };
   },
 
-  listClubsInLeague: async ({ leagueName, status, page, pageSize }) => {
+  listClubsInLeague: async ({ leagueId, status, page, pageSize }) => {
     const offset = (page - 1) * pageSize;
 
     const statusPredicate =
@@ -825,7 +828,7 @@ export const prodCoverageDeps: CoverageDeps = {
       JOIN canonical_clubs cc ON cc.id = ca.club_id
       LEFT JOIN scrape_health sh
         ON sh.entity_type = 'club' AND sh.entity_id = cc.id
-      WHERE ca.source_name = ${leagueName}
+      WHERE ca.league_id = ${leagueId}
         AND (${statusPredicate})
       GROUP BY
         cc.id,
