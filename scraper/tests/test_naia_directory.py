@@ -60,8 +60,20 @@ class TestDirectoryUrl:
     def test_mens_url_shape(self):
         assert directory_url("mens") == "https://www.naia.org/sports/msoc/2021-22/teams"
 
-    def test_womens_url_shape(self):
-        assert directory_url("womens") == "https://www.naia.org/sports/wsoc/2021-22/teams"
+    def test_womens_url_uses_earlier_season(self):
+        """naia.org womens teams-list broke at 2021-22 (renders a landing
+        page instead of a teams index). Last working season is 2020-21,
+        one season earlier than the mens endpoint. Regression guards
+        against reverting to a uniform-season constant."""
+        assert directory_url("womens") == "https://www.naia.org/sports/wsoc/2020-21/teams"
+
+    def test_genders_use_different_seasons(self):
+        """Structural invariant: the per-gender season map is not
+        accidentally collapsed to one constant."""
+        mens_url = directory_url("mens")
+        womens_url = directory_url("womens")
+        assert "2021-22" in mens_url
+        assert "2020-21" in womens_url
 
     def test_unsupported_gender_raises(self):
         with pytest.raises(ValueError):
@@ -261,7 +273,10 @@ class TestFetchNaiaPrograms:
         called_url = fake_session.get.call_args[0][0]
         assert called_url == "https://www.naia.org/sports/msoc/2021-22/teams"
 
-    def test_fetch_womens_uses_wsoc_url(self):
+    def test_fetch_womens_uses_wsoc_url_with_earlier_season(self):
+        """Regression for the production-run bug where womens returned 0
+        programs: the 2021-22 wsoc page is a landing page, not a teams
+        index. Handler must fetch 2020-21 for womens."""
         html = _read(MENS_FIXTURE)  # content irrelevant for URL check
         fake_response = mock.Mock()
         fake_response.text = html
@@ -278,7 +293,7 @@ class TestFetchNaiaPrograms:
             fetch_naia_programs("womens")
 
         called_url = fake_session.get.call_args[0][0]
-        assert called_url == "https://www.naia.org/sports/wsoc/2021-22/teams"
+        assert called_url == "https://www.naia.org/sports/wsoc/2020-21/teams"
 
     def test_fetch_unsupported_gender_raises(self):
         with pytest.raises(ValueError):
