@@ -1235,6 +1235,298 @@ def _handle_ncaa_resolve_urls(args: argparse.Namespace) -> None:
         )
 
 
+def _handle_ncaa_resolve_urls_wikipedia(args: argparse.Namespace) -> None:
+    """Resolve ``colleges.soccer_program_url`` via per-program Wikipedia infoboxes.
+
+    Closes the URL-coverage gap that ``ncaa-resolve-urls`` can't reach
+    on its own: that handler requires ``colleges.website IS NOT NULL``,
+    but the D1 stats.ncaa.org seeder and the D1/D2 Wikipedia list-page
+    seeders don't write a ``website`` column. As of 2026-04-22 only
+    ~22-24% of D1/D2 rows have ``soccer_program_url`` populated; the
+    inline head-coach extractor already hits 80-95% **of-URL**, so
+    everything here lifts the of-all coverage too.
+
+    Strategy (per ``inline_coach_production_measure.md`` recommendation
+    #3):
+
+      1. Walk each Wikipedia "List of NCAA Division ..." page and
+         capture each row's ``/wiki/<Article>`` link.
+      2. Batch-fetch each program article's wikitext via the MediaWiki
+         API and pull the ``| website = ...`` infobox value.
+      3. Hand the discovered website to the existing SIDEARM probe
+         (``resolve_soccer_program_url``) and write the verified URL
+         back to ``colleges`` — also backfilling
+         ``colleges.website`` when previously NULL.
+
+    Scoped to D1/D2 only — D3 already has ~65% URL coverage via the
+    Wikipedia category seeder, and D3 program articles are sparser
+    (many D3 schools don't have their own Wikipedia article). NAIA
+    has its own ``naia-resolve-urls`` flow.
+
+    Args:
+        --division D1|D2  (default: both — runs D1 then D2)
+        --gender mens|womens|both  (default: both)
+        --limit N  (cap total UPDATE attempts across all (div,gender) cells)
+        --dry-run  (parse + probe only; no DB writes)
+    """
+    from extractors.ncaa_wikipedia_program_urls import (
+        discover_program_urls,
+        fetch_program_articles,
+        fetch_program_websites,
+        normalize_school_name,
+        supported_divisions as wiki_supported_divisions,
+        ProgramArticleRef,
+    )
+
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        logger.error("[ncaa-resolve-urls-wikipedia] psycopg2 not available; cannot query DB")
+        sys.exit(1)
+
+    division_arg = getattr(args, "division", None)
+    if division_arg is None:
+        divisions = list(wiki_supported_divisions())
+    elif division_arg in wiki_supported_divisions():
+        divisions = [division_arg]
+    else:
+        logger.error(
+            "--source ncaa-resolve-urls-wikipedia: --division must be one of %s "
+            "(got %r). D3 has its own URL-coverage path via the category seeder; "
+            "NAIA has --source naia-resolve-urls.",
+            wiki_supported_divisions(), division_arg,
+        )
+        sys.exit(2)
+
+    gender_arg = getattr(args, "gender", None) or "both"
+    gender_arg = {"boys": "mens", "girls": "womens"}.get(gender_arg, gender_arg)
+    if gender_arg == "both":
+        genders = ["mens", "womens"]
+    elif gender_arg in ("mens", "womens"):
+        genders = [gender_arg]
+    else:
+        logger.error(
+            "--source ncaa-resolve-urls-wikipedia: --gender must be mens|womens|both "
+            "(got %r)", gender_arg,
+        )
+        sys.exit(2)
+
+    dry_run = bool(getattr(args, "dry_run", False))
+    limit = getattr(args, "limit", None)
+    rate_delay = 1.0
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.error("[ncaa-resolve-urls-wikipedia] DATABASE_URL env var not set")
+        sys.exit(1)
+
+    import requests as _requests
+    import time as _time
+
+    session = _requests.Session()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/json,*/*",
+    })
+
+    grand = {"resolved": 0, "missed_no_article": 0, "missed_no_website": 0,
+             "missed_no_sidearm": 0, "errors": 0, "websites_backfilled": 0}
+    remaining_budget: Optional[int] = int(limit) if limit is not None else None
+
+    try:
+        conn = psycopg2.connect(database_url)
+        try:
+            for division in divisions:
+                for gender in genders:
+                    if remaining_budget is not None and remaining_budget <= 0:
+                        break
+
+                    scraper_key = f"ncaa-resolve-urls-wikipedia-{division.lower()}-{gender}"
+                    run_log: Optional[ScrapeRunLogger] = None
+                    if not dry_run:
+                        run_log = ScrapeRunLogger(
+                            scraper_key=scraper_key,
+                            league_name=f"NCAA {division} {gender} URL resolver (wikipedia)",
+                        )
+                        run_log.start()
+
+                    # Phase 1: get all (school_name, article_title) refs
+                    # from the Wikipedia list page.
+                    try:
+                        refs = fetch_program_articles(division, gender, session=session)
+                    except Exception as exc:
+                        kind = _classify_exception(exc)
+                        logger.error(
+                            "[ncaa-resolve-urls-wikipedia] %s %s list fetch failed: %s",
+                            division, gender, exc,
+                        )
+                        if run_log is not None:
+                            run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                        grand["errors"] += 1
+                        continue
+
+                    refs_by_norm = {
+                        normalize_school_name(r.school_name): r for r in refs
+                    }
+
+                    # Phase 2: select the colleges rows that actually
+                    # need a URL. We restrict to (division, gender)
+                    # here so each cell's UPDATE budget is isolated.
+                    select_sql = """
+                        SELECT id, name, website
+                        FROM colleges
+                        WHERE division = %s
+                          AND gender_program = %s
+                          AND soccer_program_url IS NULL
+                        ORDER BY name
+                    """
+                    cell_limit = remaining_budget
+                    if cell_limit is not None:
+                        select_sql += f" LIMIT {int(cell_limit)}"
+                    with conn.cursor() as cur:
+                        cur.execute(select_sql, (division, gender))
+                        rows = cur.fetchall()
+
+                    # Phase 3: which article titles do we actually need?
+                    # Only fetch wikitext for matched rows.
+                    matched: list[tuple[int, str, Optional[str], ProgramArticleRef]] = []
+                    unmatched_names: list[str] = []
+                    for row in rows:
+                        college_id, name, website = row
+                        norm = normalize_school_name(name)
+                        ref = refs_by_norm.get(norm)
+                        if ref is None:
+                            unmatched_names.append(name)
+                            continue
+                        matched.append((college_id, name, website, ref))
+
+                    if unmatched_names:
+                        grand["missed_no_article"] += len(unmatched_names)
+                        logger.info(
+                            "[ncaa-resolve-urls-wikipedia] %s %s: %d row(s) had no "
+                            "Wikipedia article match (sample: %s)",
+                            division, gender, len(unmatched_names),
+                            ", ".join(unmatched_names[:10])
+                            + (f" … (+{len(unmatched_names) - 10})"
+                               if len(unmatched_names) > 10 else ""),
+                        )
+
+                    titles_needed = sorted({r.article_title for (_id, _n, _w, r) in matched})
+                    websites_map = fetch_program_websites(
+                        titles_needed, session=session
+                    ) if titles_needed else {}
+
+                    # Phase 4: probe + write
+                    discoveries = discover_program_urls(
+                        [r for (_id, _n, _w, r) in matched],
+                        gender,
+                        session=session,
+                        websites_override=websites_map,
+                    )
+                    discovery_by_title = {d.article_title: d for d in discoveries}
+
+                    cell_resolved = 0
+                    cell_missed_no_website = 0
+                    cell_missed_no_sidearm = 0
+                    cell_websites_backfilled = 0
+
+                    for (college_id, name, existing_website, ref) in matched:
+                        if remaining_budget is not None and remaining_budget <= 0:
+                            break
+                        d = discovery_by_title.get(ref.article_title)
+                        if d is None:
+                            cell_missed_no_website += 1
+                            continue
+                        if not d.website:
+                            cell_missed_no_website += 1
+                            continue
+                        if not d.soccer_program_url:
+                            cell_missed_no_sidearm += 1
+                            # Still backfill website if we discovered one
+                            # and the row doesn't have one yet.
+                            if not existing_website and not dry_run:
+                                with conn.cursor() as cur:
+                                    cur.execute(
+                                        "UPDATE colleges SET website = %s "
+                                        "WHERE id = %s AND website IS NULL",
+                                        (d.website, college_id),
+                                    )
+                                conn.commit()
+                                cell_websites_backfilled += 1
+                            continue
+
+                        if dry_run:
+                            logger.info(
+                                "[ncaa-resolve-urls-wikipedia] [dry-run] "
+                                "would set %s (%s %s) → %s",
+                                name, division, gender, d.soccer_program_url,
+                            )
+                        else:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    "UPDATE colleges "
+                                    "SET soccer_program_url = %s, "
+                                    "    website = COALESCE(website, %s) "
+                                    "WHERE id = %s",
+                                    (d.soccer_program_url, d.website, college_id),
+                                )
+                            conn.commit()
+                            if not existing_website:
+                                cell_websites_backfilled += 1
+
+                        cell_resolved += 1
+                        if remaining_budget is not None:
+                            remaining_budget -= 1
+                        _time.sleep(rate_delay)
+
+                    grand["resolved"] += cell_resolved
+                    grand["missed_no_website"] += cell_missed_no_website
+                    grand["missed_no_sidearm"] += cell_missed_no_sidearm
+                    grand["websites_backfilled"] += cell_websites_backfilled
+
+                    logger.info(
+                        "[ncaa-resolve-urls-wikipedia] %s %s: rows=%d matched=%d "
+                        "resolved=%d no_website=%d no_sidearm=%d backfilled_websites=%d%s",
+                        division, gender, len(rows), len(matched),
+                        cell_resolved, cell_missed_no_website,
+                        cell_missed_no_sidearm, cell_websites_backfilled,
+                        " (dry-run)" if dry_run else "",
+                    )
+
+                    if run_log is not None:
+                        run_log.finish_ok(
+                            records_created=0,
+                            records_updated=cell_resolved,
+                            records_failed=cell_missed_no_website + cell_missed_no_sidearm,
+                        )
+
+                if remaining_budget is not None and remaining_budget <= 0:
+                    break
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    logger.info(
+        "[ncaa-resolve-urls-wikipedia] done: resolved=%d "
+        "missed_no_article=%d missed_no_website=%d missed_no_sidearm=%d "
+        "errors=%d websites_backfilled=%d%s",
+        grand["resolved"], grand["missed_no_article"],
+        grand["missed_no_website"], grand["missed_no_sidearm"],
+        grand["errors"], grand["websites_backfilled"],
+        " (dry-run)" if dry_run else "",
+    )
+
+
 def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
     """Resolve NAIA ``colleges.website`` + ``soccer_program_url`` via naia.org.
 
@@ -2111,6 +2403,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "naia_resolve_urls": _handle_naia_resolve_urls,
     "ncaa-resolve-urls": _handle_ncaa_resolve_urls,
     "ncaa_resolve_urls": _handle_ncaa_resolve_urls,
+    "ncaa-resolve-urls-wikipedia": _handle_ncaa_resolve_urls_wikipedia,
+    "ncaa_resolve_urls_wikipedia": _handle_ncaa_resolve_urls_wikipedia,
 }
 
 # One entry per UNIQUE source (kebab form only). Used to build the
@@ -2159,6 +2453,7 @@ SOURCE_HELP: dict[str, str] = {
     "ncaa-seed-wikipedia-category": "seed colleges table from Wikipedia's MediaWiki category pages. Use when the plain 'List of ...' page doesn't exist (D3 as of April 2026). Requires --division D3. Optional --gender mens|womens (default: both); --dry-run. Partial coverage (only schools with their own Wikipedia article — ~60-80% of the real universe); remaining long tail lands in the kid's manual-entry CSV.",
     "naia-seed-official": "seed colleges table from naia.org's 2021-22 soccer teams index (last working listing endpoint — current-season listings 302-redirect to the first team). Covers ~95% of current NAIA membership; ~5-program/year churn means the rest comes in via manual entry. Optional --gender mens|womens (default: both); --dry-run.",
     "ncaa-resolve-urls": "resolve colleges.soccer_program_url by probing the canonical SIDEARM roster path for each college.website. Scoped by --division (default D1); --limit N for smoke-tests; --dry-run.",
+    "ncaa-resolve-urls-wikipedia": "resolve D1/D2 colleges.soccer_program_url by walking each program's own Wikipedia article infobox for the athletics-website URL, then probing the canonical SIDEARM roster path. Closes the gap left by ncaa-resolve-urls (which requires website IS NOT NULL) — D1/D2 seeders don't write a website column, so 76% of those rows are unreachable today. Scope is D1+D2 only (D3 has working category-seeded URL coverage; NAIA has --source naia-resolve-urls). Optional --division D1|D2 (default both); --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run.",
     "naia-resolve-urls": "resolve NAIA colleges.website + soccer_program_url via naia.org per-team detail pages (closes the gap left by ncaa-resolve-urls, which requires website IS NOT NULL — NAIA seeds carry no website). Phase-1 fetches the naia.org index per gender for a name→slug map; phase-2 GETs each detail page, extracts the athletics outbound link, and probes SIDEARM. Optional --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run. Production runs require proxy_config.yaml — Replit IPs hit naia.org's WAF (HTTP 405).",
 }
 
