@@ -1449,6 +1449,59 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/data-quality/coach-misses:
+    get:
+      operationId: getCoachMisses
+      tags: [admin]
+      summary: Colleges where the head-coach extractor found nothing
+      description: >
+        Paginated list of `coach_misses` rows — colleges whose head coach
+        the NCAA roster scraper failed to extract from both the inline
+        roster page and the `/coaches`/`staff` fallback. Populated when
+        env `COACH_MISSES_REPORT_ENABLED=true`. `probedUrls` is the list
+        of URLs the fallback tried before giving up — useful as input for
+        the Playwright fallback follow-up and any manual triage.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: division
+          in: query
+          schema:
+            type: string
+            enum: [D1, D2, D3]
+        - name: gender
+          in: query
+          schema:
+            type: string
+            enum: [mens, womens]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated list of coach-miss rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachMissesResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/growth/scraped-counts:
     get:
       operationId: getGrowthScrapedCounts
@@ -3233,6 +3286,60 @@ components:
         - page
         - pageSize
         - thresholdDays
+
+    CoachMissesRow:
+      type: object
+      description: One college whose head coach the scraper failed to extract.
+      properties:
+        collegeId:
+          type: integer
+        collegeName:
+          type: string
+        division:
+          type: string
+        genderProgram:
+          type: string
+        rosterUrl:
+          type: string
+          nullable: true
+        probedUrls:
+          type: array
+          items:
+            type: string
+        scrapeRunLogId:
+          type: integer
+          nullable: true
+        recordedAt:
+          type: string
+          format: date-time
+      required:
+        - collegeId
+        - collegeName
+        - division
+        - genderProgram
+        - rosterUrl
+        - probedUrls
+        - scrapeRunLogId
+        - recordedAt
+
+    CoachMissesResponse:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoachMissesRow"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - rows
+        - total
+        - page
+        - pageSize
 
     ScrapedCountsDelta:
       type: object

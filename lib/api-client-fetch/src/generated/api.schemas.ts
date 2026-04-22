@@ -691,6 +691,27 @@ export interface StaleScrapesResponse {
 }
 
 /**
+ * One college whose head coach the scraper failed to extract.
+ */
+export interface CoachMissesRow {
+  collegeId: number;
+  collegeName: string;
+  division: string;
+  genderProgram: string;
+  rosterUrl: string | null;
+  probedUrls: string[];
+  scrapeRunLogId: number | null;
+  recordedAt: string;
+}
+
+export interface CoachMissesResponse {
+  rows: CoachMissesRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
  * Records added across the five headline ingest tables since a point in time.
  */
 export interface ScrapedCountsDelta {
@@ -1219,6 +1240,37 @@ export type GetStaleScrapesParams = {
    */
   page_size?: number;
 };
+
+export type GetCoachMissesParams = {
+  division?: GetCoachMissesDivision;
+  gender?: GetCoachMissesGender;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  page_size?: number;
+};
+
+export type GetCoachMissesDivision =
+  (typeof GetCoachMissesDivision)[keyof typeof GetCoachMissesDivision];
+
+export const GetCoachMissesDivision = {
+  D1: "D1",
+  D2: "D2",
+  D3: "D3",
+} as const;
+
+export type GetCoachMissesGender =
+  (typeof GetCoachMissesGender)[keyof typeof GetCoachMissesGender];
+
+export const GetCoachMissesGender = {
+  mens: "mens",
+  womens: "womens",
+} as const;
 
 export type GetGrowthScrapedCountsParams = {
   /**

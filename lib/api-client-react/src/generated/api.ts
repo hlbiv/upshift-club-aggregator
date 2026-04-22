@@ -34,6 +34,7 @@ import type {
   ClubRelatedResponse,
   ClubSearchResponse,
   ClubStaffResponse,
+  CoachMissesResponse,
   CoachQualityFlagsResponse,
   CoachSearchResponse,
   CollegeListResponse,
@@ -49,6 +50,7 @@ import type {
   EventSearchResponse,
   GaPremierOrphanCleanupRequest,
   GaPremierOrphanCleanupResponse,
+  GetCoachMissesParams,
   GetCoachQualityFlagsParams,
   GetCoverageLeagueDetailParams,
   GetCoverageLeaguesParams,
@@ -3357,6 +3359,105 @@ export function useGetStaleScrapes<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetStaleScrapesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Paginated list of `coach_misses` rows — colleges whose head coach the NCAA roster scraper failed to extract from both the inline roster page and the `/coaches`/`staff` fallback. Populated when env `COACH_MISSES_REPORT_ENABLED=true`. `probedUrls` is the list of URLs the fallback tried before giving up — useful as input for the Playwright fallback follow-up and any manual triage.
+
+ * @summary Colleges where the head-coach extractor found nothing
+ */
+export const getGetCoachMissesUrl = (params?: GetCoachMissesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/coach-misses?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/coach-misses`;
+};
+
+export const getCoachMisses = async (
+  params?: GetCoachMissesParams,
+  options?: RequestInit,
+): Promise<CoachMissesResponse> => {
+  return customFetch<CoachMissesResponse>(getGetCoachMissesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCoachMissesQueryKey = (params?: GetCoachMissesParams) => {
+  return [
+    `/api/v1/admin/data-quality/coach-misses`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetCoachMissesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCoachMisses>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetCoachMissesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoachMisses>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCoachMissesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCoachMisses>>> = ({
+    signal,
+  }) => getCoachMisses(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCoachMisses>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCoachMissesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCoachMisses>>
+>;
+export type GetCoachMissesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Colleges where the head-coach extractor found nothing
+ */
+
+export function useGetCoachMisses<
+  TData = Awaited<ReturnType<typeof getCoachMisses>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetCoachMissesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoachMisses>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCoachMissesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

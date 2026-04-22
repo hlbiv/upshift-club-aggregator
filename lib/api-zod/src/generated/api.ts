@@ -1314,6 +1314,47 @@ export const GetStaleScrapesResponse = zod.object({
 });
 
 /**
+ * Paginated list of `coach_misses` rows — colleges whose head coach the NCAA roster scraper failed to extract from both the inline roster page and the `/coaches`/`staff` fallback. Populated when env `COACH_MISSES_REPORT_ENABLED=true`. `probedUrls` is the list of URLs the fallback tried before giving up — useful as input for the Playwright fallback follow-up and any manual triage.
+
+ * @summary Colleges where the head-coach extractor found nothing
+ */
+export const getCoachMissesQueryPageDefault = 1;
+
+export const getCoachMissesQueryPageSizeDefault = 20;
+export const getCoachMissesQueryPageSizeMax = 100;
+
+export const GetCoachMissesQueryParams = zod.object({
+  division: zod.enum(["D1", "D2", "D3"]).optional(),
+  gender: zod.enum(["mens", "womens"]).optional(),
+  page: zod.coerce.number().min(1).default(getCoachMissesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .min(1)
+    .max(getCoachMissesQueryPageSizeMax)
+    .default(getCoachMissesQueryPageSizeDefault),
+});
+
+export const GetCoachMissesResponse = zod.object({
+  rows: zod.array(
+    zod
+      .object({
+        collegeId: zod.number(),
+        collegeName: zod.string(),
+        division: zod.string(),
+        genderProgram: zod.string(),
+        rosterUrl: zod.string().nullable(),
+        probedUrls: zod.array(zod.string()),
+        scrapeRunLogId: zod.number().nullable(),
+        recordedAt: zod.coerce.date(),
+      })
+      .describe("One college whose head coach the scraper failed to extract."),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
  * Per-table `count(*) WHERE <timestamp_col> > since`. Timestamp column differs per table — `canonical_clubs.last_scraped_at`, `coaches.first_seen_at`, `events.last_scraped_at`, `club_roster_snapshots.snapshot_date`, `matches.scraped_at`.
 
  * @summary Records-added-since-X delta across five headline ingest tables

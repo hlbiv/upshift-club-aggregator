@@ -10,6 +10,7 @@ import DataQualityRedirect from "./pages/DataQuality";
 import GaPremierPage from "./pages/dataquality/GaPremier";
 import EmptyStaffPage from "./pages/dataquality/EmptyStaff";
 import StaleScrapesPage from "./pages/dataquality/StaleScrapes";
+import CoachMissesPage from "./pages/dataquality/CoachMisses";
 import NavLeakedPage from "./pages/dataquality/NavLeaked";
 import NumericOnlyPage from "./pages/dataquality/NumericOnly";
 import GrowthPage from "./pages/Growth";
@@ -119,6 +120,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <StaleScrapesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/data-quality/coach-misses"
+        element={
+          <ProtectedRoute>
+            <CoachMissesPage />
           </ProtectedRoute>
         }
       />

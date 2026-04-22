@@ -2316,6 +2316,56 @@ def scrape_college_rosters(
                         # production hit rate.
                         coach_strategy_hits["miss"] += 1
 
+                        # PR-#56: optional miss report for the dashboard.
+                        # Gated so the table stays empty for ad-hoc runs;
+                        # the scheduled deployments set the env var so
+                        # operators can see "which schools still have no
+                        # head coach" from /data-quality/coach-misses.
+                        # Only record on the current-season pass — a
+                        # historical pull failing to find a 2017 head
+                        # coach is expected and not actionable.
+                        if (
+                            is_current
+                            and os.environ.get("COACH_MISSES_REPORT_ENABLED", "").lower()
+                            in ("true", "1", "yes")
+                        ):
+                            try:
+                                probed = compose_coaches_urls(target_url)[
+                                    :_MAX_COACHES_PROBES_PER_CALL
+                                ]
+                                cur = conn.cursor()
+                                cur.execute(
+                                    """
+                                    INSERT INTO coach_misses
+                                        (scrape_run_log_id, college_id, division,
+                                         gender_program, roster_url, probed_urls)
+                                    VALUES (%s, %s, %s, %s, %s, %s)
+                                    ON CONFLICT (scrape_run_log_id, college_id, gender_program)
+                                    DO UPDATE SET
+                                        roster_url = EXCLUDED.roster_url,
+                                        probed_urls = EXCLUDED.probed_urls,
+                                        recorded_at = now()
+                                    """,
+                                    (
+                                        run_logger.run_id,
+                                        college["id"],
+                                        college_div,
+                                        college_gender,
+                                        target_url,
+                                        "\n".join(probed),
+                                    ),
+                                )
+                                conn.commit()
+                            except Exception as exc:
+                                logger.warning(
+                                    "  coach_misses write failed for %s: %s",
+                                    college["name"], exc,
+                                )
+                                try:
+                                    conn.rollback()
+                                except Exception:
+                                    pass
+
                     # Only bump last_scraped_at on the current-season pass —
                     # historical pulls shouldn't make an 8-year-old roster
                     # look like it was just refreshed.

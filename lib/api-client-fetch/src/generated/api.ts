@@ -23,6 +23,7 @@ import type {
   ClubRelatedResponse,
   ClubSearchResponse,
   ClubStaffResponse,
+  CoachMissesResponse,
   CoachQualityFlagsResponse,
   CoachSearchResponse,
   CollegeListResponse,
@@ -37,6 +38,7 @@ import type {
   EventSearchResponse,
   GaPremierOrphanCleanupRequest,
   GaPremierOrphanCleanupResponse,
+  GetCoachMissesParams,
   GetCoachQualityFlagsParams,
   GetCoverageLeagueDetailParams,
   GetCoverageLeaguesParams,
@@ -989,6 +991,37 @@ export const getStaleScrapes = async (
   options?: RequestInit,
 ): Promise<StaleScrapesResponse> => {
   return customFetch<StaleScrapesResponse>(getGetStaleScrapesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Paginated list of `coach_misses` rows — colleges whose head coach the NCAA roster scraper failed to extract from both the inline roster page and the `/coaches`/`staff` fallback. Populated when env `COACH_MISSES_REPORT_ENABLED=true`. `probedUrls` is the list of URLs the fallback tried before giving up — useful as input for the Playwright fallback follow-up and any manual triage.
+
+ * @summary Colleges where the head-coach extractor found nothing
+ */
+export const getGetCoachMissesUrl = (params?: GetCoachMissesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/coach-misses?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/coach-misses`;
+};
+
+export const getCoachMisses = async (
+  params?: GetCoachMissesParams,
+  options?: RequestInit,
+): Promise<CoachMissesResponse> => {
+  return customFetch<CoachMissesResponse>(getGetCoachMissesUrl(params), {
     ...options,
     method: "GET",
   });

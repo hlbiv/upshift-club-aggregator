@@ -85,6 +85,7 @@ import {
   coachDiscoveries,
   coachQualityFlags,
   scrapeHealth,
+  coachMisses,
   leaguesMaster,
   colleges,
   coaches,
@@ -98,6 +99,8 @@ import {
   EmptyStaffPagesResponse,
   StaleScrapesRequest,
   StaleScrapesResponse,
+  CoachMissesRequest,
+  CoachMissesResponse,
   NavLeakedNamesRequest,
   NavLeakedNamesResponse,
   NumericOnlyNamesRequest,
@@ -233,6 +236,7 @@ export function makeDataQualityRouter(deps: DataQualityDeps): IRouter {
   router.post("/ga-premier-orphans", makeGaPremierOrphanHandler(deps));
   router.get("/empty-staff-pages", emptyStaffPagesHandler);
   router.get("/stale-scrapes", staleScrapesHandler);
+  router.get("/coach-misses", coachMissesHandler);
   router.get(
     "/nav-leaked-names",
     makeNavLeakedNamesHandler(prodNavLeakedNamesDeps),
@@ -1445,6 +1449,136 @@ export const staleScrapesHandler: RequestHandler = async (req, res, next) => {
         pageSize,
         thresholdDays,
       }),
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Read-only panel: coach-misses
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /v1/admin/data-quality/coach-misses?division=D1&gender=womens&page=1&page_size=20
+ *
+ * Rows from `coach_misses` (populated by the NCAA roster scraper when env
+ * `COACH_MISSES_REPORT_ENABLED=true`). For each (college, gender_program)
+ * pair we surface the most recent miss only — operators care about the
+ * current state of the queue, not historical re-misses on the same school.
+ *
+ * The newline-separated `probed_urls` text column is split into
+ * `probedUrls: string[]` at the API boundary so the dashboard never sees
+ * the storage detail.
+ */
+export const coachMissesHandler: RequestHandler = async (req, res, next) => {
+  try {
+    const parsed = CoachMissesRequest.safeParse({
+      division: toStringOrUndefined(req.query.division),
+      gender: toStringOrUndefined(req.query.gender),
+      page: toNumberOrUndefined(req.query.page),
+      pageSize:
+        toNumberOrUndefined(req.query.page_size) ??
+        toNumberOrUndefined(req.query.pageSize) ??
+        toNumberOrUndefined(req.query.limit),
+    });
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+    const { division, gender, page, pageSize } = parsed.data;
+    const offset = (page - 1) * pageSize;
+
+    // Build optional WHERE filters as composable raw SQL fragments so
+    // the count and the page query share the exact same predicate.
+    const divisionPredicate = division
+      ? sql`AND cm.division = ${division}`
+      : sql``;
+    const genderPredicate = gender
+      ? sql`AND cm.gender_program = ${gender}`
+      : sql``;
+
+    // Most-recent miss per (college, gender_program). DISTINCT ON keeps
+    // the top row per partition after ORDER BY — Postgres-specific but
+    // we're not portable. The total count uses the same DISTINCT key
+    // so pagination math stays consistent.
+    const countResult = await defaultDb.execute<{ count: number }>(sql`
+      SELECT count(*)::int AS count
+      FROM (
+        SELECT DISTINCT ON (cm.college_id, cm.gender_program) cm.id
+        FROM ${coachMisses} cm
+        WHERE 1 = 1 ${divisionPredicate} ${genderPredicate}
+        ORDER BY cm.college_id, cm.gender_program, cm.recorded_at DESC, cm.id DESC
+      ) AS uniq
+    `);
+    const countRow = (countResult as unknown as Array<{ count: number }>)[0];
+    const total = Number(countRow?.count ?? 0);
+
+    const rowsResult = await defaultDb.execute<{
+      college_id: number;
+      college_name: string;
+      division: string;
+      gender_program: string;
+      roster_url: string | null;
+      probed_urls: string | null;
+      scrape_run_log_id: number | null;
+      recorded_at: Date | string;
+    }>(sql`
+      WITH latest AS (
+        SELECT DISTINCT ON (cm.college_id, cm.gender_program)
+          cm.college_id,
+          cm.division,
+          cm.gender_program,
+          cm.roster_url,
+          cm.probed_urls,
+          cm.scrape_run_log_id,
+          cm.recorded_at
+        FROM ${coachMisses} cm
+        WHERE 1 = 1 ${divisionPredicate} ${genderPredicate}
+        ORDER BY cm.college_id, cm.gender_program, cm.recorded_at DESC, cm.id DESC
+      )
+      SELECT
+        l.college_id,
+        co.name AS college_name,
+        l.division,
+        l.gender_program,
+        l.roster_url,
+        l.probed_urls,
+        l.scrape_run_log_id,
+        l.recorded_at
+      FROM latest l
+      LEFT JOIN ${colleges} co ON co.id = l.college_id
+      ORDER BY l.recorded_at DESC, l.college_id ASC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `);
+
+    const rows = Array.from(
+      rowsResult as unknown as Array<{
+        college_id: number;
+        college_name: string | null;
+        division: string;
+        gender_program: string;
+        roster_url: string | null;
+        probed_urls: string | null;
+        scrape_run_log_id: number | null;
+        recorded_at: Date | string;
+      }>,
+    ).map((r) => ({
+      collegeId: Number(r.college_id),
+      collegeName: r.college_name ?? `college #${r.college_id}`,
+      division: r.division,
+      genderProgram: r.gender_program,
+      rosterUrl: r.roster_url,
+      probedUrls: r.probed_urls
+        ? r.probed_urls.split("\n").filter((s) => s.length > 0)
+        : [],
+      scrapeRunLogId:
+        r.scrape_run_log_id === null ? null : Number(r.scrape_run_log_id),
+      recordedAt: toIsoRequired(r.recorded_at),
+    }));
+
+    res.json(
+      CoachMissesResponse.parse({ rows, total, page, pageSize }),
     );
   } catch (err) {
     next(err);

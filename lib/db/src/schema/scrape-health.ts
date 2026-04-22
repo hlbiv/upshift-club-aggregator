@@ -141,6 +141,57 @@ export const scrapeHealth = pgTable(
  * Archiving is gated on env `ARCHIVE_RAW_HTML_ENABLED=true`; with the
  * flag unset, the hook no-ops and this table stays empty.
  */
+/**
+ * coach_misses — One row per (run, college, season) where the head-coach
+ * extractor (inline `extract_head_coach_from_html` + the
+ * `coaches-page-fallback` probe) found nothing. Populated by the NCAA
+ * roster scraper when env `COACH_MISSES_REPORT_ENABLED=true`.
+ *
+ * Surfaced by `GET /api/v1/admin/data-quality/coach-misses` so operators
+ * can see exactly which schools still have no head coach captured and
+ * what URLs were tried — the input list for follow-up #55 (Playwright on
+ * fallback) and any manual lookups.
+ *
+ * `scrape_run_log_id` is a nullable FK to `scrape_run_logs.id` (per
+ * existing convention in `raw_html_archive` — ad-hoc extractor calls
+ * outside a run lifecycle still record a miss with NULL run_log_id).
+ *
+ * Idempotency: unique on (scrape_run_log_id, college_id, gender_program)
+ * so the writer can use ON CONFLICT DO UPDATE and re-runs of the same
+ * scheduled invocation don't multiply rows.
+ */
+export const coachMisses = pgTable(
+  "coach_misses",
+  {
+    id: serial("id").primaryKey(),
+    scrapeRunLogId: integer("scrape_run_log_id").references(
+      () => scrapeRunLogs.id,
+      { onDelete: "set null" },
+    ),
+    collegeId: integer("college_id").notNull(),
+    division: text("division").notNull(),
+    genderProgram: text("gender_program").notNull(),
+    rosterUrl: text("roster_url"),
+    // Newline-separated list of URLs that the fallback probed before
+    // giving up. Stored as text rather than text[] for portability with
+    // the existing Drizzle setup (no array import churn) and because
+    // the dashboard renders the list as preformatted text either way.
+    probedUrls: text("probed_urls"),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    unique("coach_misses_run_college_gender_uq").on(
+      t.scrapeRunLogId,
+      t.collegeId,
+      t.genderProgram,
+    ),
+    index("coach_misses_recorded_at_idx").on(t.recordedAt.desc()),
+    index("coach_misses_college_id_idx").on(t.collegeId),
+  ],
+);
+
 export const rawHtmlArchive = pgTable(
   "raw_html_archive",
   {

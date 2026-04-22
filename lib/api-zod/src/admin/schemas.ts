@@ -258,6 +258,53 @@ export const StaleScrapesResponse = z.object({
 export type StaleScrapesResponse = z.infer<typeof StaleScrapesResponse>;
 
 /**
+ * Request for GET /v1/admin/data-quality/coach-misses.
+ *
+ * Lists colleges where the head-coach extractor found nothing on the
+ * most recent run that recorded a miss for that program. Backed by the
+ * `coach_misses` table, populated by the NCAA roster scraper when env
+ * `COACH_MISSES_REPORT_ENABLED=true`.
+ *
+ * `division` and `gender` are optional narrowing filters so an operator
+ * fixing D1 women's first can scope the queue.
+ */
+export const CoachMissesRequest = z.object({
+  division: z.enum(["D1", "D2", "D3"]).optional(),
+  gender: z.enum(["mens", "womens"]).optional(),
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(100).default(20),
+});
+export type CoachMissesRequest = z.infer<typeof CoachMissesRequest>;
+
+/**
+ * One row of the coach-misses panel — a college whose head coach the
+ * scraper failed to extract from both the inline roster page and the
+ * `/coaches` fallback. `probedUrls` is the newline-separated list of
+ * URLs that the fallback tried before giving up; useful as input for
+ * follow-up #55 (Playwright on fallback) and any manual triage.
+ */
+export const CoachMissesRow = z.object({
+  collegeId: z.number().int(),
+  collegeName: z.string(),
+  division: z.string(),
+  genderProgram: z.string(),
+  rosterUrl: z.string().nullable(),
+  probedUrls: z.array(z.string()),
+  scrapeRunLogId: z.number().int().nullable(),
+  recordedAt: z.string().datetime(),
+});
+export type CoachMissesRow = z.infer<typeof CoachMissesRow>;
+
+/** Paginated envelope for the coach-misses panel. */
+export const CoachMissesResponse = z.object({
+  rows: z.array(CoachMissesRow),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export type CoachMissesResponse = z.infer<typeof CoachMissesResponse>;
+
+/**
  * State filter for GET /v1/admin/data-quality/nav-leaked-names — replaces
  * the previous binary `includeResolved` boolean so reviewers can split the
  * resolved queue into "legitimate leak cleaned up" vs "false positive

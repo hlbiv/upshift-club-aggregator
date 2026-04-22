@@ -8,12 +8,14 @@ import {
   useGetNavLeakedNames,
   useGetNumericOnlyNames,
   useGetStaleScrapes,
+  useGetCoachMisses,
   useResolveRosterQualityFlag,
   type EmptyStaffPagesResponse,
   type GaPremierOrphanCleanupResponse,
   type NavLeakedNamesResponse,
   type NumericOnlyNamesResponse,
   type StaleScrapesResponse,
+  type CoachMissesResponse,
 } from "@workspace/api-client-react";
 import { useQueueShortcuts } from "../hooks/useQueueShortcuts";
 import { Navigate } from "react-router-dom";
@@ -545,6 +547,188 @@ function StaleScrapesTable({
                 </TableCell>
                 <TableCell>
                   <FailureBadge count={row.consecutiveFailures} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <Pager
+        page={data.page}
+        pageSize={data.pageSize}
+        total={data.total}
+        onPage={onPage}
+      />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Coach misses (head-coach extractor came up empty)
+// ---------------------------------------------------------------------------
+
+type DivisionFilter = "" | "D1" | "D2" | "D3";
+type GenderFilter = "" | "mens" | "womens";
+
+export function CoachMissesPanel() {
+  const [division, setDivision] = useState<DivisionFilter>("");
+  const [gender, setGender] = useState<GenderFilter>("");
+  const [page, setPage] = useState(1);
+
+  const query = useGetCoachMisses({
+    division: division === "" ? undefined : division,
+    gender: gender === "" ? undefined : gender,
+    page,
+    page_size: PANEL_DEFAULT_PAGE_SIZE,
+  });
+
+  function onChangeDivision(v: DivisionFilter) {
+    setDivision(v);
+    setPage(1);
+  }
+  function onChangeGender(v: GenderFilter) {
+    setGender(v);
+    setPage(1);
+  }
+
+  return (
+    <section aria-labelledby="coach-misses-heading">
+      <p className="mb-4 text-sm text-neutral-500">
+        Colleges where the head-coach extractor (inline + the{" "}
+        <code>/coaches</code> fallback) returned nothing on the most recent
+        scheduled run. Populated when the scraper runs with{" "}
+        <code>COACH_MISSES_REPORT_ENABLED=true</code>.
+      </p>
+
+      <form
+        onSubmit={(e) => e.preventDefault()}
+        className="mb-6 flex flex-wrap items-end gap-4 rounded-lg border border-neutral-200 bg-white p-4"
+      >
+        <label className="flex flex-col gap-1 text-sm text-neutral-800">
+          <span className="font-medium">Division</span>
+          <select
+            value={division}
+            onChange={(e) => onChangeDivision(e.target.value as DivisionFilter)}
+            className="w-32 rounded border border-neutral-300 px-2 py-1"
+          >
+            <option value="">All</option>
+            <option value="D1">D1</option>
+            <option value="D2">D2</option>
+            <option value="D3">D3</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-neutral-800">
+          <span className="font-medium">Gender</span>
+          <select
+            value={gender}
+            onChange={(e) => onChangeGender(e.target.value as GenderFilter)}
+            className="w-32 rounded border border-neutral-300 px-2 py-1"
+          >
+            <option value="">All</option>
+            <option value="mens">Men's</option>
+            <option value="womens">Women's</option>
+          </select>
+        </label>
+      </form>
+
+      {query.isError && (
+        <div
+          role="alert"
+          className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          Failed: {formatError(query.error)}
+        </div>
+      )}
+
+      {query.isLoading && <TablePlaceholder label="Loading…" />}
+
+      {query.isSuccess && query.data.rows.length === 0 && (
+        <TablePlaceholder label="No coach misses recorded. (Is COACH_MISSES_REPORT_ENABLED set on the scheduled run?)" />
+      )}
+
+      {query.isSuccess && query.data.rows.length > 0 && (
+        <CoachMissesTable data={query.data} onPage={(p) => setPage(p)} />
+      )}
+    </section>
+  );
+}
+
+function CoachMissesTable({
+  data,
+  onPage,
+}: {
+  data: CoachMissesResponse;
+  onPage: (p: number) => void;
+}) {
+  return (
+    <>
+      <p className="mb-2 text-sm text-neutral-500">
+        {data.total.toLocaleString()} colleges with no head coach
+      </p>
+      <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>College</TableHead>
+              <TableHead>Division</TableHead>
+              <TableHead>Program</TableHead>
+              <TableHead>Last attempted</TableHead>
+              <TableHead>URLs probed</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.rows.map((row) => (
+              <TableRow
+                key={`${row.collegeId}-${row.genderProgram}`}
+                className="align-top"
+              >
+                <TableCell>
+                  {row.collegeName}
+                  <span className="ml-2 text-xs text-neutral-400">
+                    #{row.collegeId}
+                  </span>
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {row.division}
+                </TableCell>
+                <TableCell className="text-xs text-neutral-700">
+                  {row.genderProgram === "mens" ? "Men's" : "Women's"}
+                </TableCell>
+                <TableCell>{formatDate(row.recordedAt)}</TableCell>
+                <TableCell>
+                  {row.rosterUrl && (
+                    <div className="mb-1 text-xs text-neutral-500">
+                      Roster:{" "}
+                      <a
+                        href={row.rosterUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 underline break-all"
+                      >
+                        {row.rosterUrl}
+                      </a>
+                    </div>
+                  )}
+                  {row.probedUrls.length === 0 ? (
+                    <span className="text-xs text-neutral-400">
+                      (no probes recorded)
+                    </span>
+                  ) : (
+                    <ul className="list-disc pl-5 text-xs text-neutral-700">
+                      {row.probedUrls.map((u) => (
+                        <li key={u}>
+                          <a
+                            href={u}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 underline break-all"
+                          >
+                            {u}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

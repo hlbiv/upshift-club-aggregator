@@ -116,6 +116,11 @@ export default function Sidebar() {
           badgeTone: "slate",
         },
         {
+          label: "Coach misses",
+          to: "/data-quality/coach-misses",
+          icon: AlertOctagon,
+        },
+        {
           label: "GA Premier orphans",
           to: "/data-quality/ga-premier",
           icon: Database,
