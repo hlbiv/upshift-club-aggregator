@@ -38,7 +38,6 @@ import {
   lte,
   sql,
   asc,
-  inArray,
   isNotNull,
 } from "drizzle-orm";
 import {
@@ -87,7 +86,7 @@ export type PublicTryout = ReturnType<typeof TryoutPublic.parse>;
 /**
  * Project a raw `tryouts` row to the consumer-public shape. Drops
  * `siteChangeId`, `scrapedAt`, `detectedAt`, `expiresAt`. Dates are
- * serialized to ISO strings.
+ * serialized to ISO strings; tryout_date uses YYYY-MM-DD only.
  */
 export function toPublicTryout(row: TryoutRow): PublicTryout {
   return {
@@ -97,7 +96,8 @@ export function toPublicTryout(row: TryoutRow): PublicTryout {
     age_group: row.ageGroup ?? null,
     gender: row.gender ?? null,
     division: row.division ?? null,
-    tryout_date: row.tryoutDate ? row.tryoutDate.toISOString() : null,
+    // YYYY-MM-DD only — client does ISO string comparison for date filtering
+    tryout_date: row.tryoutDate ? row.tryoutDate.toISOString().slice(0, 10) : null,
     registration_deadline: row.registrationDeadline
       ? row.registrationDeadline.toISOString()
       : null,
@@ -151,27 +151,22 @@ export interface TryoutsDeps {
 
 export const prodTryoutsDeps: TryoutsDeps = {
   async searchTryouts(filters) {
-    const statusFilter = filters.status
-      ? eq(tryouts.status, filters.status)
-      : inArray(tryouts.status, ["upcoming", "active"]);
-
     const where = buildWhere([
       // Consumer floor: tryout_date present AND >= now(). Load-bearing —
       // the Player Platform must never see past-dated rows even if the
       // status updater hasn't run yet.
       isNotNull(tryouts.tryoutDate),
       gte(tryouts.tryoutDate, filters.upcomingFloor),
-      statusFilter,
+      // No default status filter — caller passes status=active for public use;
+      // omitting status returns all statuses (for admin/internal use).
+      filters.status ? eq(tryouts.status, filters.status) : undefined,
       filters.clubName
         ? ilike(tryouts.clubNameRaw, `%${escapeLike(filters.clubName)}%`)
         : undefined,
-      filters.ageGroup
-        ? ilike(tryouts.ageGroup, `%${escapeLike(filters.ageGroup)}%`)
-        : undefined,
+      // Exact match — age_group and state are coded short values (U15, GA)
+      filters.ageGroup ? eq(tryouts.ageGroup, filters.ageGroup) : undefined,
       filters.gender ? eq(tryouts.gender, filters.gender) : undefined,
-      filters.state
-        ? ilike(tryouts.locationState, `%${escapeLike(filters.state)}%`)
-        : undefined,
+      filters.state ? eq(tryouts.locationState, filters.state) : undefined,
       filters.source ? eq(tryouts.source, filters.source) : undefined,
       filters.dateFrom ? gte(tryouts.tryoutDate, filters.dateFrom) : undefined,
       filters.dateTo ? lte(tryouts.tryoutDate, filters.dateTo) : undefined,
