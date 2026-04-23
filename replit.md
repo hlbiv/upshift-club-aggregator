@@ -224,8 +224,12 @@ Some constraints can't be expressed in Drizzle and live as raw SQL in `scripts/s
 | File | Purpose |
 |---|---|
 | `0001_rosters_tryouts_linker_columns.sql` | Adds `canonical_club_id` FK columns to `event_teams`, `matches`, `club_roster_snapshots`, `roster_diffs`, `tryouts`; creates partial-unique indexes using COALESCE for nullable key columns |
+| `0002_split_events_source_enum.sql` | Adds `totalglobalsports` / `usclub_sanctioned` to `events_source_enum`; creates `roster_source_enum`; retypes `club_roster_snapshots.source`; backfills `events.source` by host pattern |
+| `0003_coverage_history.sql` | Daily snapshot of the global coverage rollup |
+| `0004_coverage_history_per_league.sql` | Daily snapshot of the per-league coverage rollup |
+| `0005_add_competitive_tier.sql` | Adds `competitive_tier` enum + `canonical_clubs.competitive_tier NOT NULL DEFAULT 'competitive'`. Pair with `pnpm --filter @workspace/scripts run backfill-competitive-tier` to roll up each club's affiliations to its tier ceiling. |
 
-Run with: `psql "$DATABASE_URL" -f scripts/src/migrations/0001_rosters_tryouts_linker_columns.sql`
+Run with: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/src/migrations/<file>.sql`
 
 ### Contract invariants
 

@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "backfill-coaches": "tsx ./src/backfill-coaches-master.ts",
+    "backfill-competitive-tier": "tsx ./src/backfill-competitive-tier.ts",
     "create-api-key": "tsx ./src/create-api-key.ts",
     "revoke-api-key": "tsx ./src/revoke-api-key.ts",
     "smoke-api-key": "tsx ./src/smoke-test-api-key.ts",

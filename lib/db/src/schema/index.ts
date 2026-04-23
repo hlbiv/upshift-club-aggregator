@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgEnum,
   serial,
   text,
   boolean,
@@ -43,6 +44,27 @@ export const leagueSources = pgTable("league_sources", {
   notes: text("notes"),
 });
 
+// Rolled-up "ceiling" tier for a club — the highest tier across its active
+// affiliations. Per-program tier granularity still lives in
+// `leagues_master.tier_label` via `club_affiliations`; this enum is the
+// single value downstream code (acquirer metrics, pricing gates, scout
+// filters, Influence Score calibration) reads when it just wants to ask
+// "what tier is this club?". See task-78 + scripts/src/backfill-competitive-tier.ts.
+//
+// Value ordering (rec → academy) is informational only — Postgres enums
+// are ordered, but rollup logic explicitly normalizes via the
+// TIER_LABEL_TO_ENUM map in the backfill script, NOT via enum ordinals.
+//
+// `recreational` / `recreational_plus` are placeholders for future AYSO /
+// US Club rec scrapers; nothing populates them today (see "Out of scope").
+export const competitiveTierEnum = pgEnum("competitive_tier", [
+  "recreational",
+  "recreational_plus",
+  "competitive",
+  "elite",
+  "academy",
+]);
+
 export const canonicalClubs = pgTable(
   "canonical_clubs",
   {
@@ -71,6 +93,13 @@ export const canonicalClubs = pgTable(
     // will refuse to auto-merge it on either side of a pair. Mirrors the
     // `coaches.manually_merged` semantics. See BACKLOG #2.
     manuallyMerged: boolean("manually_merged").default(false).notNull(),
+    // Rolled-up tier ceiling. See competitiveTierEnum doc above. Defaults
+    // to 'competitive' so brand-new rows (and clubs with no recognized
+    // affiliations) land in the bulk middle tier rather than NULL — keeps
+    // downstream filters / pricing gates from having to handle NULL.
+    competitiveTier: competitiveTierEnum("competitive_tier")
+      .notNull()
+      .default("competitive"),
   },
   (t) => [
     // 'search' is included because enrich_websites.py writes it to mark

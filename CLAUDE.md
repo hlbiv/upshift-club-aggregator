@@ -96,7 +96,7 @@ Do **not** base one Claude PR on another Claude PR branch. When the base PR merg
 |---|---|
 | `leagues_master` | League directory inventory (127 rows) |
 | `league_sources` | Official scrape source registry |
-| `canonical_clubs` | Deduplicated master club records + Path A extensions (`logo_url`, `founded_year`, `twitter`, `instagram`, `facebook`, `staff_page_url`, `website_last_checked_at`, `last_scraped_at`, `scrape_confidence`) |
+| `canonical_clubs` | Deduplicated master club records + Path A extensions (`logo_url`, `founded_year`, `twitter`, `instagram`, `facebook`, `staff_page_url`, `website_last_checked_at`, `last_scraped_at`, `scrape_confidence`) + `competitive_tier` enum (rolled-up tier ceiling — see schema reconciliation note below) |
 | `club_aliases` | Raw scraped name variants → canonical |
 | `club_affiliations` | League associations per club (unique `club_id + source_name`) |
 | `coach_discoveries` | Primary coach read model + Path A extensions (`coach_id` FK → `coaches.id`, `person_hash`, `phone`, `first_seen_at`, `last_seen_at`) |
@@ -138,6 +138,16 @@ Tables backing the internal admin UI at `artifacts/dashboard/`. Not consumed by 
 If both paths fail the response is a generic `{error: "unauthorized"}`; the specific reason (`no-credentials`, `apikey-notfound`, `apikey-missing-scope`, `session-notfound`, `session-user-missing`, `session-role-invalid`) is logged server-side via `console.warn`. `requireSuperAdmin` layers on top for mutation routes that need the `super_admin` role.
 
 **Bootstrap.** Mint the first admin with `pnpm --filter @workspace/scripts run create-admin-user -- --email you@example.com --role admin` on Replit. The CLI hashes the password with bcryptjs (12 rounds, wire-compatible with the Player repo) and writes to `admin_users`. Password source precedence: `--password` flag → `ADMIN_PASSWORD` env var → TTY prompt (echo NOT hidden — prefer the env-var path for non-interactive flows). Super-admin bootstrap: pass `--role super_admin` on the first invocation.
+
+### Schema reconciliation (table-name aliases in older briefs)
+
+Older planning docs / briefs sometimes reference `organizations` and `regional_leagues`. Those tables don't exist in this repo. The live names are:
+
+- **`canonical_clubs`** — the "orgs" / clubs table. Carries the rolled-up `competitive_tier` enum (`recreational | recreational_plus | competitive | elite | academy`, NOT NULL DEFAULT `competitive`) — the single value downstream code reads when it just wants to ask "what tier is this club?". Per-program tier granularity still lives in `leagues_master.tier_label`. Backfill via `pnpm --filter @workspace/scripts run backfill-competitive-tier`. See migration `0005_add_competitive_tier.sql`.
+- **`leagues_master`** — the "regional_leagues" / league directory. Tier signal lives in `tier_label` + `tier_numeric` (lower = more elite); `league_family` distinguishes academy-pathway families (`MLS NEXT`, `NWSL Academy`, `USL Academy`) from same-tier non-academy leagues (`Girls Academy`, `Elite 64`).
+- **`club_affiliations`** — the M2M between them. FKs are `club_id` and `league_id` (NOT `organization_id` / `regional_league_id`). `league_id` was added later; legacy rows fall back to matching on `source_name = league_name` (see `lib/db/src/backfill-affiliations-league-id.ts`).
+
+When you see "organizations" in a plan, translate to `canonical_clubs`. When you see "regional_leagues", translate to `leagues_master`. When in doubt, the source of truth is `lib/db/src/schema/index.ts`.
 
 ### Key rules
 
