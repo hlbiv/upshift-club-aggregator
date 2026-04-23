@@ -1,0 +1,24 @@
+college_id,college_name,division,gender_program,website,soccer_program_url,academic_year,name,title,email,phone,source_url,is_head_coach
+186,American International College,D2,mens,https://aicyellowjackets.com,https://aicyellowjackets.com/sports/mens-soccer/roster,2022-23,,,,,,true
+187,American International College,D2,womens,https://aicyellowjackets.com,https://aicyellowjackets.com/sports/womens-soccer/roster,2022-23,,,,,,true
+190,Assumption University,D2,mens,https://assumptiongreyhounds.com,https://assumptiongreyhounds.com/sports/mens-soccer/roster,2025-26,,,,,,true
+190,Assumption University,D2,mens,https://assumptiongreyhounds.com,https://assumptiongreyhounds.com/sports/mens-soccer/roster,2024-25,,,,,,true
+190,Assumption University,D2,mens,https://assumptiongreyhounds.com,https://assumptiongreyhounds.com/sports/mens-soccer/roster,2023-24,,,,,,true
+200,California Baptist University,D2,mens,https://cbulancers.com,https://cbulancers.com/sports/mens-soccer/roster,2024-25,,,,,,true
+200,California Baptist University,D2,mens,https://cbulancers.com,https://cbulancers.com/sports/mens-soccer/roster,2023-24,,,,,,true
+200,California Baptist University,D2,mens,https://cbulancers.com,https://cbulancers.com/sports/mens-soccer/roster,2022-23,,,,,,true
+201,California Baptist University,D2,womens,https://cbulancers.com,https://cbulancers.com/sports/womens-soccer/roster,2023-24,,,,,,true
+201,California Baptist University,D2,womens,https://cbulancers.com,https://cbulancers.com/sports/womens-soccer/roster,2022-23,,,,,,true
+418,Catawba College,D2,mens,https://catawbaathletics.com,https://catawbaathletics.com/sports/mens-soccer/roster,2024-25,,,,,,true
+418,Catawba College,D2,mens,https://catawbaathletics.com,https://catawbaathletics.com/sports/mens-soccer/roster,2022-23,,,,,,true
+419,Catawba College,D2,womens,https://catawbaathletics.com,https://catawbaathletics.com/sports/womens-soccer/roster,2024-25,,,,,,true
+419,Catawba College,D2,womens,https://catawbaathletics.com,https://catawbaathletics.com/sports/womens-soccer/roster,2022-23,,,,,,true
+202,Colorado Mesa University,D2,mens,https://cmumavericks.com,https://cmumavericks.com/sports/mens-soccer/roster,2025-26,,,,,,true
+203,Colorado Mesa University,D2,womens,https://cmumavericks.com,https://cmumavericks.com/sports/womens-soccer/roster,2025-26,,,,,,true
+204,Colorado School of Mines,D2,mens,https://minesathletics.com,https://minesathletics.com/sports/mens-soccer/roster,2025-26,,,,,,true
+208,Drury University,D2,mens,https://drurypanthers.com,https://drurypanthers.com/sports/mens-soccer/roster,2023-24,,,,,,true
+256,Ouachita Baptist University,D2,mens,https://obutigers.com,https://obutigers.com/sports/mens-soccer/roster,2023-24,,,,,,true
+259,Pace University,D2,womens,https://paceuathletics.com,https://paceuathletics.com/sports/womens-soccer/roster,2023-24,,,,,,true
+259,Pace University,D2,womens,https://paceuathletics.com,https://paceuathletics.com/sports/womens-soccer/roster,2022-23,,,,,,true
+265,Saint Leo University,D2,womens,https://saintleolions.com,https://saintleolions.com/sports/womens-soccer/roster,2025-26,,,,,,true
+279,Tiffin University,D2,womens,https://gotiffindragons.com,https://gotiffindragons.com/sports/womens-soccer/roster,2025-26,,,,,,true
