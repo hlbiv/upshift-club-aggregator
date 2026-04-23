@@ -26,7 +26,7 @@ class TestStubReturnsEmpty:
     """Verify the stub runs without error and returns 0 rows."""
 
     @mock.patch("extractors.njcaa_rosters.psycopg2", None)
-    @mock.patch("extractors.ncaa_rosters.psycopg2", None)
+    @mock.patch("extractors.ncaa_soccer_rosters.psycopg2", None)
     def test_stub_returns_zero_without_db(self):
         """No DB connection — stub still completes cleanly."""
         result = scrape_njcaa_rosters(dry_run=True)
@@ -71,7 +71,7 @@ class TestDryRun:
     """Verify dry_run flag is accepted and produces clean output."""
 
     @mock.patch("extractors.njcaa_rosters.psycopg2", None)
-    @mock.patch("extractors.ncaa_rosters.psycopg2", None)
+    @mock.patch("extractors.ncaa_soccer_rosters.psycopg2", None)
     def test_dry_run_flag(self):
         result = scrape_njcaa_rosters(dry_run=True)
         assert isinstance(result, dict)
@@ -79,13 +79,13 @@ class TestDryRun:
         assert result["errors"] == 0
 
     @mock.patch("extractors.njcaa_rosters.psycopg2", None)
-    @mock.patch("extractors.ncaa_rosters.psycopg2", None)
+    @mock.patch("extractors.ncaa_soccer_rosters.psycopg2", None)
     def test_dry_run_with_gender_filter(self):
         result = scrape_njcaa_rosters(gender="womens", dry_run=True)
         assert result["scraped"] == 0
 
     @mock.patch("extractors.njcaa_rosters.psycopg2", None)
-    @mock.patch("extractors.ncaa_rosters.psycopg2", None)
+    @mock.patch("extractors.ncaa_soccer_rosters.psycopg2", None)
     def test_dry_run_with_limit(self):
         result = scrape_njcaa_rosters(limit=5, dry_run=True)
         assert result["scraped"] == 0

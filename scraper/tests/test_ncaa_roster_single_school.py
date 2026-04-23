@@ -26,7 +26,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from extractors.ncaa_rosters import (  # noqa: E402
+from extractors.ncaa_soccer_rosters import (  # noqa: E402
     extract_head_coach_from_html,
     parse_roster_html,
     scrape_school_url,
@@ -90,7 +90,7 @@ class TestExtractHeadCoach:
 
 
 class TestScrapeSchoolUrl:
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_parses_fixture_and_returns_structured_dict(self, mock_fetch):
         mock_fetch.return_value = _read(UCLA_FIXTURE)
 
@@ -121,7 +121,7 @@ class TestScrapeSchoolUrl:
         assert college["soccer_program_url"] == "https://uclabruins.com/sports/mens-soccer"
         assert college["scrape_confidence"] == 0.95  # sidearm-detected
 
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_players_extracted(self, mock_fetch):
         mock_fetch.return_value = _read(UCLA_FIXTURE)
 
@@ -142,7 +142,7 @@ class TestScrapeSchoolUrl:
         assert by_name["Justin Garces"].jersey_number == "1"
         assert by_name["Kevin Dilanchyan"].position == "Midfielder"
 
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_head_coach_included(self, mock_fetch):
         mock_fetch.return_value = _read(UCLA_FIXTURE)
         result = scrape_school_url(
@@ -154,7 +154,7 @@ class TestScrapeSchoolUrl:
         assert result["coaches"][0]["is_head_coach"] is True
         assert result["coaches"][0]["source_url"].endswith("/roster")
 
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_fetch_failure_raises(self, mock_fetch):
         mock_fetch.return_value = None
         with pytest.raises(RuntimeError, match="failed to fetch"):
@@ -163,7 +163,7 @@ class TestScrapeSchoolUrl:
                 name="Example",
             )
 
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_zero_players_raises(self, mock_fetch):
         mock_fetch.return_value = "<html><body><p>placeholder</p></body></html>"
         with pytest.raises(RuntimeError, match="parsed 0 players"):
@@ -259,7 +259,7 @@ class TestWriterUpsertShape:
         assert len(cur.calls) == 1
         sql, params = cur.calls[0]
         assert "INSERT INTO colleges" in sql
-        assert "ON CONFLICT ON CONSTRAINT colleges_name_division_gender_uq" in sql
+        assert "ON CONFLICT ON CONSTRAINT colleges_name_division_gender_sport_uq" in sql
         assert "RETURNING id, (xmax = 0) AS inserted" in sql
         # Slug auto-generated when not supplied.
         assert params["slug"] == "ucla-d1-mens"

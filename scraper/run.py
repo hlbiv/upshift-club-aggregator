@@ -920,7 +920,7 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
 
     * ``--all`` — bulk enumeration. Iterates every row in ``colleges``
       matching ``--division`` + ``--gender`` (both required) via
-      ``extractors.ncaa_rosters.scrape_college_rosters``. Requires the
+      ``extractors.ncaa_soccer_rosters.scrape_college_rosters``. Requires the
       ``colleges`` table to be populated first (PR-1: ``--source ncaa-seed-d1``,
       or existing DB-seed rows).
 
@@ -963,8 +963,8 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
     school_name = getattr(args, "school_name", None) or _derive_school_name(school_url)
     state = getattr(args, "state", None)
 
-    from extractors.ncaa_rosters import scrape_school_url as _scrape_school
-    from extractors.ncaa_rosters import SCRAPER_KEY_MAP as _SCRAPER_KEY_MAP
+    from extractors.ncaa_soccer_rosters import scrape_school_url as _scrape_school
+    from extractors.ncaa_soccer_rosters import SCRAPER_KEY_MAP as _SCRAPER_KEY_MAP
 
     scraper_key = _SCRAPER_KEY_MAP.get(division, f"ncaa-{division.lower()}-rosters")
     run_log: Optional[ScrapeRunLogger] = None
@@ -1016,6 +1016,8 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
     )
     from dataclasses import asdict as _asdict
 
+    sport = getattr(args, "sport", None) or "soccer"
+    parsed["college"]["sport"] = sport
     college_id, college_inserted = _upsert_college(parsed["college"])
     if college_id is None:
         logger.error("[ncaa-rosters] college upsert returned no id; aborting write")
@@ -1061,7 +1063,7 @@ def _run_ncaa_rosters_all(
 ) -> None:
     """Dispatch to the pre-existing bulk enumerator.
 
-    ``scrape_college_rosters`` in ``extractors.ncaa_rosters`` handles
+    ``scrape_college_rosters`` in ``extractors.ncaa_soccer_rosters`` handles
     per-run logging (one ``scrape_run_logs`` row per division), rate
     limiting (1.5s between schools/seasons), and write-through.
 
@@ -1070,7 +1072,7 @@ def _run_ncaa_rosters_all(
     /roster/season/<YYYY> (Nuxt) URL pattern; writer uses the same
     natural key so re-runs are idempotent.
     """
-    from extractors.ncaa_rosters import scrape_college_rosters
+    from extractors.ncaa_soccer_rosters import scrape_college_rosters
 
     logger.info(
         "[ncaa-rosters] --all division=%s gender=%s dry_run=%s backfill_seasons=%d",
@@ -2809,6 +2811,10 @@ def main() -> None:
                         help="For --source ncaa-rosters --all: also pull rosters "
                              "for the prior N seasons (e.g. --backfill-seasons 3 "
                              "→ current + 2023-24 + 2022-23 + 2021-22). Default 0.")
+    parser.add_argument("--sport", metavar="SPORT", dest="sport", default="soccer",
+                        help="Sport identifier for --source ncaa-* handlers. "
+                             "Default 'soccer'. New handlers ship with required=True; "
+                             "existing handlers use this optional default.")
     parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune"],
                         help="Run a derived-data rollup over existing DB rows.")
     parser.add_argument("--full-scan", action="store_true", dest="full_scan",
