@@ -68,6 +68,23 @@ interface FakeState {
   lastFilters?: TryoutSearchFilters;
 }
 
+interface PublicItem {
+  id: number;
+  club_name_raw: string;
+  tryout_date: string | null;
+  source: string;
+  status: string;
+  [key: string]: unknown;
+}
+
+interface SearchResponse {
+  items?: PublicItem[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  error?: string;
+}
+
 function makeFakeDeps(state: FakeState): TryoutsDeps {
   return {
     async searchTryouts(filters) {
@@ -126,7 +143,7 @@ function makeFakeDeps(state: FakeState): TryoutsDeps {
 
 interface HitResult {
   status: number;
-  json: any;
+  json: SearchResponse;
 }
 
 async function hit(port: number, path: string): Promise<HitResult> {
@@ -138,11 +155,11 @@ async function hit(port: number, path: string): Promise<HitResult> {
         res.on("data", (c: Buffer) => chunks.push(c));
         res.on("end", () => {
           const body = Buffer.concat(chunks).toString("utf8");
-          let parsed: any = null;
+          let parsed: SearchResponse = {};
           try {
-            parsed = body ? JSON.parse(body) : null;
+            parsed = body ? (JSON.parse(body) as SearchResponse) : {};
           } catch {
-            parsed = body;
+            parsed = { error: body };
           }
           resolve({ status: res.statusCode ?? 0, json: parsed });
         });
@@ -155,7 +172,6 @@ async function hit(port: number, path: string): Promise<HitResult> {
 
 function startServer(deps: TryoutsDeps): Promise<{
   port: number;
-  state: FakeState;
   close: () => Promise<void>;
 }> {
   return new Promise((resolve, reject) => {
@@ -169,7 +185,6 @@ function startServer(deps: TryoutsDeps): Promise<{
       }
       resolve({
         port: addr.port,
-        state: (deps as any).__state,
         close: () =>
           new Promise<void>((r, j) =>
             server.close((err) => (err ? j(err) : r())),
@@ -258,7 +273,7 @@ async function run() {
     try {
       const res = await hit(port, "/api/tryouts/search");
       assert(res.status === 200, "default-status", `got ${res.status}`);
-      const ids = (res.json.items ?? []).map((r: any) => r.id).sort();
+      const ids = (res.json.items ?? []).map((r: PublicItem) => r.id).sort();
       assert(
         JSON.stringify(ids) === JSON.stringify([3, 4, 5]),
         "default-excludes-past-null-cancelled",
@@ -270,7 +285,7 @@ async function run() {
         `expected total=3, got ${res.json.total}`,
       );
       // Sorted ascending by tryout_date — soon (3) < later (4) < muchLater (5).
-      const orderedIds = (res.json.items ?? []).map((r: any) => r.id);
+      const orderedIds = (res.json.items ?? []).map((r: PublicItem) => r.id);
       assert(
         JSON.stringify(orderedIds) === JSON.stringify([3, 4, 5]),
         "default-sort-asc",
@@ -307,7 +322,7 @@ async function run() {
     try {
       const res = await hit(port, "/api/tryouts/upcoming");
       assert(res.status === 200, "upcoming-status", `got ${res.status}`);
-      const ids = (res.json.items ?? []).map((r: any) => r.id).sort();
+      const ids = (res.json.items ?? []).map((r: PublicItem) => r.id).sort();
       // status='upcoming' filter excludes #4 (active); floor excludes #1 (past)
       // and #2 (null); status filter excludes #6 (cancelled).
       assert(
@@ -338,11 +353,44 @@ async function run() {
         `/api/tryouts/search?date_from=${from}&date_to=${to}`,
       );
       assert(res.status === 200, "date-range-status", `got ${res.status}`);
-      const ids = (res.json.items ?? []).map((r: any) => r.id).sort();
+      const ids = (res.json.items ?? []).map((r: PublicItem) => r.id).sort();
       assert(
         JSON.stringify(ids) === JSON.stringify([4]),
         "date-range",
         `expected [4], got ${JSON.stringify(ids)}`,
+      );
+    } finally {
+      await close();
+    }
+  }
+
+  // date_to is inclusive end-of-day: a tryout at 18:00 UTC on the
+  // boundary day must be returned when date_to=YYYY-MM-DD of that day.
+  {
+    const boundaryDay = new Date(Date.now() + 21 * 24 * 60 * 60 * 1000);
+    const boundaryDayIso = boundaryDay.toISOString().slice(0, 10);
+    const eveningOfBoundary = new Date(`${boundaryDayIso}T18:00:00Z`);
+    const rows: Row[] = [
+      mkRow({
+        id: 100,
+        clubNameRaw: "Boundary Evening Tryout",
+        tryoutDate: eveningOfBoundary,
+        status: "upcoming",
+      }),
+    ];
+    const deps = makeFakeDeps({ rows });
+    const { port, close } = await startServer(deps);
+    try {
+      const res = await hit(
+        port,
+        `/api/tryouts/search?date_to=${boundaryDayIso}`,
+      );
+      assert(res.status === 200, "boundary-status", `got ${res.status}`);
+      const ids = (res.json.items ?? []).map((r: PublicItem) => r.id);
+      assert(
+        JSON.stringify(ids) === JSON.stringify([100]),
+        "date_to-inclusive-end-of-day",
+        `evening-of-day row excluded by date_to: ${JSON.stringify(ids)}`,
       );
     } finally {
       await close();
@@ -377,7 +425,7 @@ async function run() {
         "/api/tryouts/search?state=CA&age_group=U12&gender=M",
       );
       assert(res.status === 200, "combined-status", `got ${res.status}`);
-      const ids = (res.json.items ?? []).map((r: any) => r.id).sort();
+      const ids = (res.json.items ?? []).map((r: PublicItem) => r.id).sort();
       assert(
         JSON.stringify(ids) === JSON.stringify([3]),
         "combined-filters",
@@ -461,7 +509,7 @@ async function run() {
     try {
       const res = await hit(port, "/api/tryouts/search?source=gotsport");
       assert(res.status === 200, "source-status", `got ${res.status}`);
-      const ids = (res.json.items ?? []).map((r: any) => r.id).sort();
+      const ids = (res.json.items ?? []).map((r: PublicItem) => r.id).sort();
       assert(
         JSON.stringify(ids) === JSON.stringify([4]),
         "source-filter",

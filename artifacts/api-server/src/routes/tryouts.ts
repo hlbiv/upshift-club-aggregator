@@ -40,7 +40,6 @@ import {
   asc,
   inArray,
   isNotNull,
-  and,
 } from "drizzle-orm";
 import {
   TryoutSubmitBody,
@@ -52,14 +51,34 @@ function escapeLike(raw: string): string {
   return raw.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T.*)?$/;
+const ISO_DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T.*$/;
 
-/** Returns a Date if `raw` is a valid ISO-8601 date(time) string, else null. */
-export function parseIsoDate(raw: unknown): Date | null {
+/**
+ * Parse an ISO-8601 date string. `endOfDay=true` is used for inclusive
+ * upper bounds: a bare YYYY-MM-DD is normalized to 23:59:59.999 UTC of
+ * that day so a tryout later on the same calendar day is included. Full
+ * datetime strings are accepted as-is in both modes.
+ *
+ * Returns null on malformed input so the caller can return 400.
+ */
+export function parseIsoDate(
+  raw: unknown,
+  opts: { endOfDay?: boolean } = {},
+): Date | null {
   if (typeof raw !== "string" || !raw) return null;
-  if (!ISO_DATE_RE.test(raw)) return null;
-  const d = new Date(raw);
-  return isNaN(d.getTime()) ? null : d;
+  if (ISO_DATE_ONLY_RE.test(raw)) {
+    // Normalize to UTC start- or end-of-day so date-only input is
+    // inclusive on both ends regardless of server timezone.
+    const suffix = opts.endOfDay ? "T23:59:59.999Z" : "T00:00:00.000Z";
+    const d = new Date(`${raw}${suffix}`);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (ISO_DATETIME_RE.test(raw)) {
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
 }
 
 type TryoutRow = typeof tryouts.$inferSelect;
@@ -209,7 +228,7 @@ export function makeSearchHandler(deps: TryoutsDeps) {
         dateFrom = parsed;
       }
       if (req.query.date_to !== undefined) {
-        const parsed = parseIsoDate(req.query.date_to);
+        const parsed = parseIsoDate(req.query.date_to, { endOfDay: true });
         if (parsed === null) {
           res
             .status(400)
@@ -438,10 +457,6 @@ export function makeTryoutsRouter(
 
   return router;
 }
-
-// Mark `and` as used (it's re-exported from drizzle-orm for callers
-// that compose additional filters on top of prodTryoutsDeps).
-void and;
 
 const router = makeTryoutsRouter();
 export default router;
