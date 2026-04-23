@@ -331,7 +331,7 @@ class TestHandleNcaaRostersDispatch:
         """--all --division D1 --gender mens must call scrape_college_rosters("D1", "mens")."""
         ns = _run_ns(all=True, division="D1", gender="mens", dry_run=True)
 
-        with mock.patch("extractors.ncaa_rosters.scrape_college_rosters") as mock_bulk:
+        with mock.patch("extractors.ncaa_soccer_rosters.scrape_college_rosters") as mock_bulk:
             mock_bulk.return_value = {
                 "scraped": 0, "rows_inserted": 0,
                 "rows_updated": 0, "errors": 0,
@@ -347,7 +347,7 @@ class TestHandleNcaaRostersDispatch:
     def test_all_with_gender_girls_alias_normalizes_to_womens(self):
         ns = _run_ns(all=True, division="D1", gender="girls", dry_run=True)
 
-        with mock.patch("extractors.ncaa_rosters.scrape_college_rosters") as mock_bulk:
+        with mock.patch("extractors.ncaa_soccer_rosters.scrape_college_rosters") as mock_bulk:
             mock_bulk.return_value = {
                 "scraped": 0, "rows_inserted": 0,
                 "rows_updated": 0, "errors": 0,
@@ -375,8 +375,8 @@ class TestHandleNcaaRostersDispatch:
             "academic_year": "2025-26",
             "sidearm": True,
         }
-        with mock.patch("extractors.ncaa_rosters.scrape_school_url", return_value=parsed) as mock_single, \
-             mock.patch("extractors.ncaa_rosters.scrape_college_rosters") as mock_bulk:
+        with mock.patch("extractors.ncaa_soccer_rosters.scrape_school_url", return_value=parsed) as mock_single, \
+             mock.patch("extractors.ncaa_soccer_rosters.scrape_college_rosters") as mock_bulk:
             _handle_ncaa_rosters(ns)
 
         mock_single.assert_called_once()

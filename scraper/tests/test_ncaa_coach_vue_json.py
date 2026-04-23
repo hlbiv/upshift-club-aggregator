@@ -28,7 +28,7 @@ from textwrap import dedent
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from extractors.ncaa_rosters import (  # noqa: E402
+from extractors.ncaa_soccer_rosters import (  # noqa: E402
     _parse_sidearm_vue_embedded_head_coach,
     extract_head_coach_from_html,
 )

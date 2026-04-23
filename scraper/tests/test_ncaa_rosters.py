@@ -17,7 +17,7 @@ import pytest
 # Ensure scraper package is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from extractors.ncaa_rosters import (  # noqa: E402
+from extractors.ncaa_soccer_rosters import (  # noqa: E402
     normalize_year,
     parse_roster_html,
     build_column_index,
@@ -425,7 +425,7 @@ class TestProbeCoachesPages:
     def _fake_session(self):
         return mock.MagicMock()
 
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_finds_head_coach_when_roster_misses(self, mock_fetch):
         coaches_html = _read("coaches_page_server_rendered.html")
         # First candidate (/coaches) returns the staff page; nothing
@@ -446,7 +446,7 @@ class TestProbeCoachesPages:
         # Only the first candidate URL should have been fetched.
         assert mock_fetch.call_count == 1
 
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_inline_extractor_gives_up_on_js_shell(self, _mock_fetch):
         # Sanity check: the JS-shell fixture genuinely has no inline
         # coach markup, so the inline extractor returns None and the
@@ -454,7 +454,7 @@ class TestProbeCoachesPages:
         shell = _read("js_rendered_roster_shell.html")
         assert extract_head_coach_from_html(shell) is None
 
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_returns_none_when_all_candidates_miss(self, mock_fetch):
         # Every candidate returns either nothing or HTML with no head
         # coach markup. Should exhaust all 4 candidates and return None.
@@ -466,7 +466,7 @@ class TestProbeCoachesPages:
         assert result is None
         assert mock_fetch.call_count == 4  # 4 candidates, all probed
 
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_skips_too_short_responses(self, mock_fetch):
         # A 200 with a tiny body (e.g. an error JSON) should be
         # treated as a miss without trying to parse it.
@@ -478,7 +478,7 @@ class TestProbeCoachesPages:
         assert result is None
         assert mock_fetch.call_count == 4
 
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_cache_short_circuits_repeat_probe(self, mock_fetch):
         coaches_html = _read("coaches_page_server_rendered.html")
         mock_fetch.return_value = coaches_html
@@ -495,7 +495,7 @@ class TestProbeCoachesPages:
         assert second == first
         assert mock_fetch.call_count == first_calls
 
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_cache_records_negative_result(self, mock_fetch):
         # Negative results must also be cached, so a host with no
         # staff page doesn't get re-probed (4 wasted fetches per repeat).
@@ -509,8 +509,8 @@ class TestProbeCoachesPages:
         assert probe_coaches_pages(self._fake_session(), url, cache=cache) is None
         assert mock_fetch.call_count == first_calls  # cached miss
 
-    @mock.patch("extractors.ncaa_rosters._render_with_playwright")
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters._render_with_playwright")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_playwright_fallback_recovers_js_only_coaches_page(
         self, mock_fetch, mock_render, monkeypatch
     ):
@@ -548,8 +548,8 @@ class TestProbeCoachesPages:
             "https://js.example.edu/sports/mens-soccer/coaches"
         )
 
-    @mock.patch("extractors.ncaa_rosters._render_with_playwright")
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters._render_with_playwright")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_playwright_fallback_skipped_when_env_disabled(
         self, mock_fetch, mock_render, monkeypatch
     ):
@@ -568,8 +568,8 @@ class TestProbeCoachesPages:
         assert result is None
         assert mock_render.call_count == 0
 
-    @mock.patch("extractors.ncaa_rosters._render_with_playwright")
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters._render_with_playwright")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
     def test_playwright_negative_result_is_cached(
         self, mock_fetch, mock_render, monkeypatch
     ):
@@ -703,7 +703,7 @@ class TestCurrentAcademicYear:
 class TestDryRunNoWrites:
     """Verify dry_run=True never calls psycopg2."""
 
-    @mock.patch("extractors.ncaa_rosters.psycopg2", None)
+    @mock.patch("extractors.ncaa_soccer_rosters.psycopg2", None)
     def test_dry_run_without_db_returns_zero(self):
         """With no DB available, dry_run returns zeros without error."""
         result = scrape_college_rosters(division="D1", dry_run=True)
@@ -711,10 +711,10 @@ class TestDryRunNoWrites:
         assert result["rows_inserted"] == 0
         assert result["rows_updated"] == 0
 
-    @mock.patch("extractors.ncaa_rosters._get_connection")
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
-    @mock.patch("extractors.ncaa_rosters._fetch_colleges")
-    @mock.patch("extractors.ncaa_rosters.time.sleep")
+    @mock.patch("extractors.ncaa_soccer_rosters._get_connection")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters._fetch_colleges")
+    @mock.patch("extractors.ncaa_soccer_rosters.time.sleep")
     def test_dry_run_parses_but_skips_writes(
         self, mock_sleep, mock_fetch_colleges, mock_fetch_retry, mock_get_conn,
     ):
@@ -812,10 +812,10 @@ class TestSkipUnresolvedColleges:
         sql = fake_cursor.execute.call_args[0][0]
         assert "soccer_program_url IS NOT NULL" not in sql
 
-    @mock.patch("extractors.ncaa_rosters._get_connection")
-    @mock.patch("extractors.ncaa_rosters.fetch_with_retry")
-    @mock.patch("extractors.ncaa_rosters._fetch_colleges")
-    @mock.patch("extractors.ncaa_rosters.time.sleep")
+    @mock.patch("extractors.ncaa_soccer_rosters._get_connection")
+    @mock.patch("extractors.ncaa_soccer_rosters.fetch_with_retry")
+    @mock.patch("extractors.ncaa_soccer_rosters._fetch_colleges")
+    @mock.patch("extractors.ncaa_soccer_rosters.time.sleep")
     def test_fetch_never_called_for_unresolved_college(
         self, mock_sleep, mock_fetch_colleges, mock_fetch_retry, mock_get_conn,
     ):
