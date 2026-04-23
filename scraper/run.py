@@ -1527,6 +1527,264 @@ def _handle_ncaa_resolve_urls_wikipedia(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_ncaa_discover_urls_google(args: argparse.Namespace) -> None:
+    """Fill ``colleges.soccer_program_url`` (or ``website``) via Google CSE.
+
+    Targets college rows where ``soccer_program_url IS NULL``.  Uses a
+    two-pass query strategy per school (see
+    ``extractors.ncaa_discover_urls_google`` for full detail):
+
+      Pass 1 — ``"<name> <state> mens/womens soccer roster"``
+        Finds the roster page directly. ~60-70% expected hit rate.
+
+      Pass 2 — ``"<name> <state> athletics"`` (fallback)
+        Finds the athletics homepage when pass 1 misses; writes to
+        ``colleges.website`` so ``ncaa-resolve-urls`` can pick it up.
+
+    Env vars required: ``GOOGLE_CSE_API_KEY``, ``GOOGLE_CSE_CX``.
+
+    Optional flags:
+      --division D1|D2|D3|NAIA  (default: all divisions with NULL URLs)
+      --gender mens|womens|both  (default: both)
+      --limit N  (default: 100; free tier is 100 queries/day)
+      --dry-run
+    """
+    from extractors.ncaa_discover_urls_google import (
+        discover_soccer_url,
+        _QuotaExhausted,
+    )
+    from extractors.ncaa_directory import (
+        resolve_soccer_program_url,
+        USER_AGENT as _NCAA_UA,
+    )
+
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        logger.error("[ncaa-discover-urls-google] psycopg2 not available")
+        sys.exit(1)
+
+    api_key = os.environ.get("GOOGLE_CSE_API_KEY", "").strip()
+    cx = os.environ.get("GOOGLE_CSE_CX", "").strip()
+    if not api_key or not cx:
+        logger.error(
+            "[ncaa-discover-urls-google] GOOGLE_CSE_API_KEY and GOOGLE_CSE_CX "
+            "env vars are required"
+        )
+        sys.exit(1)
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.error("[ncaa-discover-urls-google] DATABASE_URL env var not set")
+        sys.exit(1)
+
+    division_arg = getattr(args, "division", None)
+    gender_arg = getattr(args, "gender", None) or "both"
+    gender_arg = {"boys": "mens", "girls": "womens"}.get(gender_arg, gender_arg)
+    dry_run = bool(getattr(args, "dry_run", False))
+    limit = getattr(args, "limit", None) or 100
+
+    if gender_arg == "both":
+        genders = ["mens", "womens"]
+    elif gender_arg in ("mens", "womens"):
+        genders = [gender_arg]
+    else:
+        logger.error(
+            "[ncaa-discover-urls-google] --gender must be mens|womens|both "
+            "(got %r)", gender_arg,
+        )
+        sys.exit(2)
+
+    import requests as _requests
+    import time as _time
+
+    sidearm_session = _requests.Session()
+    sidearm_session.headers.update({
+        "User-Agent": _NCAA_UA,
+        "Accept": "text/html,application/xhtml+xml,*/*",
+    })
+    cse_session = _requests.Session()
+
+    resolved_direct = 0
+    resolved_via_sidearm = 0
+    website_filled = 0
+    missed = 0
+    errors = 0
+    quota_hit = False
+
+    try:
+        conn = psycopg2.connect(database_url)
+        try:
+            with conn.cursor() as cur:
+                base_sql = """
+                    SELECT id, name, state, gender_program
+                    FROM colleges
+                    WHERE soccer_program_url IS NULL
+                """
+                clauses: list[str] = []
+                params: list = []
+                if division_arg:
+                    clauses.append("AND division = %s")
+                    params.append(division_arg)
+                if gender_arg != "both":
+                    clauses.append("AND gender_program = %s")
+                    params.append(gender_arg)
+                sql = base_sql + " ".join(clauses) + " ORDER BY name LIMIT %s"
+                params.append(int(limit))
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+            logger.info(
+                "[ncaa-discover-urls-google] %d row(s) with NULL soccer_program_url "
+                "to query%s",
+                len(rows), " (dry-run)" if dry_run else "",
+            )
+            est_cost_usd = len(rows) * 2 / 1000 * 5  # 2 passes × $5/1000 queries
+            logger.info(
+                "[ncaa-discover-urls-google] estimated CSE cost: $%.2f "
+                "(%.0f queries × $5/1000)",
+                est_cost_usd, len(rows) * 2,
+            )
+
+            for college_id, name, state, gender_program in rows:
+                gender = gender_program if gender_program in ("mens", "womens") else "mens"
+                tag = f"{name} ({gender})"
+                try:
+                    result = discover_soccer_url(
+                        name, state, gender,
+                        api_key=api_key, cx=cx, session=cse_session,
+                    )
+                except _QuotaExhausted:
+                    logger.warning(
+                        "[ncaa-discover-urls-google] quota exhausted after %d "
+                        "queries — run again tomorrow",
+                        resolved_direct + resolved_via_sidearm + website_filled + missed,
+                    )
+                    quota_hit = True
+                    break
+                except Exception as exc:
+                    logger.warning(
+                        "[ncaa-discover-urls-google] error for %s: %s", tag, exc
+                    )
+                    errors += 1
+                    _time.sleep(1.0)
+                    continue
+
+                if result is None:
+                    logger.debug(
+                        "[ncaa-discover-urls-google] MISS %s — no classifiable result",
+                        tag,
+                    )
+                    missed += 1
+                    _time.sleep(1.0)
+                    continue
+
+                url, kind = result
+
+                if kind == "soccer_program_url":
+                    if dry_run:
+                        logger.info(
+                            "[ncaa-discover-urls-google] [dry-run] %s → soccer_program_url=%s",
+                            tag, url,
+                        )
+                    else:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE colleges SET soccer_program_url = %s WHERE id = %s",
+                                (url, college_id),
+                            )
+                        conn.commit()
+                        logger.info(
+                            "[ncaa-discover-urls-google] %s → soccer_program_url=%s",
+                            tag, url,
+                        )
+                    resolved_direct += 1
+
+                elif kind == "website":
+                    # Try SIDEARM probe on the discovered website to get the
+                    # soccer-specific URL in one step.
+                    probed_url: Optional[str] = None
+                    try:
+                        probed_url = resolve_soccer_program_url(
+                            url, gender, session=sidearm_session
+                        )
+                    except Exception as exc:
+                        logger.debug(
+                            "[ncaa-discover-urls-google] SIDEARM probe failed "
+                            "for %s (%s): %s", tag, url, exc,
+                        )
+
+                    if probed_url:
+                        if dry_run:
+                            logger.info(
+                                "[ncaa-discover-urls-google] [dry-run] %s → "
+                                "website=%s soccer_program_url=%s",
+                                tag, url, probed_url,
+                            )
+                        else:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """UPDATE colleges
+                                       SET website = COALESCE(website, %s),
+                                           soccer_program_url = %s
+                                       WHERE id = %s""",
+                                    (url, probed_url, college_id),
+                                )
+                            conn.commit()
+                        resolved_via_sidearm += 1
+                    else:
+                        # Fill website only; ncaa-resolve-urls can retry later
+                        # with the newly populated website column.
+                        if dry_run:
+                            logger.info(
+                                "[ncaa-discover-urls-google] [dry-run] %s → "
+                                "website=%s (SIDEARM miss — URL only)",
+                                tag, url,
+                            )
+                        else:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    "UPDATE colleges SET website = COALESCE(website, %s) "
+                                    "WHERE id = %s",
+                                    (url, college_id),
+                                )
+                            conn.commit()
+                        website_filled += 1
+
+                _time.sleep(1.5)  # polite between CSE queries
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    finally:
+        try:
+            sidearm_session.close()
+        except Exception:
+            pass
+        try:
+            cse_session.close()
+        except Exception:
+            pass
+
+    total_updated = resolved_direct + resolved_via_sidearm + website_filled
+    logger.info(
+        "[ncaa-discover-urls-google] done: "
+        "soccer_program_url_direct=%d soccer_program_url_via_sidearm=%d "
+        "website_only=%d missed=%d errors=%d quota_hit=%s%s",
+        resolved_direct, resolved_via_sidearm,
+        website_filled, missed, errors, quota_hit,
+        " (dry-run)" if dry_run else "",
+    )
+    if total_updated > 0:
+        logger.info(
+            "[ncaa-discover-urls-google] total rows updated: %d "
+            "(run ncaa-resolve-urls after to probe website-only fills)",
+            total_updated,
+        )
+
+
 def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
     """Resolve NAIA ``colleges.website`` + ``soccer_program_url`` via naia.org.
 
@@ -2439,6 +2697,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_resolve_urls": _handle_ncaa_resolve_urls,
     "ncaa-resolve-urls-wikipedia": _handle_ncaa_resolve_urls_wikipedia,
     "ncaa_resolve_urls_wikipedia": _handle_ncaa_resolve_urls_wikipedia,
+    "ncaa-discover-urls-google": _handle_ncaa_discover_urls_google,
+    "ncaa_discover_urls_google": _handle_ncaa_discover_urls_google,
 }
 
 # One entry per UNIQUE source (kebab form only). Used to build the
@@ -2488,6 +2748,7 @@ SOURCE_HELP: dict[str, str] = {
     "naia-seed-official": "seed colleges table from naia.org's 2021-22 soccer teams index (last working listing endpoint — current-season listings 302-redirect to the first team). Covers ~95% of current NAIA membership; ~5-program/year churn means the rest comes in via manual entry. Optional --gender mens|womens (default: both); --dry-run.",
     "ncaa-resolve-urls": "resolve colleges.soccer_program_url by probing the canonical SIDEARM roster path for each college.website. Scoped by --division (default D1); --limit N for smoke-tests; --dry-run.",
     "ncaa-resolve-urls-wikipedia": "resolve D1/D2 colleges.soccer_program_url by walking each program's own Wikipedia article infobox for the athletics-website URL, then probing the canonical SIDEARM roster path. Closes the gap left by ncaa-resolve-urls (which requires website IS NOT NULL) — D1/D2 seeders don't write a website column, so 76% of those rows are unreachable today. Scope is D1+D2 only (D3 has working category-seeded URL coverage; NAIA has --source naia-resolve-urls). Optional --division D1|D2 (default both); --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run.",
+    "ncaa-discover-urls-google": "fill colleges.soccer_program_url (or website) for rows where URL is NULL via Google Custom Search Engine. Two-pass per school: pass 1 targets the soccer roster page directly; pass 2 finds the athletics homepage as a fallback. Requires GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX env vars. Default --limit 100 (free tier cap). Optional --division, --gender mens|womens|both, --dry-run.",
     "naia-resolve-urls": "resolve NAIA colleges.website + soccer_program_url via naia.org per-team detail pages (closes the gap left by ncaa-resolve-urls, which requires website IS NOT NULL — NAIA seeds carry no website). Phase-1 fetches the naia.org index per gender for a name→slug map; phase-2 GETs each detail page, extracts the athletics outbound link, and probes SIDEARM. Optional --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run. Production runs require proxy_config.yaml — Replit IPs hit naia.org's WAF (HTTP 405).",
 }
 
