@@ -23,7 +23,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import psycopg2.errors  # noqa: E402
+try:
+    from psycopg2.errors import UndefinedTable as _UndefinedTable  # noqa: E402
+except (ImportError, AttributeError):
+    class _UndefinedTable(Exception):  # type: ignore[no-redef]
+        pass
 
 from extractors.ncaa_rosters import should_scrape, _MAX_HISTORICAL_ATTEMPTS  # noqa: E402
 
@@ -156,9 +160,9 @@ class TestDegradedFlagTable:
         # First call: player count; second call: flag table raises UndefinedTable
         cursor.fetchone.side_effect = [
             (0,),
-            psycopg2.errors.UndefinedTable("relation does not exist"),
+            _UndefinedTable("relation does not exist"),
         ]
-        cursor.execute.side_effect = [None, psycopg2.errors.UndefinedTable("x")]
+        cursor.execute.side_effect = [None, _UndefinedTable("x")]
         conn = mock.MagicMock()
         conn.cursor.return_value = cursor
 

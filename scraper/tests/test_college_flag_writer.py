@@ -19,7 +19,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import psycopg2.errors  # noqa: E402
+try:
+    from psycopg2.errors import UndefinedTable as _UndefinedTable  # noqa: E402
+except (ImportError, AttributeError):
+    class _UndefinedTable(Exception):  # type: ignore[no-redef]
+        pass
 
 from ingest.college_flag_writer import write_college_flag  # noqa: E402
 
@@ -143,7 +147,7 @@ class TestDbWrite:
         cursor = mock.MagicMock()
         cursor.__enter__ = mock.Mock(return_value=cursor)
         cursor.__exit__ = mock.Mock(return_value=False)
-        cursor.execute.side_effect = psycopg2.errors.UndefinedTable(
+        cursor.execute.side_effect = _UndefinedTable(
             "relation does not exist"
         )
         conn = mock.MagicMock()
