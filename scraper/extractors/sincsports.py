@@ -65,6 +65,99 @@ _SKIP_CLUB_NAMES: frozenset = frozenset({
     "n/a",
 })
 
+# The actual team-list tables on TTTeamList.aspx have a header row whose
+# first three cells (case-insensitive) are Team / Club / State. Any other
+# <table> on the page is configuration/settings UI (the "Display
+# Settings" panel, the "Sort By" panel, etc.). Walking those tables blindly
+# is what produced junk canonical_clubs rows like "SINC Content Manager",
+# "Merge Tourneys", "USYS", "US Club", and a 494-character blob of the
+# whole settings panel concatenated together (canonical_clubs ids 15479-15483).
+_TEAM_TABLE_HEADERS: frozenset = frozenset({"team", "club", "state"})
+
+# Defensive secondary guard. Even if a future SincSports page somehow
+# threads a settings string into a Team/Club/State row, these patterns
+# (lower-cased exact matches and substring needles) catch the obvious
+# nav/UI strings that have leaked into canonical_clubs in the past.
+_NAV_STRING_EXACT: frozenset = frozenset({
+    "sinc content manager",
+    "merge tourneys",
+    "tourneys",
+    "display settings",
+    "team list",
+    "schedule",
+    "schedules",
+    "divisions",
+    "edit selection",
+    "default division",
+    "advanced sort",
+    "sort by team name",
+    "sort by seed",
+    "sort by usa rank",
+    "sort by age",
+    "sort by gender",
+    "venues",
+    "request",
+    "preview",
+    "needed",
+    "status",
+    "nationals",
+    "co ed",
+    "co-ed",
+    "select",
+    "pictures",
+    "seed",
+    "us",
+    "usys",
+    "us club",
+    "usa rank",
+    "team link",
+    "adult",
+})
+_NAV_STRING_SUBSTRINGS: tuple = (
+    "display settings",
+    "sort by team",
+    "venues through",
+    "default division",
+    "edit selection",
+)
+# Real club names are short. Anything longer than this is almost
+# certainly a concatenated nav blob (the worst observed offender was
+# 494 characters).
+_MAX_CLUB_NAME_LEN = 80
+
+
+def _is_nav_string(name: str) -> bool:
+    """Return True if *name* looks like a SincSports UI/nav label rather
+    than a real club name."""
+    if not name:
+        return True
+    if len(name) > _MAX_CLUB_NAME_LEN:
+        return True
+    lower = name.lower().strip()
+    if lower in _NAV_STRING_EXACT:
+        return True
+    if any(needle in lower for needle in _NAV_STRING_SUBSTRINGS):
+        return True
+    # A real club name has at least one alphabetic character and is not
+    # purely punctuation/whitespace.
+    if not any(c.isalpha() for c in name):
+        return True
+    return False
+
+
+def _is_team_table(table) -> bool:
+    """A SincSports team-list table has a first row containing the
+    headers Team / Club / State (case-insensitive). Returns False for
+    every other <table> on the page (Display Settings panel, Divisions
+    selector, etc.)."""
+    first_row = table.find("tr")
+    if not first_row:
+        return False
+    cells = [c.get_text(strip=True).lower() for c in first_row.find_all(["td", "th"])]
+    if len(cells) < 3:
+        return False
+    return _TEAM_TABLE_HEADERS.issubset(set(cells))
+
 
 def _extract_tid(url: str) -> str | None:
     """
@@ -119,8 +212,17 @@ def _parse_clubs_from_html(html: str, source_url: str, league_name: str) -> List
     records: List[Dict] = []
 
     for table in soup.find_all("table"):
+        # Only walk tables whose first row is a Team/Club/State header.
+        # Other <table> tags on this page are settings/nav UI panels —
+        # blindly reading td[1] from them produced junk canonical_clubs
+        # rows like "SINC Content Manager", "Merge Tourneys", "USYS",
+        # "US Club", and a 494-char blob of the Display Settings panel.
+        if not _is_team_table(table):
+            continue
+
         rows = table.find_all("tr")
-        for row in rows:
+        # Skip the header row itself.
+        for row in rows[1:]:
             tds = row.find_all("td")
             if len(tds) < 3:
                 continue
@@ -140,6 +242,15 @@ def _parse_clubs_from_html(html: str, source_url: str, league_name: str) -> List
                 continue
             # SincSports sometimes shows "NO CLUB (XX)" for unaffiliated teams
             if club_lower.startswith("no club"):
+                continue
+            # Defensive secondary guard against any nav/settings strings
+            # that somehow slip past the table-shape filter.
+            if _is_nav_string(club_name):
+                logger.warning(
+                    "[SincSports] Rejected nav-string club name: %r (source=%s)",
+                    club_name[:80],
+                    source_url,
+                )
                 continue
 
             # Deduplicate within this event
