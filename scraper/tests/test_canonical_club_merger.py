@@ -612,3 +612,44 @@ def test_fetch_club_meta_returns_completeness_count():
     assert out[10].completeness == 4
     # Winner has only state set.
     assert out[20].completeness == 1
+
+
+# ---------------------------------------------------------------------------
+# Subset / short-name guard — task #85 regression
+# ---------------------------------------------------------------------------
+
+def test_tier_subset_short_name_downgrades_to_review():
+    """A bare "Dallas" canonical row vs "Dallas Texans" must NOT
+    auto-merge even at high similarity. They are obviously distinct
+    clubs. This is the task #85 regression guard.
+    """
+    pairs = [_pair(1, 2, similarity=0.97)]
+    meta = {
+        1: _meta(1, name="Dallas", state="TX"),
+        2: _meta(2, name="Dallas Texans", state="TX"),
+    }
+    out = tier_pairs(pairs, meta)
+    assert out[0].tier == "review"
+    assert "subset" in out[0].reasoning.lower()
+
+
+def test_tier_subset_guard_does_not_block_normal_pair():
+    """Two multi-token names with one shared token do not trip the guard."""
+    pairs = [_pair(1, 2, similarity=0.97)]
+    meta = {
+        1: _meta(1, name="Concorde Fire", state="GA"),
+        2: _meta(2, name="Concorde Fire SC", state="GA"),
+    }
+    out = tier_pairs(pairs, meta)
+    assert out[0].tier == "auto_merge"
+
+
+def test_tier_subset_guard_does_not_block_identical_names():
+    """Equal token sets must still auto-merge — they are duplicates."""
+    pairs = [_pair(1, 2, similarity=0.99)]
+    meta = {
+        1: _meta(1, name="Dallas", state="TX"),
+        2: _meta(2, name="Dallas", state="TX"),
+    }
+    out = tier_pairs(pairs, meta)
+    assert out[0].tier == "auto_merge"

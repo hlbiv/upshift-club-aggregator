@@ -80,11 +80,19 @@ _RAPIDFUZZ_AVAILABLE = fuzz is not None and rf_process is not None
 _AGE_PATTERN = re.compile(r"\bU-?\s*\d{1,2}\b", flags=re.IGNORECASE)
 # Four-digit birth-year tokens typical of youth soccer: 2004-2016 window.
 _BIRTH_YEAR_PATTERN = re.compile(r"\b(?:19[89]\d|200\d|201[0-9]|202\d)\b")
+# Combined age+gender team tags: "16G", "17B", "07G", "2010B", "10g", etc.
+# (Common in ECNL/Pre-ECNL team naming — "FC Dallas 16G Pre-ECNL McAnally".)
+# Includes a bare "G/B" suffix to a 1–4 digit number; uppercase or lower.
+_TEAM_TAG_PATTERN = re.compile(r"\b\d{1,4}[GgBb]\b")
 # Gender / program / division / generic tokens to strip. Conservative: we
 # KEEP "FC", "SC", "AC", "CF" because those are canonical club-name parts
 # (Concorde FC, Hurricanes SC). `normalizer._canonical` strips them
 # downstream inside the canonical column — we want pass #1 (exact alias
 # hit) and pass #2 (exact canonical hit) to work on the raw column first.
+#
+# `pre` is included because "Pre-ECNL" splits to ["Pre", "ECNL"] after
+# punctuation removal; ECNL is already a stopword, Pre on its own is
+# noise that otherwise lands in the fuzzy query.
 _STOPWORDS: frozenset = frozenset({
     "boys", "girls", "men", "women", "male", "female",
     "m", "f", "b", "g",
@@ -92,7 +100,7 @@ _STOPWORDS: frozenset = frozenset({
     "gold", "silver", "bronze", "white", "black", "red", "blue", "green",
     "ecnl", "enpl", "npl", "mls", "usl", "nal", "eal", "edp",
     "rl", "national", "regional",
-    "youth",
+    "youth", "pre",
 })
 
 _WHITESPACE = re.compile(r"\s+")
@@ -116,6 +124,14 @@ def strip_team_descriptors(raw: str) -> str:
     # Strip age patterns + birth years first (they're unambiguous).
     s = _AGE_PATTERN.sub(" ", s)
     s = _BIRTH_YEAR_PATTERN.sub(" ", s)
+    # Strip combined age+gender team tags like "16G", "17B" before
+    # punctuation pass (which would otherwise leave them intact).
+    s = _TEAM_TAG_PATTERN.sub(" ", s)
+    # Split on hyphens BEFORE the stopword pass so "Pre-ECNL" decomposes
+    # into ["Pre", "ECNL"] (both individually stripped). Keeping hyphens
+    # would leave "Pre-ECNL" as one indivisible token that no stopword
+    # entry matches.
+    s = s.replace("-", " ")
     # Drop punctuation to avoid "2011." residue keeping a token alive.
     s = _PUNCTUATION.sub(" ", s)
     # Token-level stopword filter.
@@ -241,6 +257,8 @@ def resolve_raw_team_name(
             return ResolveResult(None, 4)
 
         matched_choice, score, match_idx = match
+        if _is_unsafe_subset_match(query, matched_choice):
+            return ResolveResult(None, 4)
         club_id = idx.fuzzy_club_ids[match_idx]
         return ResolveResult(club_id, 3, score=int(score), matched_choice=matched_choice)
 
@@ -263,10 +281,45 @@ def resolve_raw_team_name(
     if best_idx is None:
         return ResolveResult(None, 4)
 
+    if best_choice is not None and _is_unsafe_subset_match(query, best_choice):
+        return ResolveResult(None, 4)
+
     club_id = idx.fuzzy_club_ids[best_idx]
     return ResolveResult(
         club_id, 3, score=int(round(best_score * 100)), matched_choice=best_choice
     )
+
+
+def _is_unsafe_subset_match(query: str, matched_choice: str) -> bool:
+    """Reject fuzzy hits where the matched canonical name is a tiny
+    strict subset of the query — the failure mode that collapsed
+    "FC Dallas 16G Pre-ECNL McAnally" onto canonical "Dallas".
+
+    `token_set_ratio` is generous: it scores 100 whenever the matched
+    choice's token set is contained in the query's. So a single-token
+    canonical like "Dallas" matches every team whose name contains
+    "Dallas". Guard rule:
+
+      Reject when the matched choice has <= 2 tokens AND its token set
+      is a strict subset of the query's AND the query has more than
+      twice as many tokens.
+
+    Multi-token short canonicals ("Dallas Texans") and exact-token
+    matches still pass — only the genuinely under-specified short
+    canonicals are filtered.
+    """
+    q_tokens = set(query.split())
+    m_tokens = set(matched_choice.split())
+    if not q_tokens or not m_tokens:
+        return False
+    if len(m_tokens) > 2:
+        return False
+    if not m_tokens.issubset(q_tokens):
+        return False
+    if m_tokens == q_tokens:
+        return False
+    # Query has materially more tokens than the matched choice.
+    return len(q_tokens) > 2 * len(m_tokens)
 
 
 def _difflib_token_set_ratio(a: str, b: str) -> float:

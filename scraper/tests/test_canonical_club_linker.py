@@ -63,6 +63,81 @@ def test_strip_collapses_whitespace():
     assert strip_team_descriptors("  Boston   Bolts    2012  Boys  ") == "Boston Bolts"
 
 
+def test_strip_team_tag_pattern_16g():
+    """Regression (task #85): "16G" / "17B" team tags must be stripped
+    from the fuzzy query so they don't pollute pass-3 matching against
+    short canonical names.
+    """
+    assert strip_team_descriptors("FC Dallas 16G Pre-ECNL McAnally") == "FC Dallas McAnally"
+
+
+def test_strip_team_tag_pattern_lowercase():
+    assert strip_team_descriptors("Solar 07g Premier") == "Solar"
+
+
+def test_strip_team_tag_pattern_birth_year_with_g_suffix():
+    # 2010B should be reduced — 2010 by birth-year, B by stopword/team-tag.
+    assert strip_team_descriptors("Crossfire 2010B Boys") == "Crossfire"
+
+
+def test_strip_pre_ecnl_descriptor():
+    """`Pre-ECNL` must not leave a "Pre" token in the fuzzy query."""
+    assert strip_team_descriptors("FC Dallas Pre-ECNL") == "FC Dallas"
+
+
+# ---------------------------------------------------------------------------
+# Pass-3 subset guard — task #85 regression
+# ---------------------------------------------------------------------------
+
+def test_resolve_pass3_rejects_unsafe_subset_short_canonical():
+    """A bare "Dallas" canonical row must NOT swallow a long, distinct
+    team string like "FC Dallas 16G Pre-ECNL McAnally".
+    """
+    idx = ClubIndex()
+    idx.canonical_exact = {"dallas": 999}
+    idx.fuzzy_choices = ["dallas"]
+    idx.fuzzy_club_ids = [999]
+    res = resolve_raw_team_name("FC Dallas 16G Pre-ECNL McAnally", idx)
+    assert res.club_id is None
+    assert res.pass_number == 4
+
+
+def test_resolve_pass3_subset_guard_difflib_fallback():
+    import canonical_club_linker as linker
+    idx = ClubIndex()
+    idx.canonical_exact = {"dallas": 999}
+    idx.fuzzy_choices = ["dallas"]
+    idx.fuzzy_club_ids = [999]
+    with mock.patch.object(linker, "_RAPIDFUZZ_AVAILABLE", False):
+        res = resolve_raw_team_name("FC Dallas Coach Smith Team", idx)
+    assert res.club_id is None
+    assert res.pass_number == 4
+
+
+def test_resolve_pass3_two_token_subset_still_matches():
+    """Subset guard does NOT block multi-token canonicals like
+    "Dallas Texans" being matched by "Dallas Texans 17B Boys"."""
+    idx = ClubIndex()
+    idx.canonical_exact = {"dallas texans": 1001}
+    idx.fuzzy_choices = ["dallas texans"]
+    idx.fuzzy_club_ids = [1001]
+    res = resolve_raw_team_name("Dallas Texans Coach Adams", idx)
+    # 2 matched tokens + 3-token query → 3 <= 2*2, NOT rejected.
+    assert res.club_id == 1001
+    assert res.pass_number in (2, 3)
+
+
+def test_resolve_pass3_exact_short_match_not_blocked():
+    """Subset guard must not block exact equality (m_tokens == q_tokens)."""
+    idx = ClubIndex()
+    idx.canonical_exact = {"dallas": 999}
+    idx.fuzzy_choices = ["dallas"]
+    idx.fuzzy_club_ids = [999]
+    # "Dallas Boys" — stripper drops "Boys" → query "dallas" == matched.
+    res = resolve_raw_team_name("Dallas Boys", idx)
+    assert res.club_id == 999
+
+
 # ---------------------------------------------------------------------------
 # Fuzzy index + resolver
 # ---------------------------------------------------------------------------

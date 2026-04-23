@@ -21,16 +21,32 @@ from config import FUZZY_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
-# Tokens that appear as standalone words to strip from club names
-_STRIP_TOKENS = {
-    "sc", "fc", "ac", "cf", "afc", "sfc", "fsc", "bc",
+# Two-tier strip set:
+#   _SAFE_STRIP_TOKENS — generic descriptors that are almost never the
+#     distinguishing part of a club name. Always safe to drop.
+#   _PROPER_NAME_TOKENS — short club-prefix tokens (FC/SC/AC/CF/...) that
+#     are part of the club's proper name when paired with a single-word
+#     place ("FC Dallas", "SC Freiburg"). We only strip these when doing
+#     so leaves >= 2 tokens behind — otherwise stripping collapses
+#     "FC Dallas" to "Dallas" and merges it with every other Dallas-area
+#     club at the dedup layer.
+_SAFE_STRIP_TOKENS = {
     "united", "utd", "city", "town", "club", "soccer",
     "youth", "boys", "girls", "men", "women",
+}
+
+_PROPER_NAME_TOKENS = {
+    "sc", "fc", "ac", "cf", "afc", "sfc", "fsc", "bc",
     "f.c.", "s.c.", "a.c.", "f.c", "s.c", "a.c",
 }
 
-_STRIP_PATTERN = re.compile(
-    r"\b(" + "|".join(re.escape(t) for t in _STRIP_TOKENS) + r")\b",
+_SAFE_STRIP_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(t) for t in _SAFE_STRIP_TOKENS) + r")\b",
+    flags=re.IGNORECASE,
+)
+
+_PROPER_NAME_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(t) for t in _PROPER_NAME_TOKENS) + r")\b",
     flags=re.IGNORECASE,
 )
 
@@ -69,16 +85,30 @@ def is_valid_club_name(name: str) -> bool:
 
 
 def _canonical(name: str) -> str:
-    """Return a normalised canonical form of a club name."""
+    """Return a normalised canonical form of a club name.
+
+    Two-pass strip:
+      1. Always remove generic descriptors (Soccer, Youth, Boys, ...).
+      2. Strip proper-name tokens (FC, SC, AC, ...) ONLY when the result
+         still has >= 2 tokens. Otherwise we'd flatten "FC Dallas" to
+         "Dallas" and merge it with every other Dallas-area club via
+         the fuzzy dedup pass — see task #85 / #80 regression.
+    """
     if not isinstance(name, str):
         return ""
     name = name.strip()
     # Remove parenthetical suffixes like "(U-12)" or "(Boys)"
     name = re.sub(r"\(.*?\)", "", name)
-    # Remove strippable tokens
-    name = _STRIP_PATTERN.sub("", name)
-    # Collapse whitespace
+    # Pass 1: always-safe descriptors
+    name = _SAFE_STRIP_PATTERN.sub("", name)
     name = _WHITESPACE.sub(" ", name).strip()
+    # Pass 2: proper-name tokens — only if doing so leaves a multi-token
+    # name. A single bare token (e.g. "Dallas", "Cincinnati") collides
+    # with too many distinct clubs at the dedup layer.
+    candidate = _PROPER_NAME_PATTERN.sub("", name)
+    candidate = _WHITESPACE.sub(" ", candidate).strip()
+    if candidate and len(candidate.split()) >= 2:
+        name = candidate
     # Title-case
     name = name.title()
     return name

@@ -250,6 +250,27 @@ def tier_pairs(
             ))
             continue
 
+        # Subset / short-name guard: refuse to auto-merge when one
+        # canonical name is a strict token-subset of the other AND the
+        # shorter side is a single bare token (e.g. "Dallas" vs
+        # "Dallas Texans"). Token-set similarity scorers happily flag
+        # those at >= 0.95 even though they are obviously distinct
+        # clubs. Downgrade to manual review. See task #85.
+        tokens_a = set(a.name.lower().split())
+        tokens_b = set(b.name.lower().split())
+        if tokens_a and tokens_b and tokens_a != tokens_b:
+            shorter, longer = (
+                (tokens_a, tokens_b) if len(tokens_a) <= len(tokens_b)
+                else (tokens_b, tokens_a)
+            )
+            if len(shorter) <= 1 and shorter.issubset(longer):
+                out.append(TieredPair(
+                    p, "review",
+                    "subset/short-name guard "
+                    f"({sorted(shorter)} ⊂ {sorted(longer)})",
+                ))
+                continue
+
         if p.similarity < AUTO_MERGE_SIMILARITY:
             out.append(TieredPair(
                 p, "review",
