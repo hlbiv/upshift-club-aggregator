@@ -100,6 +100,14 @@ export const canonicalClubs = pgTable(
     competitiveTier: competitiveTierEnum("competitive_tier")
       .notNull()
       .default("competitive"),
+    // Curated allow-list flag: TRUE iff this club operates a true
+    // pro-pathway academy (MLS / NWSL / USL Championship / USL L1
+    // affiliate). Used by `scripts/src/backfill-competitive-tier.ts`
+    // to gate the `competitive_tier = 'academy'` flip — playing in
+    // MLS NEXT or USL Academy alone is NOT enough, because those
+    // youth leagues admit many non-pro-affiliated clubs. Maintained
+    // by `scripts/src/seed-pro-academies.ts`. See task-79.
+    isProAcademy: boolean("is_pro_academy").notNull().default(false),
   },
   (t) => [
     // 'search' is included because enrich_websites.py writes it to mark

@@ -3,6 +3,16 @@
  * affiliations to the highest-tier league it plays in, normalized via
  * the user-confirmed TIER_LABEL_TO_ENUM map below. See task-78.
  *
+ * Prereqs (in this order):
+ *   1. `pnpm --filter @workspace/db push` — applies the
+ *      `canonical_clubs.is_pro_academy` column. The rollup query below
+ *      reads that column and will fail with a "column does not exist"
+ *      error if the schema push hasn't run yet.
+ *   2. `pnpm --filter @workspace/scripts exec tsx src/seed-pro-academies.ts`
+ *      — populates the curated allow-list. Without this, every club
+ *      will fall through to 'elite' / 'competitive' (no academies).
+ *
+ * Then run:
  *   pnpm --filter @workspace/scripts exec tsx src/backfill-competitive-tier.ts --dry-run
  *   pnpm --filter @workspace/scripts exec tsx src/backfill-competitive-tier.ts
  *
@@ -17,12 +27,15 @@
  *         a CASE expression matching TIER_LABEL_TO_ENUM. Unrecognized
  *         labels become NULL and don't contribute to the rollup.
  *      b. Per club, picks the row(s) at MIN(tier_numeric) (= most elite).
- *      c. Applies the academy override ONLY when top tier_numeric = 1
- *         AND every top-tier-1 affiliation is in ACADEMY_FAMILIES. If
- *         the top-tier-1 set is mixed (e.g. MLS NEXT + Elite 64), the
- *         club is NOT flipped — task spec explicitly says log for human
- *         review instead of silently flipping. Those clubs fall through
- *         to the normal rollup (and end up at 'elite').
+ *      c. Applies the academy override ONLY when the club is on the
+ *         curated `is_pro_academy = TRUE` allow-list AND has at least
+ *         one tier-1 academy-family affiliation. The flag is maintained
+ *         by `scripts/src/seed-pro-academies.ts` (see task-79). MLS
+ *         NEXT / USL Academy / NWSL Academy alone are insufficient
+ *         because those youth leagues admit ~170 non-pro member clubs.
+ *         A mixed top-tier set (e.g. MLS NEXT + Elite 64) on a curated
+ *         pro-academy club STILL flips to academy — the curated flag
+ *         is authoritative.
  *      d. Picks 'elite' over 'competitive' when both appear at the same
  *         top tier (tie-break — 'elite' is the higher signal).
  *
@@ -119,11 +132,14 @@ async function main() {
     }
   }
 
-  // --- Diagnostic 2: ambiguous academy clubs (NOT flipped) ----------------
-  // Clubs whose top-tier-1 affiliation set contains BOTH an academy family
-  // AND a non-academy family. Per task spec these are explicitly NOT
-  // flipped to academy — they log for human review and stay at 'elite'.
-  const ambiguous = await pool.query<{
+  // --- Diagnostic 2: pro-academy candidates not on the curated list -----
+  // Clubs that have a tier-1 academy-family affiliation (MLS NEXT /
+  // NWSL Academy / USL Academy) but were NOT flagged is_pro_academy by
+  // scripts/src/seed-pro-academies.ts. These are the candidates an
+  // operator should scan when reconciling the allow-list — most are
+  // independent youth clubs that belong at 'elite', a few may be true
+  // pro academies that should be added to the seed list.
+  const candidates = await pool.query<{
     club_id: number;
     club_name: string;
     families: string;
@@ -143,22 +159,22 @@ async function main() {
     JOIN top_tier t ON t.club_id = n.club_id AND n.tier_numeric = t.min_tn
     JOIN canonical_clubs cc ON cc.id = n.club_id
     WHERE t.min_tn = 1
+      AND cc.is_pro_academy = FALSE
     GROUP BY n.club_id, cc.club_name_canonical
-    HAVING bool_or(n.league_family = ANY(ARRAY['MLS NEXT','NWSL Academy','USL Academy'])) = TRUE
-       AND bool_or(n.league_family IS NULL OR NOT (n.league_family = ANY(ARRAY['MLS NEXT','NWSL Academy','USL Academy']))) = TRUE
+    HAVING bool_or(n.league_family = ANY(ARRAY[${ACADEMY_FAMILIES.map(asLit).join(",")}])) = TRUE
     ORDER BY n.club_id
   `);
-  if (ambiguous.rows.length > 0) {
+  if (candidates.rows.length > 0) {
     console.warn(
-      `\n[warn] ${ambiguous.rows.length} club(s) have BOTH academy + non-academy tier-1 affiliations — NOT flipping to 'academy'; left at rollup tier (elite). Review manually:`,
+      `\n[warn] ${candidates.rows.length} club(s) play in an academy-family tier-1 league but are NOT on the curated is_pro_academy list — leaving at the rollup tier (elite). Add to scripts/src/seed-pro-academies.ts if any are true pro academies:`,
     );
-    for (const r of ambiguous.rows.slice(0, 30)) {
+    for (const r of candidates.rows.slice(0, 30)) {
       console.warn(
         `       club_id=${r.club_id} (${r.club_name}) tier1_families=[${r.families}]`,
       );
     }
-    if (ambiguous.rows.length > 30) {
-      console.warn(`       ...and ${ambiguous.rows.length - 30} more`);
+    if (candidates.rows.length > 30) {
+      console.warn(`       ...and ${candidates.rows.length - 30} more`);
     }
   }
 
@@ -176,8 +192,10 @@ async function main() {
 
       // Single UPDATE ... FROM rollup. Decision rule per club:
       //   - top_tn = MIN(tier_numeric) over rows with a recognized norm_tier
-      //   - academy iff top_tn = 1 AND every top-tier-1 affiliation has
-      //     league_family in ACADEMY_FAMILIES (no mixed academy/non-academy)
+      //   - academy iff cc.is_pro_academy = TRUE AND at least one
+      //     top-tier-1 affiliation is in ACADEMY_FAMILIES (the curated
+      //     flag is authoritative; the family check just ensures the
+      //     club actually plays in a pro-pathway youth league)
       //   - otherwise: pick the most-elite normalized tier among the
       //     top-tier rows ('elite' beats 'competitive' on tie)
       const upd = await client.query(`
@@ -191,7 +209,7 @@ async function main() {
         top_tier_families AS (
           SELECT
             n.club_id,
-            bool_and(n.league_family = ANY(ARRAY[${ACADEMY_FAMILIES.map(asLit).join(",")}])) AS all_academy,
+            bool_or(n.league_family = ANY(ARRAY[${ACADEMY_FAMILIES.map(asLit).join(",")}])) AS any_academy,
             bool_or(n.norm_tier = 'elite') AS has_elite,
             bool_or(n.norm_tier = 'competitive') AS has_competitive
           FROM normalized n
@@ -204,7 +222,7 @@ async function main() {
           SELECT
             t.club_id,
             CASE
-              WHEN t.min_tn = 1 AND f.all_academy = TRUE
+              WHEN t.min_tn = 1 AND f.any_academy = TRUE AND cc.is_pro_academy = TRUE
                 THEN 'academy'::competitive_tier
               WHEN f.has_elite
                 THEN 'elite'::competitive_tier
@@ -212,6 +230,7 @@ async function main() {
             END AS final_tier
           FROM top_tier t
           JOIN top_tier_families f ON f.club_id = t.club_id
+          JOIN canonical_clubs cc ON cc.id = t.club_id
         )
         UPDATE canonical_clubs cc
         SET competitive_tier = d.final_tier
@@ -245,7 +264,7 @@ async function main() {
         top_tier_families AS (
           SELECT
             n.club_id,
-            bool_and(n.league_family = ANY(ARRAY[${ACADEMY_FAMILIES.map(asLit).join(",")}])) AS all_academy,
+            bool_or(n.league_family = ANY(ARRAY[${ACADEMY_FAMILIES.map(asLit).join(",")}])) AS any_academy,
             bool_or(n.norm_tier = 'elite') AS has_elite
           FROM normalized n
           JOIN top_tier t ON t.club_id = n.club_id AND n.tier_numeric = t.min_tn
@@ -257,7 +276,7 @@ async function main() {
             cc.id AS club_id,
             CASE
               WHEN t.min_tn IS NULL THEN 'competitive'
-              WHEN t.min_tn = 1 AND f.all_academy = TRUE THEN 'academy'
+              WHEN t.min_tn = 1 AND f.any_academy = TRUE AND cc.is_pro_academy = TRUE THEN 'academy'
               WHEN f.has_elite THEN 'elite'
               ELSE 'competitive'
             END AS final_tier
