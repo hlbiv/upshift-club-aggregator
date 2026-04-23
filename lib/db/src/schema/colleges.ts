@@ -28,6 +28,11 @@ export const colleges = pgTable(
     slug: text("slug").notNull().unique(),
     ncaaId: text("ncaa_id"),
     division: text("division").notNull(),
+    // sport separates the program type from gender_program. Always 'soccer'
+    // today; will be 'basketball', 'football', etc. when non-soccer handlers
+    // ship. See docs/multi-sport-schema-contract.md for the design rationale,
+    // migration SQL (two-step ADD COLUMN + DROP DEFAULT), and rollback plan.
+    sport: text("sport").notNull(),
     conference: text("conference"),
     state: text("state"),
     city: text("city"),
@@ -50,10 +55,14 @@ export const colleges = pgTable(
       "colleges_gender_program_enum",
       sql`${t.genderProgram} IN ('mens','womens','both')`,
     ),
-    unique("colleges_name_division_gender_uq").on(
+    // 4-column natural key includes sport so that the same school can have
+    // both soccer and basketball rows. Replaces the 3-column
+    // colleges_name_division_gender_uq constraint from pre-PR-29.
+    unique("colleges_name_division_gender_sport_uq").on(
       t.name,
       t.division,
       t.genderProgram,
+      t.sport,
     ),
   ],
 );

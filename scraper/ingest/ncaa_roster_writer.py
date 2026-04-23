@@ -3,9 +3,9 @@ ncaa_roster_writer.py — Idempotent upserts for NCAA D1 single-school runs.
 
 Writes to three tables in ``lib/db/src/schema/colleges.ts``:
 
-- ``colleges``            — one row per (name, division, gender_program),
+- ``colleges``            — one row per (name, division, gender_program, sport),
                             upserted on the natural-key unique
-                            ``colleges_name_division_gender_uq``.
+                            ``colleges_name_division_gender_sport_uq``.
 - ``college_coaches``     — one row per (college_id, name, title),
                             upserted on ``college_coaches_college_name_title_uq``.
 - ``college_roster_history`` — one row per (college_id, player_name, academic_year),
@@ -48,18 +48,18 @@ log = logging.getLogger("ncaa_roster_writer")
 
 _UPSERT_COLLEGE_SQL = """
 INSERT INTO colleges (
-    name, slug, division, gender_program,
+    name, slug, division, gender_program, sport,
     conference, state, city, website,
     soccer_program_url, ncaa_id,
     last_scraped_at, scrape_confidence
 )
 VALUES (
-    %(name)s, %(slug)s, %(division)s, %(gender_program)s,
+    %(name)s, %(slug)s, %(division)s, %(gender_program)s, %(sport)s,
     %(conference)s, %(state)s, %(city)s, %(website)s,
     %(soccer_program_url)s, %(ncaa_id)s,
     now(), %(scrape_confidence)s
 )
-ON CONFLICT ON CONSTRAINT colleges_name_division_gender_uq
+ON CONFLICT ON CONSTRAINT colleges_name_division_gender_sport_uq
 DO UPDATE SET
     conference         = COALESCE(EXCLUDED.conference, colleges.conference),
     state              = COALESCE(EXCLUDED.state, colleges.state),
@@ -181,6 +181,7 @@ def _normalize_college(row: Dict[str, Any]) -> Dict[str, Any]:
         "conference": row.get("conference"),
         "state": row.get("state"),
         "city": row.get("city"),
+        "sport": row.get("sport", "soccer"),
         "website": row.get("website"),
         "soccer_program_url": row.get("soccer_program_url"),
         "ncaa_id": row.get("ncaa_id"),
