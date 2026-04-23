@@ -34,7 +34,7 @@ if _SCRAPER_ROOT not in sys.path:
 from scrape_run_logger import ScrapeRunLogger, FailureKind  # noqa: E402
 
 # Reuse shared helpers from the NCAA scraper
-from extractors.ncaa_rosters import (  # noqa: E402
+from extractors.ncaa_soccer_rosters import (  # noqa: E402
     current_academic_year,
     _get_connection,
     RATE_LIMIT_DELAY,
