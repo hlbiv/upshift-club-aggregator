@@ -2022,6 +2022,46 @@ def _fetch_colleges(
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+def _filter_fresh_colleges(
+    conn,
+    colleges: List[Dict],
+    current_season: str,
+    max_age_days: int,
+) -> Tuple[List[Dict], int]:
+    """Return (remaining, skipped_count).
+
+    A college is skipped if:
+    - It has at least 1 row in college_roster_history for current_season, AND
+    - colleges.last_scraped_at >= NOW() - max_age_days days
+
+    A college with 0 current-season rows is NEVER skipped.
+    """
+    if not colleges or conn is None:
+        return colleges, 0
+
+    ids = [c["id"] for c in colleges]
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT crh.college_id
+        FROM college_roster_history crh
+        JOIN colleges c ON c.id = crh.college_id
+        WHERE crh.college_id = ANY(%s)
+          AND crh.academic_year = %s
+          AND c.last_scraped_at IS NOT NULL
+          AND c.last_scraped_at >= NOW() - (INTERVAL '1 day' * %s)
+        GROUP BY crh.college_id
+        HAVING COUNT(*) > 0
+        """,
+        (ids, current_season, max_age_days),
+    )
+    fresh_ids = {row[0] for row in cur.fetchall()}
+    cur.close()
+
+    remaining = [c for c in colleges if c["id"] not in fresh_ids]
+    return remaining, len(fresh_ids)
+
+
 def _upsert_roster_row(
     cur,
     college_id: int,
@@ -2230,6 +2270,7 @@ def scrape_college_rosters(
     force_rescrape: bool = False,
     force_historical: Optional[str] = None,
     force_covid: bool = False,
+    max_age_days: int = 30,
 ) -> Dict:
     """Scrape NCAA rosters and write to college_roster_history.
 
@@ -2261,12 +2302,18 @@ def scrape_college_rosters(
         Bypass the 2020-21 COVID season skip guard. Normally the scraper
         skips the 2020-21 season entirely (NCAA cancelled soccer that
         year) to avoid wasting Playwright retries on pages that don't
-        exist. Pass True to attempt the scrape anyway (e.g. for a
-        targeted investigation or if the season data ever surfaces).
+        exist. Pass True to attempt the scrape anyway.
+    max_age_days : int (default 30)
+        Pre-filter staleness window. A college that has at least one
+        current-season roster row AND was scraped within this many days
+        is removed from the candidate list before the main loop starts.
+        Set to 0 to disable. Complements ``skip_fresh_days``: this guard
+        skips at the college level before any HTTP requests; ``should_scrape``
+        provides per-season control inside the loop.
 
     Returns
     -------
-    dict with keys: scraped, rows_inserted, rows_updated, errors, covid_skipped
+    dict with keys: scraped, skipped_fresh, rows_inserted, rows_updated, errors, covid_skipped
     """
     current_season = current_academic_year()
     seasons = _prior_academic_years(current_season, backfill_seasons)
@@ -2280,9 +2327,9 @@ def scrape_college_rosters(
     if conn is None:
         if dry_run:
             logger.warning("No DB connection in dry-run mode; cannot fetch colleges list")
-            return {"scraped": 0, "rows_inserted": 0, "rows_updated": 0, "errors": 0, "covid_skipped": 0}
+            return {"scraped": 0, "skipped_fresh": 0, "rows_inserted": 0, "rows_updated": 0, "errors": 0, "covid_skipped": 0}
         logger.error("DATABASE_URL not set or connection failed; aborting (use --dry-run for no-DB mode)")
-        return {"scraped": 0, "rows_inserted": 0, "rows_updated": 0, "errors": 1, "covid_skipped": 0}
+        return {"scraped": 0, "skipped_fresh": 0, "rows_inserted": 0, "rows_updated": 0, "errors": 1, "covid_skipped": 0}
 
     colleges = _fetch_colleges(
         conn,
@@ -2292,6 +2339,20 @@ def scrape_college_rosters(
     )
     if limit:
         colleges = colleges[:limit]
+
+    # Staleness skip guard: treat max_age_days=0 as force_rescrape.
+    effective_force_rescrape = force_rescrape or (max_age_days == 0)
+
+    if not effective_force_rescrape:
+        colleges, skipped_fresh = _filter_fresh_colleges(
+            conn, colleges, current_season, max_age_days
+        )
+        logger.info(
+            "Skip guard: %d already fresh (max_age_days=%d), %d remaining",
+            skipped_fresh, max_age_days, len(colleges),
+        )
+    else:
+        skipped_fresh = 0
 
     logger.info("Processing %d colleges", len(colleges))
 
@@ -2666,6 +2727,7 @@ def scrape_college_rosters(
 
     summary = {
         "scraped": total_scraped,
+        "skipped_fresh": skipped_fresh,
         "rows_inserted": total_inserted,
         "rows_updated": total_updated,
         "errors": total_errors,
