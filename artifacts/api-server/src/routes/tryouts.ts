@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { tryouts } from "@workspace/db/schema";
-import { eq, ilike, gte, lte, sql, asc, inArray } from "drizzle-orm";
+import { eq, ilike, sql, asc } from "drizzle-orm";
 import {
   TryoutSearchResponse,
   TryoutStatsResponse,
@@ -27,27 +27,19 @@ router.get("/tryouts/search", async (req, res, next): Promise<void> => {
     const status = req.query.status as string | undefined;
     const source = req.query.source as string | undefined;
 
-    const { page, pageSize, offset } = parsePagination(
-      req.query.page,
-      req.query.page_size,
-    );
-
-    const statusFilter = status
-      ? eq(tryouts.status, status)
-      : inArray(tryouts.status, ["upcoming", "active"]);
+    // Spec: default page_size 25 (differs from the shared 20 default)
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.page_size) || 25));
+    const offset = (page - 1) * pageSize;
 
     const where = buildWhere([
-      statusFilter,
-      clubName
-        ? ilike(tryouts.clubNameRaw, `%${escapeLike(clubName)}%`)
-        : undefined,
-      ageGroup
-        ? ilike(tryouts.ageGroup, `%${escapeLike(ageGroup)}%`)
-        : undefined,
+      // No default status filter — caller passes status=active for public use
+      status ? eq(tryouts.status, status) : undefined,
+      clubName ? ilike(tryouts.clubNameRaw, `%${escapeLike(clubName)}%`) : undefined,
+      // age_group and state are exact-match (short coded values like "U15", "GA")
+      ageGroup ? eq(tryouts.ageGroup, ageGroup) : undefined,
       gender ? eq(tryouts.gender, gender) : undefined,
-      state
-        ? ilike(tryouts.locationState, `%${escapeLike(state)}%`)
-        : undefined,
+      state ? eq(tryouts.locationState, state) : undefined,
       source ? eq(tryouts.source, source) : undefined,
     ]);
 
@@ -67,12 +59,40 @@ router.get("/tryouts/search", async (req, res, next): Promise<void> => {
 
     const total = countResult[0]?.count ?? 0;
 
-    res.json({
-      items: rows,
-      total,
-      page,
-      page_size: pageSize,
-    });
+    const fmtDate = (d: Date | null | undefined): string | null =>
+      d ? d.toISOString().slice(0, 10) : null;
+    const fmtTs = (d: Date | null | undefined): string | null =>
+      d ? d.toISOString() : null;
+
+    res.json(
+      TryoutSearchResponse.parse({
+        items: rows.map((r) => ({
+          id: r.id,
+          club_id: r.clubId ?? null,
+          club_name_raw: r.clubNameRaw,
+          age_group: r.ageGroup ?? null,
+          gender: r.gender ?? null,
+          division: r.division ?? null,
+          tryout_date: fmtDate(r.tryoutDate),
+          registration_deadline: fmtTs(r.registrationDeadline),
+          location_name: r.locationName ?? null,
+          location_address: r.locationAddress ?? null,
+          location_city: r.locationCity ?? null,
+          location_state: r.locationState ?? null,
+          cost: r.cost ?? null,
+          url: r.url ?? null,
+          notes: r.notes ?? null,
+          source: r.source,
+          status: r.status,
+          detected_at: r.detectedAt.toISOString(),
+          scraped_at: r.scrapedAt.toISOString(),
+          expires_at: fmtTs(r.expiresAt),
+        })),
+        total,
+        page,
+        page_size: pageSize,
+      }),
+    );
   } catch (err) {
     next(err);
   }
