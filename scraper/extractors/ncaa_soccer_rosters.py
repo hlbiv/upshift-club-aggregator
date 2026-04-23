@@ -2223,6 +2223,7 @@ def scrape_college_rosters(
     skip_fresh_days: int = 30,
     force_rescrape: bool = False,
     force_historical: Optional[str] = None,
+    force_covid: bool = False,
 ) -> Dict:
     """Scrape NCAA rosters and write to college_roster_history.
 
@@ -2250,10 +2251,16 @@ def scrape_college_rosters(
         Bypass all ``should_scrape`` guards for every (college, season).
     force_historical : str or None
         Bypass guards for this specific academic year (e.g. ``"2023-24"``).
+    force_covid : bool (default False)
+        Bypass the 2020-21 COVID season skip guard. Normally the scraper
+        skips the 2020-21 season entirely (NCAA cancelled soccer that
+        year) to avoid wasting Playwright retries on pages that don't
+        exist. Pass True to attempt the scrape anyway (e.g. for a
+        targeted investigation or if the season data ever surfaces).
 
     Returns
     -------
-    dict with keys: scraped, rows_inserted, rows_updated, errors
+    dict with keys: scraped, rows_inserted, rows_updated, errors, covid_skipped
     """
     current_season = current_academic_year()
     seasons = _prior_academic_years(current_season, backfill_seasons)
@@ -2267,9 +2274,9 @@ def scrape_college_rosters(
     if conn is None:
         if dry_run:
             logger.warning("No DB connection in dry-run mode; cannot fetch colleges list")
-            return {"scraped": 0, "rows_inserted": 0, "rows_updated": 0, "errors": 0}
+            return {"scraped": 0, "rows_inserted": 0, "rows_updated": 0, "errors": 0, "covid_skipped": 0}
         logger.error("DATABASE_URL not set or connection failed; aborting (use --dry-run for no-DB mode)")
-        return {"scraped": 0, "rows_inserted": 0, "rows_updated": 0, "errors": 1}
+        return {"scraped": 0, "rows_inserted": 0, "rows_updated": 0, "errors": 1, "covid_skipped": 0}
 
     colleges = _fetch_colleges(
         conn,
@@ -2287,6 +2294,7 @@ def scrape_college_rosters(
     total_updated = 0
     total_errors = 0
     total_scraped = 0
+    total_covid_skipped = 0
 
     # Per-strategy instrumentation for ``extract_head_coach_from_html``.
     # Tracks which of the four strategies produced the hit (or "miss" for
@@ -2346,6 +2354,29 @@ def scrape_college_rosters(
             for season in seasons:
                 is_current = season == current_season
                 season_tag = tag if is_current else f"{tag} [{season}]"
+
+                # NCAA cancelled soccer for the 2020-21 season due to COVID.
+                # Attempting to fetch those pages wastes Playwright retries on
+                # pages that don't exist. Skip unless --force-covid is passed.
+                if season == "2020-21" and not force_covid:
+                    logger.info("  SKIP %s - COVID cancelled season (2020-21)", season_tag)
+                    total_covid_skipped += 1
+                    if not dry_run and college.get("id"):
+                        from ingest.college_flag_writer import write_college_flag
+                        try:
+                            write_college_flag(
+                                college_id=college["id"],
+                                academic_year=season,
+                                flag_type="historical_no_data",
+                                metadata={"reason": "covid_cancelled"},
+                                conn=conn,
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "  flag write failed for %s (2020-21): %s",
+                                college["name"], exc,
+                            )
+                    continue
 
                 go, guard_reason = should_scrape(
                     college,
@@ -2632,6 +2663,7 @@ def scrape_college_rosters(
         "rows_inserted": total_inserted,
         "rows_updated": total_updated,
         "errors": total_errors,
+        "covid_skipped": total_covid_skipped,
     }
     logger.info("NCAA roster scrape complete: %s", summary)
 

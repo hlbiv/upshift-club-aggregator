@@ -952,6 +952,7 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
                 backfill_seasons,
             )
             sys.exit(2)
+        force_covid = bool(getattr(args, "force_covid", False))
         _run_ncaa_rosters_all(
             division=division,
             gender_program=gender_program,
@@ -960,6 +961,7 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
             skip_fresh_days=int(getattr(args, "skip_fresh_days", 30) or 30),
             force_rescrape=bool(getattr(args, "force_rescrape", False)),
             force_historical=getattr(args, "force_historical", None),
+            force_covid=force_covid,
         )
         return
 
@@ -1066,6 +1068,7 @@ def _run_ncaa_rosters_all(
     skip_fresh_days: int = 30,
     force_rescrape: bool = False,
     force_historical: Optional[str] = None,
+    force_covid: bool = False,
 ) -> None:
     """Dispatch to the pre-existing bulk enumerator.
 
@@ -1077,14 +1080,17 @@ def _run_ncaa_rosters_all(
     Positive N pulls prior seasons via the /roster/<YYYY> (SIDEARM) or
     /roster/season/<YYYY> (Nuxt) URL pattern; writer uses the same
     natural key so re-runs are idempotent.
+
+    ``force_covid=False`` (default) skips the 2020-21 season entirely.
+    Pass True to bypass the guard (e.g. for targeted investigation).
     """
     from extractors.ncaa_soccer_rosters import scrape_college_rosters
 
     logger.info(
         "[ncaa-rosters] --all division=%s gender=%s dry_run=%s backfill_seasons=%d "
-        "skip_fresh_days=%d force_rescrape=%s force_historical=%s",
+        "skip_fresh_days=%d force_rescrape=%s force_historical=%s force_covid=%s",
         division, gender_program, dry_run, backfill_seasons,
-        skip_fresh_days, force_rescrape, force_historical,
+        skip_fresh_days, force_rescrape, force_historical, force_covid,
     )
     result = scrape_college_rosters(
         division=division,
@@ -1094,13 +1100,15 @@ def _run_ncaa_rosters_all(
         skip_fresh_days=skip_fresh_days,
         force_rescrape=force_rescrape,
         force_historical=force_historical,
+        force_covid=force_covid,
     )
     logger.info(
-        "[ncaa-rosters] --all done: scraped=%d inserted=%d updated=%d errors=%d",
+        "[ncaa-rosters] --all done: scraped=%d inserted=%d updated=%d errors=%d covid_skipped=%d",
         result.get("scraped", 0),
         result.get("rows_inserted", 0),
         result.get("rows_updated", 0),
         result.get("errors", 0),
+        result.get("covid_skipped", 0),
     )
 
 
@@ -3094,6 +3102,12 @@ def main() -> None:
                         default=None,
                         help="For --source ncaa-rosters --all: bypass guards for this "
                              "specific academic year only (e.g. --force-historical 2023-24).")
+    parser.add_argument("--force-covid", action="store_true", default=False,
+                        dest="force_covid",
+                        help="Bypass the 2020-21 COVID season skip guard in "
+                             "--source ncaa-rosters --all. By default the scraper "
+                             "skips 2020-21 entirely (NCAA cancelled soccer that "
+                             "year) to avoid wasting Playwright retries.")
     parser.add_argument("--sport", metavar="SPORT", dest="sport", default="soccer",
                         help="Sport identifier for --source ncaa-* handlers. "
                              "Default 'soccer'. New handlers ship with required=True; "
