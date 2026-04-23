@@ -466,7 +466,44 @@ export const TryoutItem = zod.object({
   expires_at: zod.string().nullable().optional(),
 });
 
-/** Query parameters for GET /api/tryouts/search. */
+/**
+ * Public, consumer-safe shape of a tryout row.
+ *
+ * This is the contract the Player Platform consumes via the
+ * `/api/tryouts/search` and `/api/tryouts/upcoming` endpoints. It
+ * intentionally omits internal-only columns: `site_change_id`,
+ * `scraped_at`, `detected_at`, `expires_at`. Treat it as stable —
+ * adding new fields is backwards-compatible, but removing/renaming
+ * existing ones is a breaking change for the Player Platform.
+ */
+export const TryoutPublic = zod.object({
+  id: zod.number(),
+  club_id: zod.number().nullable().optional(),
+  club_name_raw: zod.string(),
+  age_group: zod.string().nullable().optional(),
+  gender: zod.string().nullable().optional(),
+  division: zod.string().nullable().optional(),
+  tryout_date: zod.string().nullable().optional(),
+  registration_deadline: zod.string().nullable().optional(),
+  location_name: zod.string().nullable().optional(),
+  location_address: zod.string().nullable().optional(),
+  location_city: zod.string().nullable().optional(),
+  location_state: zod.string().nullable().optional(),
+  cost: zod.string().nullable().optional(),
+  url: zod.string().nullable().optional(),
+  notes: zod.string().nullable().optional(),
+  source: zod.string(),
+  status: zod.string(),
+});
+
+/**
+ * Query parameters for GET /api/tryouts/search.
+ *
+ * `date_from` / `date_to` are inclusive ISO-8601 date bounds applied
+ * to `tryout_date`. The endpoint also unconditionally floors results
+ * at "now" — past-dated rows are never returned even if `status` is
+ * stale. Page size is capped at 100.
+ */
 export const TryoutSearchParams = zod.object({
   club_name: zod.string().optional(),
   age_group: zod.string().optional(),
@@ -474,13 +511,15 @@ export const TryoutSearchParams = zod.object({
   state: zod.string().optional(),
   status: zod.string().optional(),
   source: zod.string().optional(),
+  date_from: zod.string().optional(),
+  date_to: zod.string().optional(),
   page: zod.coerce.number().optional(),
   page_size: zod.coerce.number().optional(),
 });
 
 /** Paginated response for tryout search / listing endpoints. */
 export const TryoutSearchResponse = zod.object({
-  items: zod.array(TryoutItem),
+  items: zod.array(TryoutPublic),
   total: zod.number(),
   page: zod.number(),
   page_size: zod.number(),
