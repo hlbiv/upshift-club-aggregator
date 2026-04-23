@@ -2087,6 +2087,127 @@ def _prior_academic_years(current: str, n: int) -> List[str]:
     return seasons
 
 
+_MAX_HISTORICAL_ATTEMPTS = 3
+
+
+def should_scrape(
+    college: Dict,
+    season: str,
+    current_season: str,
+    *,
+    conn,
+    skip_fresh_days: int = 30,
+    force_rescrape: bool = False,
+    force_historical: Optional[str] = None,
+) -> tuple:
+    """Decide whether to scrape a (college, season) pair.
+
+    Returns ``(go: bool, reason: str)``.
+
+    Decision tree:
+      1. force_rescrape=True → always scrape (override everything)
+      2. force_historical matches this season → always scrape
+      3. Current season: skip if last_scraped_at < skip_fresh_days ago
+      4. Historical with ≥10 existing players → NEVER re-scrape (data is done)
+      5. Historical with unresolved url_needs_review flag → skip (operator must triage)
+      6. Historical with ≥3 failed attempts (tracked in flag metadata) → skip permanently
+      7. Otherwise: scrape
+
+    Degrades gracefully if ``college_roster_quality_flags`` doesn't exist
+    (pre-PR-24 DB push) — skips flag checks and proceeds.
+    """
+    if force_rescrape:
+        return (True, "force_rescrape")
+    if force_historical and force_historical == season:
+        return (True, "force_historical")
+
+    college_id = college["id"]
+    is_current = season == current_season
+
+    try:
+        with conn.cursor() as cur:
+            if is_current:
+                # Freshness gate: skip if scraped within skip_fresh_days
+                cur.execute(
+                    "SELECT last_scraped_at FROM colleges WHERE id = %s",
+                    (college_id,),
+                )
+                row = cur.fetchone()
+                if row and row[0] is not None:
+                    import datetime
+                    threshold = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=skip_fresh_days)
+                    scraped_at = row[0]
+                    if scraped_at.tzinfo is None:
+                        scraped_at = scraped_at.replace(tzinfo=datetime.timezone.utc)
+                    if scraped_at > threshold:
+                        return (False, f"fresh:scraped_at={scraped_at.date()}")
+            else:
+                # Historical: check existing player count
+                cur.execute(
+                    "SELECT COUNT(*) FROM college_roster_history "
+                    "WHERE college_id = %s AND academic_year = %s",
+                    (college_id, season),
+                )
+                count_row = cur.fetchone()
+                if count_row and (count_row[0] or 0) >= 10:
+                    return (False, f"historical_has_data:count={count_row[0]}")
+
+                # Historical: check flag table (may not exist pre-PR-24)
+                try:
+                    cur.execute(
+                        """
+                        SELECT metadata
+                        FROM college_roster_quality_flags
+                        WHERE college_id = %s
+                          AND academic_year = %s
+                          AND flag_type = %s
+                          AND resolved_at IS NULL
+                        LIMIT 1
+                        """,
+                        (college_id, season, "url_needs_review"),
+                    )
+                    flag_row = cur.fetchone()
+                    if flag_row is not None:
+                        return (False, "unresolved_url_needs_review")
+
+                    # Attempt cap: check historical_no_data flags for attempt count
+                    cur.execute(
+                        """
+                        SELECT metadata
+                        FROM college_roster_quality_flags
+                        WHERE college_id = %s
+                          AND academic_year = %s
+                          AND flag_type = %s
+                        LIMIT 1
+                        """,
+                        (college_id, season, "historical_no_data"),
+                    )
+                    attempt_row = cur.fetchone()
+                    if attempt_row is not None:
+                        meta = attempt_row[0] or {}
+                        attempts = int(meta.get("attempts", 1))
+                        if attempts >= _MAX_HISTORICAL_ATTEMPTS:
+                            return (False, f"max_attempts:{attempts}")
+
+                except Exception as flag_exc:
+                    # UndefinedTable or any other flag-table error — skip flag checks
+                    import psycopg2.errors as _pgerrors
+                    if isinstance(flag_exc, _pgerrors.UndefinedTable):
+                        conn.rollback()
+                        logger.debug("[should_scrape] flag table not yet pushed; skipping flag checks")
+                    else:
+                        logger.debug("[should_scrape] flag check error (non-fatal): %s", flag_exc)
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+
+    except Exception as exc:
+        logger.warning("[should_scrape] DB check failed (proceeding): %s", exc)
+
+    return (True, "ok")
+
+
 def scrape_college_rosters(
     division: Optional[str] = None,
     gender: Optional[str] = None,
@@ -2094,6 +2215,9 @@ def scrape_college_rosters(
     dry_run: bool = False,
     backfill_seasons: int = 0,
     skip_unresolved: bool = True,
+    skip_fresh_days: int = 30,
+    force_rescrape: bool = False,
+    force_historical: Optional[str] = None,
 ) -> Dict:
     """Scrape NCAA rosters and write to college_roster_history.
 
@@ -2114,6 +2238,13 @@ def scrape_college_rosters(
         ``ncaa-resolve-urls`` resolver leaves that NULL when every
         SIDEARM candidate path 404'd, which means the school doesn't
         field the sport. See ``_fetch_colleges`` for detail.
+    skip_fresh_days : int (default 30)
+        Skip current-season scrapes where ``last_scraped_at`` is within
+        this many days. Passed through to ``should_scrape()``.
+    force_rescrape : bool (default False)
+        Bypass all ``should_scrape`` guards for every (college, season).
+    force_historical : str or None
+        Bypass guards for this specific academic year (e.g. ``"2023-24"``).
 
     Returns
     -------
@@ -2210,6 +2341,19 @@ def scrape_college_rosters(
             for season in seasons:
                 is_current = season == current_season
                 season_tag = tag if is_current else f"{tag} [{season}]"
+
+                go, guard_reason = should_scrape(
+                    college,
+                    season,
+                    current_season,
+                    conn=conn,
+                    skip_fresh_days=skip_fresh_days,
+                    force_rescrape=force_rescrape,
+                    force_historical=force_historical,
+                )
+                if not go:
+                    logger.debug("  GUARD SKIP %s reason=%s", season_tag, guard_reason)
+                    continue
 
                 if is_current:
                     target_url = current_roster_url

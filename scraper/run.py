@@ -957,6 +957,9 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
             gender_program=gender_program,
             dry_run=bool(getattr(args, "dry_run", False)),
             backfill_seasons=backfill_seasons,
+            skip_fresh_days=int(getattr(args, "skip_fresh_days", 30) or 30),
+            force_rescrape=bool(getattr(args, "force_rescrape", False)),
+            force_historical=getattr(args, "force_historical", None),
         )
         return
 
@@ -1058,6 +1061,9 @@ def _run_ncaa_rosters_all(
     gender_program: str,
     dry_run: bool,
     backfill_seasons: int = 0,
+    skip_fresh_days: int = 30,
+    force_rescrape: bool = False,
+    force_historical: Optional[str] = None,
 ) -> None:
     """Dispatch to the pre-existing bulk enumerator.
 
@@ -1073,14 +1079,19 @@ def _run_ncaa_rosters_all(
     from extractors.ncaa_rosters import scrape_college_rosters
 
     logger.info(
-        "[ncaa-rosters] --all division=%s gender=%s dry_run=%s backfill_seasons=%d",
+        "[ncaa-rosters] --all division=%s gender=%s dry_run=%s backfill_seasons=%d "
+        "skip_fresh_days=%d force_rescrape=%s force_historical=%s",
         division, gender_program, dry_run, backfill_seasons,
+        skip_fresh_days, force_rescrape, force_historical,
     )
     result = scrape_college_rosters(
         division=division,
         gender=gender_program,
         dry_run=dry_run,
         backfill_seasons=backfill_seasons,
+        skip_fresh_days=skip_fresh_days,
+        force_rescrape=force_rescrape,
+        force_historical=force_historical,
     )
     logger.info(
         "[ncaa-rosters] --all done: scraped=%d inserted=%d updated=%d errors=%d",
@@ -2809,6 +2820,17 @@ def main() -> None:
                         help="For --source ncaa-rosters --all: also pull rosters "
                              "for the prior N seasons (e.g. --backfill-seasons 3 "
                              "→ current + 2023-24 + 2022-23 + 2021-22). Default 0.")
+    parser.add_argument("--skip-fresh-days", metavar="N", type=int,
+                        dest="skip_fresh_days", default=30,
+                        help="For --source ncaa-rosters --all: skip current-season "
+                             "colleges whose last_scraped_at is within N days. Default 30.")
+    parser.add_argument("--force-rescrape", action="store_true", dest="force_rescrape",
+                        help="For --source ncaa-rosters --all: bypass all should_scrape "
+                             "guards (freshness, historical-has-data, max-attempts).")
+    parser.add_argument("--force-historical", metavar="YYYY-YY", dest="force_historical",
+                        default=None,
+                        help="For --source ncaa-rosters --all: bypass guards for this "
+                             "specific academic year only (e.g. --force-historical 2023-24).")
     parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune"],
                         help="Run a derived-data rollup over existing DB rows.")
     parser.add_argument("--full-scan", action="store_true", dest="full_scan",
