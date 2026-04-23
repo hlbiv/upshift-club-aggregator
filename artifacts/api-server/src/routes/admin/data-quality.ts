@@ -84,6 +84,7 @@ import {
   canonicalClubs,
   coachDiscoveries,
   coachQualityFlags,
+  collegeRosterQualityFlags,
   scrapeHealth,
   coachMisses,
   leaguesMaster,
@@ -256,6 +257,16 @@ export function makeDataQualityRouter(deps: DataQualityDeps): IRouter {
   router.patch(
     "/coach-quality-flags/:id/resolve",
     makeResolveCoachQualityFlagHandler(prodResolveCoachQualityFlagDeps),
+  );
+  router.get(
+    "/college-roster-quality-flags",
+    makeCollegeRosterQualityFlagsHandler(prodCollegeRosterQualityFlagsDeps),
+  );
+  router.patch(
+    "/college-roster-quality-flags/:id/resolve",
+    makeResolveCollegeRosterQualityFlagHandler(
+      prodResolveCollegeRosterQualityFlagDeps,
+    ),
   );
   return router;
 }
@@ -1613,6 +1624,253 @@ function toIsoRequired(value: Date | string): string {
   }
   return d.toISOString();
 }
+
+// ---------------------------------------------------------------------------
+// college_roster_quality_flags — GET list + PATCH resolve.
+// Mirrors coach_quality_flags one-for-one; simpler metadata shape.
+// ---------------------------------------------------------------------------
+
+export interface CollegeRosterQualityFlagsDeps {
+  listFlags: (args: {
+    flagType?: string;
+    resolved?: boolean;
+    collegeId?: number;
+    page: number;
+    pageSize: number;
+  }) => Promise<{
+    rows: {
+      id: number;
+      collegeId: number;
+      collegeName: string;
+      academicYear: string;
+      flagType: string;
+      metadata: unknown;
+      createdAt: Date | string;
+      resolvedAt: Date | string | null;
+      resolvedByEmail: string | null;
+      resolutionNote: string | null;
+    }[];
+    total: number;
+  }>;
+}
+
+export function makeCollegeRosterQualityFlagsHandler(
+  deps: CollegeRosterQualityFlagsDeps,
+): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const page = Math.max(1, toNumberOrUndefined(req.query.page) ?? 1);
+      const pageSize = Math.min(
+        200,
+        toNumberOrUndefined(req.query.page_size) ??
+          toNumberOrUndefined(req.query.pageSize) ??
+          toNumberOrUndefined(req.query.limit) ??
+          50,
+      );
+      const flagType = toStringOrUndefined(req.query.flag_type ?? req.query.flagType);
+      const resolved = toBooleanOrUndefined(req.query.resolved);
+      const collegeId = toNumberOrUndefined(req.query.college_id ?? req.query.collegeId);
+
+      const { rows, total } = await deps.listFlags({
+        flagType,
+        resolved,
+        collegeId,
+        page,
+        pageSize,
+      });
+
+      res.json({
+        items: rows.map((r) => ({
+          id: r.id,
+          collegeId: r.collegeId,
+          collegeName: r.collegeName,
+          academicYear: r.academicYear,
+          flagType: r.flagType,
+          metadata: r.metadata ?? {},
+          createdAt: toIsoRequired(r.createdAt),
+          resolvedAt: toIsoOrNull(r.resolvedAt),
+          resolvedByEmail: r.resolvedByEmail ?? null,
+          resolutionNote: r.resolutionNote ?? null,
+        })),
+        total,
+        page,
+        pageSize,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export const prodCollegeRosterQualityFlagsDeps: CollegeRosterQualityFlagsDeps =
+  {
+    listFlags: async ({ flagType, resolved, collegeId, page, pageSize }) => {
+      const offset = (page - 1) * pageSize;
+      const flagTypePredicate = flagType
+        ? sql`crf.flag_type = ${flagType}`
+        : sql`TRUE`;
+      const resolvedPredicate =
+        resolved === undefined
+          ? sql`TRUE`
+          : resolved
+            ? sql`crf.resolved_at IS NOT NULL`
+            : sql`crf.resolved_at IS NULL`;
+      const collegePredicate = collegeId
+        ? sql`crf.college_id = ${collegeId}`
+        : sql`TRUE`;
+
+      const result = await defaultDb.execute<{
+        id: number;
+        college_id: number;
+        college_name: string;
+        academic_year: string;
+        flag_type: string;
+        metadata: unknown;
+        created_at: Date | string;
+        resolved_at: Date | string | null;
+        resolved_by_email: string | null;
+        resolution_note: string | null;
+        total: string;
+      }>(sql`
+        SELECT
+          crf.id,
+          crf.college_id,
+          c.name  AS college_name,
+          crf.academic_year,
+          crf.flag_type,
+          crf.metadata,
+          crf.created_at,
+          crf.resolved_at,
+          au.email AS resolved_by_email,
+          crf.resolution_note,
+          COUNT(*) OVER () AS total
+        FROM ${collegeRosterQualityFlags} crf
+        JOIN ${colleges} c ON c.id = crf.college_id
+        LEFT JOIN ${adminUsers} au ON au.id = crf.resolved_by
+        WHERE ${flagTypePredicate}
+          AND ${resolvedPredicate}
+          AND ${collegePredicate}
+        ORDER BY
+          (crf.resolved_at IS NOT NULL) ASC,
+          crf.created_at ASC,
+          crf.id ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      `);
+
+      const list = Array.from(
+        result as unknown as Array<{
+          id: number;
+          college_id: number;
+          college_name: string;
+          academic_year: string;
+          flag_type: string;
+          metadata: unknown;
+          created_at: Date | string;
+          resolved_at: Date | string | null;
+          resolved_by_email: string | null;
+          resolution_note: string | null;
+          total: string;
+        }>,
+      );
+      const total = list.length > 0 ? parseInt(list[0].total, 10) : 0;
+
+      return {
+        rows: list.map((r) => ({
+          id: r.id,
+          collegeId: r.college_id,
+          collegeName: r.college_name,
+          academicYear: r.academic_year,
+          flagType: r.flag_type,
+          metadata: r.metadata,
+          createdAt: r.created_at,
+          resolvedAt: r.resolved_at,
+          resolvedByEmail: r.resolved_by_email,
+          resolutionNote: r.resolution_note,
+        })),
+        total,
+      };
+    },
+  };
+
+export interface ResolveCollegeRosterQualityFlagDeps {
+  resolveFlag: (args: {
+    id: number;
+    resolvedBy: number | null;
+    resolutionNote?: string | null;
+  }) => Promise<{ outcome: ResolveOutcome }>;
+}
+
+/**
+ * PATCH /api/v1/admin/data-quality/college-roster-quality-flags/:id/resolve
+ * Body: { note?: string }
+ * 204 on success, 400 if already resolved, 404 if unknown id.
+ */
+export function makeResolveCollegeRosterQualityFlagHandler(
+  deps: ResolveCollegeRosterQualityFlagDeps,
+): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+      const adminUserId =
+        req.adminAuth?.kind === "session" ? req.adminAuth.userId : null;
+      const resolutionNote =
+        typeof req.body?.note === "string" ? req.body.note : null;
+
+      const { outcome } = await deps.resolveFlag({
+        id,
+        resolvedBy: adminUserId,
+        resolutionNote,
+      });
+
+      if (outcome === "not_found") {
+        res.status(404).json({ error: "CollegeRosterQualityFlag not found" });
+        return;
+      }
+      if (outcome === "already_resolved") {
+        res.status(400).json({ error: "Flag is already resolved" });
+        return;
+      }
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export const prodResolveCollegeRosterQualityFlagDeps: ResolveCollegeRosterQualityFlagDeps =
+  {
+    resolveFlag: async ({ id, resolvedBy, resolutionNote }) => {
+      const updated = await defaultDb.execute<{ id: number }>(sql`
+        UPDATE ${collegeRosterQualityFlags}
+        SET resolved_at = NOW(),
+            resolved_by = ${resolvedBy},
+            resolution_note = ${resolutionNote ?? null}
+        WHERE id = ${id}
+          AND resolved_at IS NULL
+        RETURNING id
+      `);
+      if (
+        Array.from(updated as unknown as Array<{ id: number }>).length > 0
+      ) {
+        return { outcome: "resolved" };
+      }
+      const existing = await defaultDb.execute<{ id: number }>(sql`
+        SELECT id FROM ${collegeRosterQualityFlags}
+        WHERE id = ${id}
+        LIMIT 1
+      `);
+      return {
+        outcome:
+          Array.from(existing as unknown as Array<{ id: number }>).length > 0
+            ? "already_resolved"
+            : "not_found",
+      };
+    },
+  };
 
 export const dataQualityRouter: IRouter = makeDataQualityRouter({
   scanOrphans,
