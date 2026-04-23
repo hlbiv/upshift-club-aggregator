@@ -82,6 +82,7 @@ class CollegeSeed:
     def to_upsert_row(self) -> dict:
         """Shape expected by ``ingest.ncaa_roster_writer.upsert_college``."""
         row = asdict(self)
+        row["sport"] = "soccer"
         row["scrape_confidence"] = 0.9
         return row
 
