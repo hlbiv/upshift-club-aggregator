@@ -37,7 +37,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from extractors import ncaa_rosters  # noqa: E402
+from extractors import ncaa_soccer_rosters as ncaa_rosters  # noqa: E402
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "ncaa"

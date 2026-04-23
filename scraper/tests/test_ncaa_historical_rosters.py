@@ -27,14 +27,14 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from extractors.ncaa_rosters import (  # noqa: E402
+from extractors.ncaa_soccer_rosters import (  # noqa: E402
     RosterPlayer,
     _find_historical_roster,
     _prior_academic_years,
     _start_year_from_academic_year,
     compose_historical_roster_urls,
 )
-from extractors import ncaa_rosters  # noqa: E402
+from extractors import ncaa_soccer_rosters as ncaa_rosters  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

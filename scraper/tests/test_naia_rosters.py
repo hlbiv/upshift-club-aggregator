@@ -17,7 +17,7 @@ import pytest
 # Ensure scraper package is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from extractors.ncaa_rosters import (  # noqa: E402
+from extractors.ncaa_soccer_rosters import (  # noqa: E402
     normalize_year,
     parse_roster_html,
 )
@@ -129,7 +129,7 @@ class TestDryRunNoWrites:
     """Verify dry_run=True never calls psycopg2."""
 
     @mock.patch("extractors.naia_rosters.psycopg2", None)
-    @mock.patch("extractors.ncaa_rosters.psycopg2", None)
+    @mock.patch("extractors.ncaa_soccer_rosters.psycopg2", None)
     def test_dry_run_without_db_returns_zero(self):
         """With no DB available, dry_run returns zeros without error."""
         result = scrape_naia_rosters(dry_run=True)

@@ -44,7 +44,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from bs4 import BeautifulSoup  # noqa: E402
 
-from extractors.ncaa_rosters import parse_roster_html  # noqa: E402
+from extractors.ncaa_soccer_rosters import parse_roster_html  # noqa: E402
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "ncaa"
