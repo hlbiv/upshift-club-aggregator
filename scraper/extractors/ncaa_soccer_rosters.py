@@ -42,7 +42,7 @@ CSS selectors used for SIDEARM roster pages (strategy 1 in
 
 CLI::
 
-    python -m scraper.extractors.ncaa_rosters \\
+    python -m scraper.extractors.ncaa_soccer_rosters \\
         [--division D1|D2|D3] [--gender mens|womens] \\
         [--limit 5] [--dry-run]
 """
@@ -68,7 +68,7 @@ from bs4 import BeautifulSoup, Tag
 # ---------------------------------------------------------------------------
 
 # Ensure the parent ``scraper/`` package is importable when invoked as
-# ``python -m scraper.extractors.ncaa_rosters``.
+# ``python -m scraper.extractors.ncaa_soccer_rosters``.
 _SCRAPER_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SCRAPER_ROOT not in sys.path:
     sys.path.insert(0, _SCRAPER_ROOT)

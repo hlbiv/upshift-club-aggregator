@@ -1,5 +1,5 @@
 """
-Tests for extractors.ncaa_rosters.should_scrape.
+Tests for extractors.ncaa_soccer_rosters.should_scrape.
 
 Covers all decision tree branches:
 1. force_rescrape=True → always go
@@ -29,7 +29,7 @@ except (ImportError, AttributeError):
     class _UndefinedTable(Exception):  # type: ignore[no-redef]
         pass
 
-from extractors.ncaa_rosters import should_scrape, _MAX_HISTORICAL_ATTEMPTS  # noqa: E402
+from extractors.ncaa_soccer_rosters import should_scrape, _MAX_HISTORICAL_ATTEMPTS  # noqa: E402
 
 CURRENT = "2025-26"
 HISTORICAL = "2024-25"

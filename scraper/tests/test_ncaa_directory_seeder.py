@@ -7,7 +7,7 @@ Covers:
 - ``CollegeSeed.to_upsert_row`` — shape expected by the writer
 - ``fetch_d1_programs`` — happy-path HTTP fetch, parser composition
 - Writer integration — the seeder's upsert hits the named
-  ``ON CONFLICT ON CONSTRAINT colleges_name_division_gender_uq`` clause
+  ``ON CONFLICT ON CONSTRAINT colleges_name_division_gender_sport_uq`` clause
   via ``ingest.ncaa_roster_writer.upsert_college``, idempotent across
   re-runs.
 - CLI handler ``_handle_ncaa_seed_d1`` — dry-run path does not write to
@@ -145,6 +145,7 @@ class TestCollegeSeedToUpsertRow:
         assert row["ncaa_id"] == "736"
         assert row["conference"] == "Big Ten"
         assert row["state"] is None
+        assert row["sport"] == "soccer"
         assert row["scrape_confidence"] == 0.9
 
     def test_row_passes_writer_normalization(self):
@@ -200,11 +201,11 @@ class TestWriterNamedConstraint:
         """Guard against a silent switch from named constraint to column-list.
 
         Both forms hit the same unique index, but the writer uses the
-        named form today (``ON CONFLICT ON CONSTRAINT colleges_name_division_gender_uq``)
+        named form today (``ON CONFLICT ON CONSTRAINT colleges_name_division_gender_sport_uq``)
         and a refactor to columns would be a behavior change worth flagging.
         """
         sql = ncaa_roster_writer._UPSERT_COLLEGE_SQL
-        assert "ON CONFLICT ON CONSTRAINT colleges_name_division_gender_uq" in sql
+        assert "ON CONFLICT ON CONSTRAINT colleges_name_division_gender_sport_uq" in sql
 
     def test_upsert_executes_named_constraint_sql(self):
         """The writer's ``upsert_college`` must execute the named-constraint SQL."""
@@ -231,7 +232,7 @@ class TestWriterNamedConstraint:
         assert inserted is True
 
         executed_sql, executed_params = fake_cursor.execute.call_args[0]
-        assert "ON CONFLICT ON CONSTRAINT colleges_name_division_gender_uq" in executed_sql
+        assert "ON CONFLICT ON CONSTRAINT colleges_name_division_gender_sport_uq" in executed_sql
         assert executed_params["name"] == "UCLA"
         assert executed_params["slug"] == "ucla-d1-mens"
         assert executed_params["division"] == "D1"

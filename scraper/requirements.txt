@@ -7,3 +7,5 @@ lxml>=4.9
 html5lib>=1.1
 pdfplumber>=0.11
 replit-object-storage>=1.0
+psycopg2-binary>=2.9
+pyyaml>=6.0

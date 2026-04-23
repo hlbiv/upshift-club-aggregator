@@ -25,7 +25,7 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from extractors.ncaa_rosters import extract_head_coach_from_html  # noqa: E402
+from extractors.ncaa_soccer_rosters import extract_head_coach_from_html  # noqa: E402
 
 UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "

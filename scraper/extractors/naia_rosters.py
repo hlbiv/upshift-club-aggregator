@@ -49,7 +49,7 @@ from scrape_run_logger import ScrapeRunLogger, FailureKind, classify_exception  
 from alerts import alert_scraper_failure  # noqa: E402
 
 # Reuse parsing + normalization from the NCAA scraper — don't duplicate
-from extractors.ncaa_rosters import (  # noqa: E402
+from extractors.ncaa_soccer_rosters import (  # noqa: E402
     RosterPlayer,
     normalize_year,
     parse_roster_html,
