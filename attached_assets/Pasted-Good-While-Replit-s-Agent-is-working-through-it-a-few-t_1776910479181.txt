@@ -1,0 +1,41 @@
+Good. While Replit's Agent is working through it, a few things worth staging so you're ready when it comes back:
+
+## What to verify when Replit reports back
+
+1. **Migration number** — confirm it landed as the next sequential number (probably 0014) and didn't collide with anything from the Cards v1 branch that hasn't merged yet. If you see a collision warning, that's the Cards migration 0010 issue resurfacing — flag it before pushing to prod.
+
+2. **The generated SQL matches expectations** — specifically:
+   - `CREATE TYPE` for the enum with all five values
+   - `ALTER TABLE organizations ADD COLUMN` with `NOT NULL DEFAULT 'competitive'`
+   - No unexpected `ALTER` on other columns (if Drizzle generated extras, something drifted in the schema file)
+
+3. **Backfill distribution sanity check** — run the SQL from the previous message after backfill:
+   ```sql
+   SELECT competitive_tier, COUNT(*) FROM organizations GROUP BY 1;
+   ```
+   Expected rough shape (based on Boswell state):
+   - `academy`: ~29 (MLS Academy clubs)
+   - `elite`: several hundred (ECNL + GA + NPL + ECNL RL once built)
+   - `competitive`: the bulk — state assoc orgs + unclassified
+   - `recreational` / `recreational_plus`: 0 until you add rec scrapers
+
+4. **Concorde Fire spot-check** — should return `elite`. If it doesn't, the `regional_league_id` linkage for that org is broken, which is a separate bug worth catching.
+
+## If Replit's Agent hits a snag
+
+Most likely failure modes:
+- **`regional_leagues.scraper_key` column doesn't exist with that name** — if the backfill script errors on the select, the column is probably `name` or `key` or `slug`. Adjust the `TIER_BY_LEAGUE_KEY` lookup to match.
+- **Drizzle complains about enum already existing** — happens if a previous migration attempt partially ran. Fix: `DROP TYPE IF EXISTS competitive_tier CASCADE;` then re-run.
+- **Push hangs on prod DB** — Neon sometimes needs a connection reset. Not a schema problem.
+
+## While you wait
+
+If Replit takes more than a couple minutes, don't context-switch to a new thread — it's a small migration, should be fast. If it's stalling, that's a signal something's wrong with the Drizzle config, not with the migration itself.
+
+## Next steps
+
+1. Report back what Replit shows — generated SQL, backfill output, any errors
+2. Once distribution looks right, commit the Boswell memory from last message
+3. Then we can either pick up the Influence deep-dive or switch to Boxi dry run prep
+
+What did Replit come back with?

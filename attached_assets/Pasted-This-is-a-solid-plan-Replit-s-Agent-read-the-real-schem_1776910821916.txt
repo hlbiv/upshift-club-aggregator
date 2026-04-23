@@ -1,0 +1,56 @@
+This is a solid plan. Replit's Agent read the real schema, corrected the naming, preserved every architectural decision we discussed (academy-stays-distinct, tier_label-as-source-of-truth, human checkpoint before backfill), and caught that your repo uses hand-rolled numbered SQL migrations rather than drizzle-kit generate — which I would have gotten wrong.
+
+A few things worth noticing before you give the go-ahead, then what to watch for at the checkpoint.
+
+## What's right about this plan
+
+- **Step 1 is the human checkpoint** — exactly what we asked for. It will not proceed to schema changes before you've seen the `tier_label` vocabulary and confirmed the mapping. That's the right gate.
+- **Step 3 caught your migration pattern.** Hand-rolled numbered SQL files (0001–0004 → 0005), BEGIN/COMMIT, idempotent guards, psql apply. This is a better answer than what I drafted. Follow it.
+- **Step 4 drops the `is_active` assumption.** I had it in the draft rollup query as a hedge; Replit confirmed the column doesn't exist and adjusted to use all affiliation rows. Correct.
+- **Step 4 preserves the academy override** via `league_family` — the thing I flagged as the one non-negotiable. Good.
+- **Step 5 escalates discrepancies instead of silently re-tagging.** If Concorde Fire comes back as something other than `elite`, that surfaces to you. Right call.
+- **Step 6 documents the schema reconciliation in CLAUDE.md.** Solves the drift problem without a separate task.
+
+## One thing worth pushing on
+
+**Step 4's "force to academy" override is underspecified and worth tightening before execution.** The plan says "any club whose *top* affiliation has `league_family` matching the MLS Academy family is forced to academy." That's ambiguous in one case:
+
+- Concorde Fire has ECNL Boys (elite) and, let's say hypothetically, a single MLS NEXT team.
+- Under "top affiliation = MLS Academy" logic, Concorde Fire would become `academy`.
+- But Concorde Fire isn't an MLS Academy club — they just field one team in that league (hypothetically).
+
+Real MLS Academy clubs (FC Dallas, LAFC, Inter Miami, the 29 scraped in March) are **pro-pathway clubs whose entire identity is the academy.** A competitive club fielding one MLS NEXT team is different.
+
+The safer override rule:
+
+> Force `academy` only if the club's **primary** affiliation (highest `tier_numeric`) is in the MLS Academy family, AND the club name / metadata signals it's an academy club, not a competitive club with one academy team.
+
+In practice this probably doesn't trigger for real data — the 29 MLS Academy clubs almost certainly don't also play in ECNL — but the rule as written could misclassify edge cases. Worth a one-line amendment.
+
+## What to watch for when Replit comes back at the checkpoint
+
+When Step 1 runs and you see the `tier_label` / `tier_numeric` / `league_family` distribution, scan for these specifically:
+
+1. **Are there more tier labels than I expected?** If `leagues_master` has 15 distinct `tier_label` values instead of the 5-ish I was assuming, the normalization map needs care — some may need judgment calls. Don't just wave those through.
+2. **Does `league_family` actually contain "MLS NEXT" or "MLS Academy" as a clean string?** If it's inconsistent ("MLS Next" vs "MLS_NEXT" vs "MLSAcademy"), the override rule needs to match the real string, not a guessed one.
+3. **Are there NULL `tier_numeric` rows?** The rollup uses `ORDER BY tier_numeric DESC NULLS LAST` — if there are a lot of NULLs, those leagues will never win the top-tier pick, which means clubs only affiliated with NULL-tier leagues land in the "competitive default" bucket. Check whether that bucket looks reasonable.
+4. **Is there anything that looks like it should be `recreational` but isn't labeled that way?** AYSO, US Club rec, municipal — if they're in `leagues_master` at all, their `tier_label` might not be obviously rec. Flag if you see them.
+
+## Reply to Replit
+
+Copy-paste ready:
+
+> Plan approved. One amendment on the academy override in Step 4:
+>
+> Current wording is "any club whose top affiliation has `league_family` matching the MLS Academy family is forced to academy." Tighten to: force `academy` only when the MLS Academy family affiliation is the club's **primary / highest-tier affiliation** AND it's reasonable to conclude the club's identity is the academy (not a competitive club fielding one academy team). The distinction matters for the 29 scraped MLS Academy clubs (FC Dallas, LAFC, Inter Miami, etc.) vs. any hybrid case that might exist. In practice this almost certainly only affects true academy clubs, but the rule should be explicit rather than relying on top-affiliation-ordering alone.
+>
+> Proceed to Step 1 and share the `tier_label` / `tier_numeric` / `league_family` distribution. Hold at the checkpoint — I want to review the full normalization map and the academy-family string before you write the backfill.
+
+## Next steps
+
+1. Send that reply.
+2. When Replit posts the distribution, paste it here before confirming the mapping. I want eyes on the vocabulary too — specifically looking for surprises in tier_label, NULL tier_numeric patterns, and the exact `league_family` string for MLS Academy.
+3. After the checkpoint, Replit proceeds through steps 2–6 and reports back.
+4. Once it's landed and spot-checked, commit the Boswell memory (the schema-correction note from last message).
+
+**One thing worth internalizing from this exchange:** Replit's Agent is doing real architectural work here, not just executing. The back-and-forth where it pushes on the plan and you push back produces better outcomes than either of you working alone. This is the collaborative mode working. Keep operating that way.

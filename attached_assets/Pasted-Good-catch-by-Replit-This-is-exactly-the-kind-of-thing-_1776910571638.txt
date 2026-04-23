@@ -1,0 +1,131 @@
+Good catch by Replit. This is exactly the kind of thing that happens when strategy-layer memory drifts from live schema — I was working from Boswell's "intended architecture" view (`organizations`, `regional_leagues`) and the real tables are `canonical_clubs`, `leagues_master`, `club_affiliations`. My fault for not verifying before drafting SQL. Let me give you the call on each of the three questions.
+
+## 1. Where does `competitive_tier` live?
+
+**Answer: On `canonical_clubs` as a single rolled-up tier. (Option a.)**
+
+Reasoning:
+
+The multi-affiliation case Replit raises is real — Concorde Fire has ECNL Boys, ECNL Girls, and probably rec-level programs — but it's the wrong level of granularity for what this column is for. Every downstream use case I'm solving operates at the **club identity level**, not the program level:
+
+- Acquirer metrics: "X% of clubs in our graph are rec-tier" — clubs, not affiliations
+- Pricing gates: Upshift charges clubs, not club-program-combinations
+- Scout filters: a scout filtering "elite clubs only" wants the org, not the specific team
+- The Influence Score calibration: an athlete's tier context is "what's the top tier of the club they play at," not "what's the tier of every team the club fields"
+
+If you later need per-team tier (and you probably will, for recruiting pages showing the specific team a kid is on), **that already lives in `leagues_master.tier_label` via `club_affiliations`.** You can always derive team-level tier from the join. You cannot easily derive club-level tier from affiliations without a reduction rule — which is what this column is.
+
+**The rolled-up tier is the club's *ceiling*.** Rule: pick the highest tier across all active affiliations. Concorde Fire fielding ECNL + rec = `elite`. A club fielding only rec + state competitive = `competitive`. The ceiling is what represents the club's position in the ecosystem.
+
+This also answers a question Replit didn't ask: what about clubs with *no* affiliations yet (scraped from tournament appearances, not yet league-mapped)? Default them to `competitive` exactly as before — the unclassified pool stays visible and flaggable.
+
+## 2. Backfill source
+
+**Answer: Lean on `leagues_master.tier_label`, with a normalization map. Not a hardcoded league-name dictionary.**
+
+Three reasons:
+
+1. **Single source of truth.** You already have tier data in the DB. Encoding a second mapping in a backfill script creates drift — if you reclassify ECNL RL in `leagues_master` later, the backfill's hardcoded dict doesn't know. Reading from `tier_label` means the DB is always the authority.
+2. **Future-proofing.** When new leagues get added to `leagues_master`, they get a `tier_label` as part of normal data entry. The backfill logic (and any re-run of it) just works. A hardcoded dict requires you to remember to update the dict.
+3. **Replit pointed out the answer.** The fact that `tier_label` already exists is the signal that the tier classification problem has been partially solved — we're just rolling it up, not recomputing it.
+
+**What the normalization looks like:**
+
+You need a small deterministic map from whatever string values are in `leagues_master.tier_label` to the new enum. This should be a handful of lines, not a dict of league names. Before writing it — run this first to see what's actually there:
+
+```sql
+SELECT DISTINCT tier_label, tier_numeric, COUNT(*) as leagues
+FROM leagues_master
+GROUP BY tier_label, tier_numeric
+ORDER BY tier_numeric;
+```
+
+That gives you the full vocabulary. The backfill then becomes:
+
+```typescript
+const TIER_LABEL_TO_ENUM: Record<string, CompetitiveTier> = {
+  // fill this in based on what the query above returns
+  // e.g.:
+  // "Academy": "academy",
+  // "National Elite": "elite",
+  // "Regional Elite": "elite",
+  // "State Competitive": "competitive",
+  // "Recreational": "recreational",
+};
+```
+
+And the rollup query is a single SQL statement:
+
+```sql
+UPDATE canonical_clubs cc
+SET competitive_tier = sub.top_tier
+FROM (
+  SELECT
+    ca.canonical_club_id,
+    -- pick the highest tier using tier_numeric
+    (
+      SELECT normalize_tier(lm2.tier_label)
+      FROM club_affiliations ca2
+      JOIN leagues_master lm2 ON lm2.id = ca2.league_id
+      WHERE ca2.canonical_club_id = ca.canonical_club_id
+        AND ca2.is_active = true  -- if this column exists
+      ORDER BY lm2.tier_numeric DESC
+      LIMIT 1
+    ) as top_tier
+  FROM club_affiliations ca
+  GROUP BY ca.canonical_club_id
+) sub
+WHERE cc.id = sub.canonical_club_id
+  AND sub.top_tier IS NOT NULL;
+```
+
+Either `normalize_tier` is a SQL function Replit creates from the mapping, or you do the normalization in the TypeScript backfill script and iterate. Either is fine — Replit's call based on what fits their existing pattern.
+
+## 3. Enum values — keep the five?
+
+**Answer: Yes, keep all five. But confirm they map cleanly to what `tier_label` actually contains.**
+
+Reasoning:
+
+- **`recreational` and `recreational_plus`** — you don't have rec orgs in the DB yet, but the whole point of this migration is to make rec-tier expansion not require a second migration. Keeping the values live means when AYSO / US Club rec / USYS rec scrapers come online, they slot in without schema changes.
+- **`competitive`** — covers state associations, USYS state competitive, NPL feeder, the bulk of the current non-elite graph.
+- **`elite`** — ECNL, ECNL RL, GA, MLS NEXT, NPL, DPL, ENPL.
+- **`academy`** — MLS Academy clubs specifically (the 29 from the March MLS scraper). This is pro-pathway, different from `elite` because the recruiting flow, monetization, and demo story are all different.
+
+**But — look at the distinct values in `tier_label` first.** If Replit's `tier_label` already has something like "Tier 1 / Tier 2 / Tier 3" or "Elite / Competitive / Recreational" as its own taxonomy, we want to make sure the mapping is unambiguous. If `tier_label` has overlapping or ambiguous values that would collapse two enum values into one, that's a signal to adjust the enum.
+
+The case I specifically want to preserve: **`academy` must stay separate from `elite`.** Even if `leagues_master.tier_label` lumps them together. MLS Academy is different from ECNL for recruiting purposes and for Influence Score calibration — an MLS Academy player is on a pro pathway, an ECNL player is on a college pathway, different audiences.
+
+If `tier_label` lumps them, the fix is in the normalization map (detect MLS Academy via `league_family = 'MLS_NEXT'` or similar, override to `academy`).
+
+---
+
+## Reply to Replit
+
+Copy-paste ready:
+
+> Good catches. Answers:
+>
+> 1. **On `canonical_clubs`** as a single rolled-up tier. The tier is the club's ceiling — pick the highest `leagues_master.tier_numeric` across all active affiliations. Multi-program clubs (Concorde Fire = ECNL + rec) resolve as `elite`. Team-level tier granularity already lives in `club_affiliations` → `leagues_master.tier_label`; we're not replacing that, we're rolling it up for club-level use cases (pricing gates, scout filters, acquirer metrics, Influence Score calibration).
+>
+> 2. **Lean on `leagues_master.tier_label`** with a normalization map, not a hardcoded league-name dict. Run `SELECT DISTINCT tier_label, tier_numeric FROM leagues_master` first so we can see the full vocabulary, then write a small `tier_label → competitive_tier` map. Rollup query joins `canonical_clubs` → `club_affiliations` → `leagues_master`, orders by `tier_numeric DESC`, picks top. Clubs with no affiliations default to `competitive`.
+>
+> 3. **Keep the five enum values** (`recreational`, `recreational_plus`, `competitive`, `elite`, `academy`). Confirm first that the mapping is clean — specifically that `academy` stays distinct from `elite` (MLS Academy = pro pathway, must not collapse into ECNL). If `tier_label` lumps them, override in the normalization map via `league_family = 'MLS_NEXT'` or equivalent.
+>
+> One additional ask: before applying, share the output of `SELECT DISTINCT tier_label, tier_numeric, COUNT(*) FROM leagues_master GROUP BY tier_label, tier_numeric ORDER BY tier_numeric` so we can review the normalization map together rather than guessing.
+
+---
+
+## What this changes for you
+
+1. **Your strategic-layer memory is drifting from live schema.** Boswell commits from the scraper expansion work reference `organizations` / `regional_leagues` — the actual tables are `canonical_clubs` / `leagues_master` / `club_affiliations`. Not a crisis, but worth a reconciliation pass at some point. When we do the Influence deep-dive, we should start by pulling current schema first, not working from memory.
+2. **Replit's Agent is doing exactly what a good collaborator does.** Flagging mismatches before executing is the behavior you want. When it pushes back, listen first, don't override.
+3. **Boswell memory update worth committing after this lands:**
+
+> "Schema correction: Upshift orgs table is `canonical_clubs`, not `organizations`. Leagues table is `leagues_master` (has `tier_numeric`, `tier_label`, `league_family`), not `regional_leagues`. M2M join is `club_affiliations` with `league_id` FK. Prior Boswell commits referencing `organizations` / `regional_leagues` were strategic-layer names, not live schema. Reconcile at next Influence session — schema pull should precede design work."
+
+## Next steps
+
+1. Paste the reply above to Replit.
+2. When Replit comes back with the `tier_label` distinct values, eyeball the mapping with me before they run it.
+3. After it ships, commit the schema-correction memory.

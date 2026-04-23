@@ -1,0 +1,154 @@
+Part 2: The migration SQL
+After editing the schema, run pnpm drizzle-kit generate — Drizzle will generate migration 0014_add_competitive_tier.sql (or whatever number is next after your last one). It should produce roughly this:
+sql-- Migration: 0014_add_competitive_tier.sql
+
+CREATE TYPE "public"."competitive_tier" AS ENUM (
+  'recreational',
+  'recreational_plus',
+  'competitive',
+  'elite',
+  'academy'
+);
+
+ALTER TABLE "organizations"
+  ADD COLUMN "competitive_tier" "competitive_tier"
+  NOT NULL
+  DEFAULT 'competitive';
+Part 3: The backfill script
+Drizzle won't backfill logically — it just adds the column with the default. You need a separate backfill script to classify existing orgs based on regional_league_id and any tier-indicating fields.
+File: scripts/src/backfill-competitive-tier.ts
+typescriptimport { db } from "../../lib/db/src";
+import { organizations, regionalLeagues } from "../../lib/db/src/schema";
+import { eq, inArray, isNotNull, sql } from "drizzle-orm";
+
+/**
+ * Backfill organizations.competitive_tier based on regional_league_id mapping.
+ *
+ * Assumes regional_leagues table has a `key` or `name` column identifying
+ * which league an org belongs to. Adjust the mapping if your schema differs.
+ */
+
+const TIER_BY_LEAGUE_KEY: Record<string, string> = {
+  // Academy tier — MLS pro pathway
+  mls_next: "academy",
+  mls_academy: "academy",
+
+  // Elite tier — national/regional premier
+  ecnl_boys: "elite",
+  ecnl_girls: "elite",
+  ecnl_rl_boys: "elite",
+  ecnl_rl_girls: "elite",
+  ga: "elite",
+  girls_academy: "elite",
+  npl: "elite",
+  enpl: "elite",
+  dpl: "elite",
+
+  // Competitive tier — state and regional
+  sccl: "competitive",
+  usys: "competitive",
+
+  // Add more mappings as you discover them in your regional_leagues table
+};
+
+async function backfill() {
+  console.log("Starting competitive_tier backfill...");
+
+  // 1. Fetch all regional_leagues with their keys
+  const leagues = await db.select().from(regionalLeagues);
+
+  console.log(`Found ${leagues.length} regional leagues`);
+
+  // 2. For each league, update all orgs pointing to it
+  let totalUpdated = 0;
+  for (const league of leagues) {
+    const tier = TIER_BY_LEAGUE_KEY[league.scraperKey ?? league.name];
+
+    if (!tier) {
+      console.warn(
+        `No tier mapping for league: ${league.name} (${league.scraperKey}) — orgs will keep default 'competitive'`
+      );
+      continue;
+    }
+
+    const result = await db
+      .update(organizations)
+      .set({ competitiveTier: tier as any })
+      .where(eq(organizations.regionalLeagueId, league.id));
+
+    const count = result.rowCount ?? 0;
+    totalUpdated += count;
+    console.log(`  ${league.name} → ${tier}: ${count} orgs`);
+  }
+
+  // 3. Orgs with NULL regional_league_id keep default 'competitive'
+  // Report on how many that is so you know the unclassified pool
+  const unclassified = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(organizations)
+    .where(sql`${organizations.regionalLeagueId} IS NULL`);
+
+  console.log(`\nBackfill complete.`);
+  console.log(`  Updated: ${totalUpdated} orgs`);
+  console.log(`  Unclassified (default 'competitive'): ${unclassified[0].count} orgs`);
+  console.log(
+    `  These may need manual review — especially if any are actually rec or academy tier.`
+  );
+}
+
+backfill()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error("Backfill failed:", err);
+    process.exit(1);
+  });
+Run order in Replit
+bash# 1. Edit lib/db/src/schema/organizations.ts (add enum + column)
+
+# 2. Generate migration
+pnpm drizzle-kit generate
+
+# 3. Review the generated SQL in drizzle/migrations/ — confirm it matches Part 2
+
+# 4. Apply migration to DB
+pnpm drizzle-kit push
+# or if you use migrate: pnpm drizzle-kit migrate
+
+# 5. Run the backfill
+pnpm tsx scripts/src/backfill-competitive-tier.ts
+
+# 6. Spot-check in psql or Drizzle Studio
+#    SELECT competitive_tier, COUNT(*) FROM organizations GROUP BY 1;
+What you should verify after running
+sql-- Sanity check the distribution
+SELECT competitive_tier, COUNT(*) as org_count
+FROM organizations
+GROUP BY competitive_tier
+ORDER BY org_count DESC;
+
+-- Concorde Fire should show as 'elite' (ECNL)
+SELECT name, competitive_tier FROM organizations WHERE name ILIKE '%concorde%';
+
+-- Any MLS Academy orgs should show as 'academy'
+SELECT name, competitive_tier FROM organizations WHERE name ILIKE '%FC Dallas%' OR name ILIKE '%LAFC%';
+If Concorde Fire doesn't come back as elite or the MLS clubs don't come back as academy, your TIER_BY_LEAGUE_KEY mapping needs to be adjusted to match whatever actual values live in your regional_leagues.scraper_key or name column. I'm guessing at the shape of that table from memory — inspect it first if the backfill looks off.
+
+Caveats before you run this
+
+I don't know your exact regional_leagues column names. I referenced scraperKey and name because that's what the March 18 expansion commit implies. Open lib/db/src/schema/regional-leagues.ts (or wherever that table lives) and confirm the column names before running the backfill. Adjust TIER_BY_LEAGUE_KEY keys to match.
+Migration number. The Boswell notes show Migration 0013 was shadow_players partial unique indexes and there was a 0010 collision flagged in the Cards v1 work. Run pnpm drizzle-kit generate and let Drizzle pick the next number — don't hardcode 0014.
+Default of 'competitive' is deliberately the safer miss. Orgs with NULL regional_league_id become competitive by default. This means:
+
+If a real rec league org is unclassified, it's wrongly labeled as competitive (mild problem — you'll see too many "rec" kids in competitive filters until you reclassify)
+If a real academy org is unclassified, same problem (less mild — academy orgs should be rare enough that you can manually fix them)
+Better than defaulting to recreational, which would hide elite orgs from recruiting filters until reclassified
+
+
+This doesn't solve the AYSO / US Club rec scraping question. That's a separate piece of work — you still need to decide whether to build rec scrapers, and the Club Discovery spec currently says no. This migration just makes sure that when you do add rec orgs, they're taggable from day one.
+
+
+Next steps
+
+Run this before the next Upshift session where you're touching organizations or scrapers — it's the kind of change you want settled and boring before you build on top of it.
+After it ships, the Influence deep-dive session is next. Block 60–90 min — the minors-compliance piece alone is worth real thought.
+Skip the domain grab. Set a Namecheap watch on upshiftinfluence.com if you're twitchy about it, but don't buy.
