@@ -13,6 +13,7 @@ import StaleScrapesPage from "./pages/dataquality/StaleScrapes";
 import CoachMissesPage from "./pages/dataquality/CoachMisses";
 import NavLeakedPage from "./pages/dataquality/NavLeaked";
 import NumericOnlyPage from "./pages/dataquality/NumericOnly";
+import ProAcademiesPage from "./pages/dataquality/ProAcademies";
 import GrowthPage from "./pages/Growth";
 import CoveragePage from "./pages/Coverage";
 import CoverageLeaguePage from "./pages/CoverageLeague";
@@ -144,6 +145,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <NumericOnlyPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/data-quality/pro-academies"
+        element={
+          <ProtectedRoute>
+            <ProAcademiesPage />
           </ProtectedRoute>
         }
       />

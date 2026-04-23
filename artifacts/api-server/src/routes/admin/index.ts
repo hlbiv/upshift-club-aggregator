@@ -21,6 +21,7 @@ import scrapeRunsRouter from "./scrape-runs";
 import scrapeHealthRouter from "./scrape-health";
 import { dedupRouter } from "./dedup";
 import { dataQualityRouter } from "./data-quality";
+import { proAcademiesRouter } from "./pro-academies";
 import growthRouter from "./growth";
 import coverageRouter from "./coverage";
 import {
@@ -38,6 +39,7 @@ authedAdminRouter.use("/scrape-runs", scrapeRunsRouter);
 authedAdminRouter.use("/scrape-health", scrapeHealthRouter);
 authedAdminRouter.use("/dedup", dedupRouter);
 authedAdminRouter.use("/data-quality", dataQualityRouter);
+authedAdminRouter.use("/pro-academies", proAcademiesRouter);
 authedAdminRouter.use("/growth", growthRouter);
 authedAdminRouter.use("/coverage", coverageRouter);
 // Scheduler (S.3) — "Run now" is super_admin-gated inside the sub-router;

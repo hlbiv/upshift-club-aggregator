@@ -26,6 +26,18 @@
  * Idempotent: re-runs converge to the same set of TRUE flags. Clubs
  * not in the list are reset to FALSE so removing an entry from the
  * list propagates on the next run.
+ *
+ * @deprecated as the day-to-day source of truth — task #82.
+ *
+ * The pro-academy allow-list is now operator-editable from the admin
+ * dashboard at `/data-quality/pro-academies`, which PATCHes
+ * `canonical_clubs.is_pro_academy` and re-runs the per-club tier rollup
+ * inline. PRO_ACADEMY_NAMES below is kept as the audit-trail bootstrap
+ * seed (used to repopulate the flag after a DB reset, and as the
+ * historical record of the curated names that originally seeded the
+ * column). DO NOT add new academies here without also flipping them in
+ * the dashboard — the dashboard write is what production reads. This
+ * script remains the recommended way to seed a fresh database.
  */
 
 import { pool } from "@workspace/db";

@@ -7,7 +7,7 @@
  */
 
 /**
- * Per-league aggregate coverage stats. A club belongs to a league via `club_affiliations.source_name = leagues_master.league_name` (exact match — there is no `leagues_master.aliases` column today).
+ * Per-league aggregate coverage stats. A club belongs to a league via `club_affiliations.league_id = leagues_master.id` — joined on a stable id rather than a name string, so a `leagues_master.league_name` rename cannot drop the league.
 
  */
 export interface CoverageLeagueRow {

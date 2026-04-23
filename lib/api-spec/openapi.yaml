@@ -1502,6 +1502,124 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/pro-academies:
+    get:
+      operationId: getProAcademies
+      tags: [admin]
+      summary: List academy-family-affiliated clubs with their pro-academy flag
+      description: >
+        Returns every `canonical_clubs` row that has at least one
+        affiliation in a tier-1 academy family (MLS NEXT / NWSL Academy /
+        USL Academy), surfaced with the current `is_pro_academy` flag and
+        the rolled-up `competitive_tier`. This is the operator-facing view
+        of the curated allow-list previously edited by hand in
+        `scripts/src/seed-pro-academies.ts` — flipping the flag here
+        persists to the DB and re-runs the per-club tier rollup, so
+        operators no longer need a code change + redeploy to add or
+        remove a pro academy.
+
+        `families` is the deduplicated set of academy families the club
+        plays in at tier 1 — usually a single family, but multi-affiliated
+        clubs (e.g. boys MLS NEXT + girls NWSL Academy) surface both.
+
+        Optional `flag` filter: `all` (default) returns every academy-
+        family club; `flagged` keeps only currently-flagged pro academies;
+        `unflagged` keeps only the borderline candidates that play in an
+        academy-family league but are NOT on the allow-list — the work
+        queue for reconciling the ~205 candidates the rollup surfaces.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: flag
+          in: query
+          schema:
+            type: string
+            enum: [all, flagged, unflagged]
+            default: all
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Paginated list of academy-family clubs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProAcademiesResponse"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/pro-academies/{clubId}:
+    patch:
+      operationId: updateProAcademy
+      tags: [admin]
+      summary: Toggle a club's is_pro_academy flag and re-run its tier rollup
+      description: >
+        Sets `canonical_clubs.is_pro_academy` to the supplied boolean for
+        one club, then recomputes that club's `competitive_tier` using the
+        same rollup decision rule as
+        `scripts/src/backfill-competitive-tier.ts` (top-tier-numeric MIN
+        across the club's mapped affiliations, with the academy override
+        gated on the new flag value AND a tier-1 academy-family
+        affiliation). Returns the post-update flag + tier so the dashboard
+        can patch its row in place without an extra fetch.
+
+        Both writes happen in a single transaction so the flag and the
+        rollup never disagree. A no-op flip (current value already
+        matches the requested value) still re-runs the rollup — keeps the
+        contract idempotent and lets operators force a recompute after
+        upstream affiliation changes.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProAcademyRequest"
+      responses:
+        "200":
+          description: Updated row
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateProAcademyResponse"
+        "400":
+          description: Invalid id or body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No canonical_clubs row with that id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/growth/scraped-counts:
     get:
       operationId: getGrowthScrapedCounts
@@ -3910,3 +4028,137 @@ components:
         - total
         - page
         - pageSize
+
+    ProAcademyAffiliation:
+      type: object
+      description: >
+        One tier-1 academy-family affiliation row contributing to the
+        `families` set on a ProAcademyRow. `genderProgram` is included so
+        operators can spot mixed-gender pro pipelines (e.g. boys MLS NEXT +
+        girls NWSL Academy on a co-ed club).
+      properties:
+        leagueId:
+          type: integer
+          nullable: true
+        leagueName:
+          type: string
+        leagueFamily:
+          type: string
+        genderProgram:
+          type: string
+          nullable: true
+      required:
+        - leagueId
+        - leagueName
+        - leagueFamily
+        - genderProgram
+
+    ProAcademyRow:
+      type: object
+      description: >
+        One canonical_clubs row that has at least one tier-1 academy-family
+        affiliation, surfaced with the current `is_pro_academy` flag, the
+        rolled-up `competitive_tier`, and the deduplicated set of academy
+        families the club plays in. `affiliationCount` is the number of
+        distinct tier-1 academy-family affiliations behind the row — useful
+        for spot-checking clubs with unusually broad pipelines.
+      properties:
+        clubId:
+          type: integer
+        clubNameCanonical:
+          type: string
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+        isProAcademy:
+          type: boolean
+        competitiveTier:
+          type: string
+          enum: [recreational, recreational_plus, competitive, elite, academy]
+        families:
+          type: array
+          items:
+            type: string
+        affiliations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProAcademyAffiliation"
+        affiliationCount:
+          type: integer
+      required:
+        - clubId
+        - clubNameCanonical
+        - city
+        - state
+        - isProAcademy
+        - competitiveTier
+        - families
+        - affiliations
+        - affiliationCount
+
+    ProAcademiesResponse:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProAcademyRow"
+        total:
+          type: integer
+        flaggedTotal:
+          type: integer
+          description: >
+            Total number of `canonical_clubs` rows where
+            `is_pro_academy = TRUE`, irrespective of the current `flag`
+            filter. Lets the dashboard render a "X of Y flagged" header
+            without a second request.
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - rows
+        - total
+        - flaggedTotal
+        - page
+        - pageSize
+
+    UpdateProAcademyRequest:
+      type: object
+      description: >
+        Body for PATCH /v1/admin/pro-academies/{clubId}. Setting
+        `isProAcademy` to its current value is allowed and still re-runs
+        the per-club tier rollup (idempotent + force-recompute escape
+        hatch).
+      properties:
+        isProAcademy:
+          type: boolean
+      required:
+        - isProAcademy
+
+    UpdateProAcademyResponse:
+      type: object
+      description: >
+        Echoes the post-update flag + tier so the dashboard can patch its
+        row without re-fetching the list. `previousCompetitiveTier` is the
+        value the row had before the rollup re-ran — surfaces visible
+        downgrade/upgrade transitions in the toast.
+      properties:
+        clubId:
+          type: integer
+        isProAcademy:
+          type: boolean
+        competitiveTier:
+          type: string
+          enum: [recreational, recreational_plus, competitive, elite, academy]
+        previousCompetitiveTier:
+          type: string
+          enum: [recreational, recreational_plus, competitive, elite, academy]
+      required:
+        - clubId
+        - isProAcademy
+        - competitiveTier
+        - previousCompetitiveTier

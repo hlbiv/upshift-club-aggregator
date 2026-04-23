@@ -818,7 +818,7 @@ export interface RunNowResponse {
 }
 
 /**
- * Per-league aggregate coverage stats. A club belongs to a league via `club_affiliations.source_name = leagues_master.league_name` (exact match — there is no `leagues_master.aliases` column today).
+ * Per-league aggregate coverage stats. A club belongs to a league via `club_affiliations.league_id = leagues_master.id` — joined on a stable id rather than a name string, so a `leagues_master.league_name` rename cannot drop the league.
 
  */
 export interface CoverageLeagueRow {
@@ -932,6 +932,95 @@ export interface CoverageLeagueDetailResponse {
   total: number;
   page: number;
   pageSize: number;
+}
+
+/**
+ * One tier-1 academy-family affiliation row contributing to the `families` set on a ProAcademyRow. `genderProgram` is included so operators can spot mixed-gender pro pipelines (e.g. boys MLS NEXT + girls NWSL Academy on a co-ed club).
+
+ */
+export interface ProAcademyAffiliation {
+  leagueId: number | null;
+  leagueName: string;
+  leagueFamily: string;
+  genderProgram: string | null;
+}
+
+export type ProAcademyRowCompetitiveTier =
+  (typeof ProAcademyRowCompetitiveTier)[keyof typeof ProAcademyRowCompetitiveTier];
+
+export const ProAcademyRowCompetitiveTier = {
+  recreational: "recreational",
+  recreational_plus: "recreational_plus",
+  competitive: "competitive",
+  elite: "elite",
+  academy: "academy",
+} as const;
+
+/**
+ * One canonical_clubs row that has at least one tier-1 academy-family affiliation, surfaced with the current `is_pro_academy` flag, the rolled-up `competitive_tier`, and the deduplicated set of academy families the club plays in. `affiliationCount` is the number of distinct tier-1 academy-family affiliations behind the row — useful for spot-checking clubs with unusually broad pipelines.
+
+ */
+export interface ProAcademyRow {
+  clubId: number;
+  clubNameCanonical: string;
+  city: string | null;
+  state: string | null;
+  isProAcademy: boolean;
+  competitiveTier: ProAcademyRowCompetitiveTier;
+  families: string[];
+  affiliations: ProAcademyAffiliation[];
+  affiliationCount: number;
+}
+
+export interface ProAcademiesResponse {
+  rows: ProAcademyRow[];
+  total: number;
+  /** Total number of `canonical_clubs` rows where `is_pro_academy = TRUE`, irrespective of the current `flag` filter. Lets the dashboard render a "X of Y flagged" header without a second request.
+   */
+  flaggedTotal: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Body for PATCH /v1/admin/pro-academies/{clubId}. Setting `isProAcademy` to its current value is allowed and still re-runs the per-club tier rollup (idempotent + force-recompute escape hatch).
+
+ */
+export interface UpdateProAcademyRequest {
+  isProAcademy: boolean;
+}
+
+export type UpdateProAcademyResponseCompetitiveTier =
+  (typeof UpdateProAcademyResponseCompetitiveTier)[keyof typeof UpdateProAcademyResponseCompetitiveTier];
+
+export const UpdateProAcademyResponseCompetitiveTier = {
+  recreational: "recreational",
+  recreational_plus: "recreational_plus",
+  competitive: "competitive",
+  elite: "elite",
+  academy: "academy",
+} as const;
+
+export type UpdateProAcademyResponsePreviousCompetitiveTier =
+  (typeof UpdateProAcademyResponsePreviousCompetitiveTier)[keyof typeof UpdateProAcademyResponsePreviousCompetitiveTier];
+
+export const UpdateProAcademyResponsePreviousCompetitiveTier = {
+  recreational: "recreational",
+  recreational_plus: "recreational_plus",
+  competitive: "competitive",
+  elite: "elite",
+  academy: "academy",
+} as const;
+
+/**
+ * Echoes the post-update flag + tier so the dashboard can patch its row without re-fetching the list. `previousCompetitiveTier` is the value the row had before the rollup re-ran — surfaces visible downgrade/upgrade transitions in the toast.
+
+ */
+export interface UpdateProAcademyResponse {
+  clubId: number;
+  isProAcademy: boolean;
+  competitiveTier: UpdateProAcademyResponseCompetitiveTier;
+  previousCompetitiveTier: UpdateProAcademyResponsePreviousCompetitiveTier;
 }
 
 export type ListClubsParams = {
@@ -1334,6 +1423,28 @@ export type GetCoachMissesGender =
 export const GetCoachMissesGender = {
   mens: "mens",
   womens: "womens",
+} as const;
+
+export type GetProAcademiesParams = {
+  flag?: GetProAcademiesFlag;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  page_size?: number;
+};
+
+export type GetProAcademiesFlag =
+  (typeof GetProAcademiesFlag)[keyof typeof GetProAcademiesFlag];
+
+export const GetProAcademiesFlag = {
+  all: "all",
+  flagged: "flagged",
+  unflagged: "unflagged",
 } as const;
 
 export type GetGrowthScrapedCountsParams = {

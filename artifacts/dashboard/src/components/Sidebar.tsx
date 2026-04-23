@@ -13,6 +13,7 @@ import {
   Map,
   Settings2,
   ShieldAlert,
+  Trophy,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
@@ -119,6 +120,11 @@ export default function Sidebar() {
           label: "Coach misses",
           to: "/data-quality/coach-misses",
           icon: AlertOctagon,
+        },
+        {
+          label: "Pro academies",
+          to: "/data-quality/pro-academies",
+          icon: Trophy,
         },
         {
           label: "GA Premier orphans",

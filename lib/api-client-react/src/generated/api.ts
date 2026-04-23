@@ -64,6 +64,7 @@ import type {
   GetGrowthScrapedCountsParams,
   GetNavLeakedNamesParams,
   GetNumericOnlyNamesParams,
+  GetProAcademiesParams,
   GetStaleScrapesParams,
   HealthStatus,
   LeagueClubsResponse,
@@ -78,6 +79,7 @@ import type {
   NavLeakedNamesResponse,
   NumericOnlyNamesResponse,
   OverlapResponse,
+  ProAcademiesResponse,
   ResolveRosterQualityFlagRequest,
   RunNowRequest,
   RunNowResponse,
@@ -95,6 +97,8 @@ import type {
   SearchEventsParams,
   SearchResponse,
   StaleScrapesResponse,
+  UpdateProAcademyRequest,
+  UpdateProAcademyResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -3472,6 +3476,194 @@ export function useGetCoachMisses<
 }
 
 /**
+ * Returns every `canonical_clubs` row that has at least one affiliation in a tier-1 academy family (MLS NEXT / NWSL Academy / USL Academy), surfaced with the current `is_pro_academy` flag and the rolled-up `competitive_tier`. This is the operator-facing view of the curated allow-list previously edited by hand in `scripts/src/seed-pro-academies.ts` — flipping the flag here persists to the DB and re-runs the per-club tier rollup, so operators no longer need a code change + redeploy to add or remove a pro academy.
+`families` is the deduplicated set of academy families the club plays in at tier 1 — usually a single family, but multi-affiliated clubs (e.g. boys MLS NEXT + girls NWSL Academy) surface both.
+Optional `flag` filter: `all` (default) returns every academy- family club; `flagged` keeps only currently-flagged pro academies; `unflagged` keeps only the borderline candidates that play in an academy-family league but are NOT on the allow-list — the work queue for reconciling the ~205 candidates the rollup surfaces.
+
+ * @summary List academy-family-affiliated clubs with their pro-academy flag
+ */
+export const getGetProAcademiesUrl = (params?: GetProAcademiesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/pro-academies?${stringifiedParams}`
+    : `/api/v1/admin/pro-academies`;
+};
+
+export const getProAcademies = async (
+  params?: GetProAcademiesParams,
+  options?: RequestInit,
+): Promise<ProAcademiesResponse> => {
+  return customFetch<ProAcademiesResponse>(getGetProAcademiesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProAcademiesQueryKey = (params?: GetProAcademiesParams) => {
+  return [`/api/v1/admin/pro-academies`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetProAcademiesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProAcademies>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetProAcademiesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProAcademies>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProAcademiesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProAcademies>>> = ({
+    signal,
+  }) => getProAcademies(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProAcademies>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProAcademiesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProAcademies>>
+>;
+export type GetProAcademiesQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary List academy-family-affiliated clubs with their pro-academy flag
+ */
+
+export function useGetProAcademies<
+  TData = Awaited<ReturnType<typeof getProAcademies>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetProAcademiesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProAcademies>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProAcademiesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Sets `canonical_clubs.is_pro_academy` to the supplied boolean for one club, then recomputes that club's `competitive_tier` using the same rollup decision rule as `scripts/src/backfill-competitive-tier.ts` (top-tier-numeric MIN across the club's mapped affiliations, with the academy override gated on the new flag value AND a tier-1 academy-family affiliation). Returns the post-update flag + tier so the dashboard can patch its row in place without an extra fetch.
+Both writes happen in a single transaction so the flag and the rollup never disagree. A no-op flip (current value already matches the requested value) still re-runs the rollup — keeps the contract idempotent and lets operators force a recompute after upstream affiliation changes.
+
+ * @summary Toggle a club's is_pro_academy flag and re-run its tier rollup
+ */
+export const getUpdateProAcademyUrl = (clubId: number) => {
+  return `/api/v1/admin/pro-academies/${clubId}`;
+};
+
+export const updateProAcademy = async (
+  clubId: number,
+  updateProAcademyRequest: UpdateProAcademyRequest,
+  options?: RequestInit,
+): Promise<UpdateProAcademyResponse> => {
+  return customFetch<UpdateProAcademyResponse>(getUpdateProAcademyUrl(clubId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateProAcademyRequest),
+  });
+};
+
+export const getUpdateProAcademyMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProAcademy>>,
+    TError,
+    { clubId: number; data: BodyType<UpdateProAcademyRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateProAcademy>>,
+  TError,
+  { clubId: number; data: BodyType<UpdateProAcademyRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateProAcademy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateProAcademy>>,
+    { clubId: number; data: BodyType<UpdateProAcademyRequest> }
+  > = (props) => {
+    const { clubId, data } = props ?? {};
+
+    return updateProAcademy(clubId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateProAcademyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateProAcademy>>
+>;
+export type UpdateProAcademyMutationBody = BodyType<UpdateProAcademyRequest>;
+export type UpdateProAcademyMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Toggle a club's is_pro_academy flag and re-run its tier rollup
+ */
+export const useUpdateProAcademy = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProAcademy>>,
+    TError,
+    { clubId: number; data: BodyType<UpdateProAcademyRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateProAcademy>>,
+  TError,
+  { clubId: number; data: BodyType<UpdateProAcademyRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateProAcademyMutationOptions(options));
+};
+
+/**
  * Per-table `count(*) WHERE <timestamp_col> > since`. Timestamp column differs per table — `canonical_clubs.last_scraped_at`, `coaches.first_seen_at`, `events.last_scraped_at`, `club_roster_snapshots.snapshot_date`, `matches.scraped_at`.
 
  * @summary Records-added-since-X delta across five headline ingest tables
@@ -4022,7 +4214,7 @@ export const useRunScraperScheduleNow = <
 };
 
 /**
- * Paginated rollup of every league in `leagues_master` alongside aggregate counts of its affiliated canonical clubs. `clubsTotal` counts clubs reachable via `club_affiliations` (join: `leagues_master.league_name` = `club_affiliations.source_name`, exact match — no league-side alias table today).
+ * Paginated rollup of every league in `leagues_master` alongside aggregate counts of its affiliated canonical clubs. `clubsTotal` counts clubs reachable via `club_affiliations` (join: `leagues_master.id` = `club_affiliations.league_id` — a stable id, so a `leagues_master.league_name` rename can't drop the league out of the rollup).
 Subset counts:
   * `clubsWithRosterSnapshot` — clubs with >=1 row in
     `club_roster_snapshots.club_id`.

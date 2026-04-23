@@ -518,6 +518,110 @@ export const NumericOnlyNamesResponse = z.object({
 export type NumericOnlyNamesResponse = z.infer<typeof NumericOnlyNamesResponse>;
 
 
+// ---------------------------------------------------------------------------
+// pro-academies — operator-edit surface for canonical_clubs.is_pro_academy.
+// ---------------------------------------------------------------------------
+
+/**
+ * Tier values mirrored from `competitive_tier` Postgres enum (see
+ * lib/db/src/schema/index.ts). Kept in lockstep with the OpenAPI enum on
+ * ProAcademyRow / UpdateProAcademyResponse — adding a tier is a 3-place
+ * change (DB enum + this file + openapi.yaml).
+ */
+export const CompetitiveTier = z.enum([
+  "recreational",
+  "recreational_plus",
+  "competitive",
+  "elite",
+  "academy",
+]);
+export type CompetitiveTier = z.infer<typeof CompetitiveTier>;
+
+/**
+ * Filter mode for GET /v1/admin/pro-academies. `unflagged` surfaces the
+ * borderline-candidate work queue (academy-family clubs not yet on the
+ * curated allow-list). `flagged` is the inverse — currently-flagged pro
+ * academies. `all` (default) returns the union, paginated.
+ */
+export const ProAcademiesFlagFilter = z.enum(["all", "flagged", "unflagged"]);
+export type ProAcademiesFlagFilter = z.infer<typeof ProAcademiesFlagFilter>;
+
+/** Request for GET /v1/admin/pro-academies. */
+export const ProAcademiesRequest = z.object({
+  flag: ProAcademiesFlagFilter.default("all"),
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(200).default(50),
+});
+export type ProAcademiesRequest = z.infer<typeof ProAcademiesRequest>;
+
+/**
+ * One tier-1 academy-family affiliation contributing to a ProAcademyRow.
+ * `genderProgram` is included so co-ed clubs with mixed pro pipelines
+ * (boys MLS NEXT + girls NWSL Academy) are legible at a glance.
+ */
+export const ProAcademyAffiliation = z.object({
+  leagueId: z.number().int().nullable(),
+  leagueName: z.string(),
+  leagueFamily: z.string(),
+  genderProgram: z.string().nullable(),
+});
+export type ProAcademyAffiliation = z.infer<typeof ProAcademyAffiliation>;
+
+/**
+ * One row of the pro-academies admin panel. `families` is the deduplicated
+ * set of academy-family labels at tier 1; `affiliations` is the underlying
+ * per-affiliation breakdown for tooltips / drilldown. `affiliationCount` is
+ * a precomputed convenience for the table.
+ */
+export const ProAcademyRow = z.object({
+  clubId: z.number().int(),
+  clubNameCanonical: z.string(),
+  city: z.string().nullable(),
+  state: z.string().nullable(),
+  isProAcademy: z.boolean(),
+  competitiveTier: CompetitiveTier,
+  families: z.array(z.string()),
+  affiliations: z.array(ProAcademyAffiliation),
+  affiliationCount: z.number().int(),
+});
+export type ProAcademyRow = z.infer<typeof ProAcademyRow>;
+
+/** Paginated envelope for the pro-academies admin panel. */
+export const ProAcademiesResponse = z.object({
+  rows: z.array(ProAcademyRow),
+  total: z.number().int(),
+  // Total flagged irrespective of the current filter — lets the dashboard
+  // show "X of Y flagged" without a second request.
+  flaggedTotal: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export type ProAcademiesResponse = z.infer<typeof ProAcademiesResponse>;
+
+/**
+ * Body for PATCH /v1/admin/pro-academies/{clubId}. A no-op flip (current
+ * value already matches) is allowed and still re-runs the per-club rollup
+ * — keeps the contract idempotent and gives operators a way to force a
+ * recompute after upstream affiliation changes.
+ */
+export const UpdateProAcademyRequest = z.object({
+  isProAcademy: z.boolean(),
+});
+export type UpdateProAcademyRequest = z.infer<typeof UpdateProAcademyRequest>;
+
+/**
+ * Response for PATCH /v1/admin/pro-academies/{clubId}. `previousCompetitiveTier`
+ * is the value the row had before the rollup re-ran so the dashboard can
+ * surface visible upgrade / downgrade transitions in the toast.
+ */
+export const UpdateProAcademyResponse = z.object({
+  clubId: z.number().int(),
+  isProAcademy: z.boolean(),
+  competitiveTier: CompetitiveTier,
+  previousCompetitiveTier: CompetitiveTier,
+});
+export type UpdateProAcademyResponse = z.infer<typeof UpdateProAcademyResponse>;
+
 /**
  * Growth dashboard — "records added since X" counts across the five
  * headline ingest tables. Timestamps used per table:
