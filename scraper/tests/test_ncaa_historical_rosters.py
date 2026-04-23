@@ -34,7 +34,7 @@ from extractors.ncaa_soccer_rosters import (  # noqa: E402
     _start_year_from_academic_year,
     compose_historical_roster_urls,
 )
-from extractors import ncaa_rosters  # noqa: E402
+from extractors import ncaa_soccer_rosters as ncaa_rosters  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
