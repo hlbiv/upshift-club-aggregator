@@ -127,11 +127,10 @@ def write_college_flag(
         )
         return None
 
-    if psycopg2 is None:
-        raise RuntimeError("psycopg2 not available")
-
     own_conn = conn is None
     if own_conn:
+        if psycopg2 is None:
+            raise RuntimeError("psycopg2 not available")
         dsn = os.environ.get("DATABASE_URL")
         if not dsn:
             raise RuntimeError("DATABASE_URL not set")
@@ -144,12 +143,19 @@ def write_college_flag(
         "metadata": json.dumps(metadata or {}),
     }
 
+    _UndefinedTable: type = Exception  # fallback — catches nothing specific
+    try:
+        import psycopg2.errors as _pge
+        _UndefinedTable = _pge.UndefinedTable
+    except (ImportError, AttributeError):
+        pass
+
     try:
         with conn.cursor() as cur:
             try:
                 cur.execute(_UPSERT_FLAG_SQL, params)
                 row = cur.fetchone()
-            except psycopg2.errors.UndefinedTable:
+            except _UndefinedTable:
                 log.warning(
                     "[college-flag] college_roster_quality_flags table does not exist yet "
                     "(pre-PR-24 db push); skipping flag write for college_id=%d",

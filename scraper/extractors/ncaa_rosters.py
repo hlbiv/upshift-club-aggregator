@@ -2191,16 +2191,21 @@ def should_scrape(
 
                 except Exception as flag_exc:
                     # UndefinedTable or any other flag-table error — skip flag checks
-                    import psycopg2.errors as _pgerrors
-                    if isinstance(flag_exc, _pgerrors.UndefinedTable):
+                    _is_undefined = type(flag_exc).__name__ == "UndefinedTable"
+                    if not _is_undefined:
+                        try:
+                            import psycopg2.errors as _pge
+                            _is_undefined = isinstance(flag_exc, _pge.UndefinedTable)
+                        except (ImportError, AttributeError):
+                            pass
+                    try:
                         conn.rollback()
+                    except Exception:
+                        pass
+                    if _is_undefined:
                         logger.debug("[should_scrape] flag table not yet pushed; skipping flag checks")
                     else:
                         logger.debug("[should_scrape] flag check error (non-fatal): %s", flag_exc)
-                        try:
-                            conn.rollback()
-                        except Exception:
-                            pass
 
     except Exception as exc:
         logger.warning("[should_scrape] DB check failed (proceeding): %s", exc)
