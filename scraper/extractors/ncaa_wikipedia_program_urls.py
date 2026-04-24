@@ -273,9 +273,24 @@ def fetch_program_articles(
 # ---------------------------------------------------------------------------
 
 
-# Matches an ``| website = ...`` (or ``| url = ...``) infobox field.
-# Wikipedia editors are inconsistent about spacing and case; the regex
-# is liberal on both. ``re.MULTILINE`` so ``^`` anchors line starts.
+# Matches ``| athletics_website = ...`` or similar athletics-specific infobox
+# fields.  Checked FIRST in extract_website_from_wikitext — an athletics URL
+# is always preferable to the university's main homepage (which is what
+# ``| website =`` typically contains for university articles, not program
+# articles).  Field aliases observed in the wild:
+#   athletics_website, athletics_site, athletics, sports_website, sports_site
+_INFOBOX_ATHLETICS_FIELD_RE = re.compile(
+    r"^\s*\|\s*(?:athletics_website|athletics_site|athletics|sports_website|sports_site"
+    r"|athletic_website|athletic_site)\s*=\s*(?P<value>.+?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Matches ``| website = ...`` (or ``| url = ...``).  Used as fallback when
+# no athletics-specific field is found.  For program-article pages (i.e. the
+# Wikipedia article is specifically about the soccer program, not the whole
+# university) this IS the athletics/program URL.  For university articles it
+# is the main homepage — callers should layer an athletics-subdomain probe on
+# top.
 _INFOBOX_WEBSITE_FIELD_RE = re.compile(
     r"^\s*\|\s*(?:website|url)\s*=\s*(?P<value>.+?)\s*$",
     re.IGNORECASE | re.MULTILINE,
@@ -291,31 +306,39 @@ _EXTERNAL_LINK_RE = re.compile(r"\[\s*(https?://[^\s\]]+)")
 
 
 def extract_website_from_wikitext(wikitext: str) -> Optional[str]:
-    """Pull the infobox ``website`` (or ``url``) value from a program article.
+    """Pull the best athletics/program URL from a Wikipedia infobox.
 
-    Returns the first usable URL found, normalized to ``scheme://host…``
-    form. ``None`` if no infobox website field is present or the value
-    is unparseable. Wikipedia infobox conventions vary in spacing,
-    case, and value-shape (bare URL, ``{{URL|...}}``, ``[URL text]``);
-    this function is liberal on input so the caller can rely on
-    "non-None means we have a candidate URL to probe".
+    Priority:
+      1. ``| athletics_website =`` (or alias) — direct athletics URL.
+      2. ``| website =`` (or ``| url =``) — falls back to this; may be
+         the university's main homepage rather than the athletics portal.
+
+    Returns the first usable URL found at the highest priority level,
+    normalized to ``scheme://host…`` form.  ``None`` if no infobox website
+    field is present or the value is unparseable.
     """
     if not wikitext:
         return None
-    for m in _INFOBOX_WEBSITE_FIELD_RE.finditer(wikitext):
-        value = m.group("value").strip()
-        if not value:
-            continue
 
-        # Strip wikitext comments (``<!-- ... -->``) and trailing
-        # ``<ref>...</ref>`` tags that occasionally trail website values.
-        value = re.sub(r"<!--.*?-->", "", value, flags=re.DOTALL).strip()
-        value = re.sub(r"<ref[\s>].*?(</ref>|/>)", "", value, flags=re.DOTALL).strip()
+    def _extract_from_pattern(pattern: re.Pattern) -> Optional[str]:
+        for m in pattern.finditer(wikitext):
+            value = m.group("value").strip()
+            if not value:
+                continue
+            value = re.sub(r"<!--.*?-->", "", value, flags=re.DOTALL).strip()
+            value = re.sub(r"<ref[\s>].*?(</ref>|/>)", "", value, flags=re.DOTALL).strip()
+            url = _value_to_url(value)
+            if url:
+                return url
+        return None
 
-        url = _value_to_url(value)
-        if url:
-            return url
-    return None
+    # Try athletics-specific field first
+    athletics_url = _extract_from_pattern(_INFOBOX_ATHLETICS_FIELD_RE)
+    if athletics_url:
+        return athletics_url
+
+    # Fall back to generic website field
+    return _extract_from_pattern(_INFOBOX_WEBSITE_FIELD_RE)
 
 
 def _value_to_url(value: str) -> Optional[str]:

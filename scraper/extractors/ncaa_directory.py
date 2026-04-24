@@ -306,6 +306,39 @@ def _final_url_matches_path(final_url: str, path: str) -> bool:
     return path in (final_url or "")
 
 
+def _athletics_subdomain_candidates(website: str) -> list[str]:
+    """Return additional base-URL candidates to probe when ``website`` is a
+    university main URL (short ``.edu`` path) and all SIDEARM paths failed.
+
+    Many D2/D3 universities set ``| website = https://www.adelphi.edu`` in
+    their Wikipedia infobox.  Their SIDEARM/PrestoSports athletics site lives
+    at one of:
+      • ``https://athletics.adelphi.edu`` (most common for D2/D3)
+      • ``https://adelphi.edu/athletics``  (path-based, less common)
+
+    We generate both variants from the ``.edu`` origin so the caller can try
+    all SIDEARM sport paths against each candidate.
+
+    Returns ``[]`` for non-``.edu`` domains (those failed for a different
+    reason and adding noise does not help).
+    """
+    from urllib.parse import urlparse, urlunparse
+    parsed = urlparse(website if website.startswith("http") else f"https://{website}")
+    host = parsed.netloc.lower().lstrip("www.")
+    if not host.endswith(".edu"):
+        return []
+    # Avoid generating the same base if the stored URL already IS
+    # athletics.something.edu
+    if host.startswith("athletics."):
+        return []
+
+    return [
+        f"https://athletics.{host}",
+        f"https://www.{host}/athletics",
+        f"https://{host}/athletics",
+    ]
+
+
 def resolve_soccer_program_url(
     website: Optional[str],
     gender_program: str,
@@ -313,21 +346,23 @@ def resolve_soccer_program_url(
     session: Optional[requests.Session] = None,
     timeout: int = 10,
 ) -> Optional[str]:
-    """Probe candidate SIDEARM roster URLs; return first match or None.
+    """Probe candidate SIDEARM/PrestoSports roster URLs; return first match.
 
-    Tries each path in ``_SIDEARM_PATHS[gender_program]`` in order. For
-    each candidate, HEADs the URL; if the response is 200 AND the final
-    URL still contains the probed path (guarding against catch-all
-    redirects), returns the candidate. Otherwise tries the next path.
-    All paths exhausted / all non-200 / all network errors → returns
-    ``None``; the caller logs misses for operator review.
+    Pass 1 — probes every path in ``_SIDEARM_PATHS[gender_program]`` against
+    the ``website`` base URL.
 
-    Pre-flight check on the reference D1 sample (Georgetown, UNC, UVA,
-    Stanford, Indiana, Duke, Maryland, Notre Dame, Creighton, Wake
-    Forest) hit the canonical path 10/10. The additional paths were
-    added after PR-2's first Replit run surfaced ~15 misses; live logs
-    showed Iowa + Kentucky using ``/sports/wsoc/roster``, Purdue +
-    Nebraska using ``/sports/soccer/roster``, etc.
+    Pass 2 (only if Pass 1 fully misses AND ``website`` is a ``.edu`` main
+    site) — generates athletics-subdomain variants
+    (``athletics.{domain}``, ``{domain}/athletics``) and probes all paths
+    against each variant.  This recovers D2/D3 schools whose Wikipedia
+    ``| website =`` infobox field contains the university's main homepage
+    rather than the athletics portal.
+
+    Each candidate is HEAD-checked; the response must be 200 AND the final
+    URL must still contain the probed path (guards against catch-all 301 →
+    homepage false positives).
+
+    All candidates exhausted → returns ``None``; caller logs misses.
     """
     if not website:
         return None
@@ -344,30 +379,41 @@ def resolve_soccer_program_url(
             }
         )
 
-    try:
+    def _probe_base(base: str) -> Optional[str]:
+        """Try all gender paths against a single base URL; return hit or None."""
         for path in _SIDEARM_PATHS[gender_program]:
             try:
-                candidate = compose_sidearm_roster_url(
-                    website, gender_program, path=path
-                )
+                candidate = compose_sidearm_roster_url(base, gender_program, path=path)
             except ValueError:
                 return None
-
             try:
-                resp = session.head(
-                    candidate, timeout=timeout, allow_redirects=True
-                )
+                resp = session.head(candidate, timeout=timeout, allow_redirects=True)
             except requests.RequestException as exc:
                 log.debug("[ncaa-resolver] HEAD %s failed: %s", candidate, exc)
-                continue  # try next path
-
+                continue
             if resp.status_code != 200:
                 continue
             final_url = resp.url or candidate
             if not _final_url_matches_path(final_url, path):
                 continue
-
             return candidate
+        return None
+
+    try:
+        # Pass 1 — probe against stored website directly
+        result = _probe_base(website)
+        if result:
+            return result
+
+        # Pass 2 — if website is a .edu main site, try athletics subdomain
+        for alt_base in _athletics_subdomain_candidates(website):
+            result = _probe_base(alt_base)
+            if result:
+                log.debug(
+                    "[ncaa-resolver] athletics-subdomain hit: %s → %s",
+                    alt_base, result,
+                )
+                return result
 
         return None
     finally:
@@ -376,3 +422,4 @@ def resolve_soccer_program_url(
                 session.close()
             except Exception:
                 pass
+
