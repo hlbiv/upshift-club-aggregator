@@ -1830,6 +1830,142 @@ def _handle_ncaa_discover_urls_google(args: argparse.Namespace) -> None:
         )
 
 
+def _handle_ncaa_enrich_websites_ncaaid(args: argparse.Namespace) -> None:
+    """Fill ``colleges.website`` from stats.ncaa.org team pages via ``ncaa_id``.
+
+    For each college row with ``ncaa_id IS NOT NULL AND website IS NULL``,
+    fetches ``https://stats.ncaa.org/team/<ncaa_id>``, extracts the outbound
+    athletics-homepage link, and writes it to ``colleges.website``.
+
+    After this source runs, execute ``--source ncaa-resolve-urls`` to do the
+    SIDEARM probe that fills ``soccer_program_url`` from the newly-written
+    ``website`` values.
+
+    stats.ncaa.org is already successfully scraped by ``ncaa-seed-d1``.
+    Individual team pages are static HTML (not SPA) so no Playwright needed.
+
+    Optional flags:
+      --division D1|D2|D3|NAIA  (default: D1 only — only D1 rows have ncaa_id)
+      --limit N   (default: 200)
+      --dry-run
+    """
+    import time as _time
+
+    from extractors.ncaa_enrich_websites import (
+        _make_session,
+        _fetch_html,
+        _team_url,
+        extract_school_website,
+    )
+
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        logger.error("[ncaa-enrich-websites-ncaaid] psycopg2 not available")
+        sys.exit(1)
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.error("[ncaa-enrich-websites-ncaaid] DATABASE_URL env var not set")
+        sys.exit(1)
+
+    division_arg = getattr(args, "division", None) or "D1"
+    dry_run = bool(getattr(args, "dry_run", False))
+    limit = int(getattr(args, "limit", None) or 200)
+
+    session = _make_session()
+
+    filled = 0
+    missed = 0
+    errors = 0
+
+    try:
+        conn = psycopg2.connect(database_url)
+        try:
+            with conn.cursor() as cur:
+                sql = """
+                    SELECT id, name, division, gender_program, ncaa_id
+                    FROM colleges
+                    WHERE ncaa_id IS NOT NULL
+                      AND website IS NULL
+                      AND division = %s
+                    ORDER BY name
+                    LIMIT %s
+                """
+                cur.execute(sql, (division_arg, limit))
+                rows = cur.fetchall()
+
+            logger.info(
+                "[ncaa-enrich-websites-ncaaid] %d %s college(s) with ncaa_id "
+                "but no website%s",
+                len(rows), division_arg, " (dry-run)" if dry_run else "",
+            )
+
+            for college_id, name, division, gender_program, ncaa_id in rows:
+                tag = f"{name} ({division} {gender_program})"
+                url = _team_url(ncaa_id)
+
+                html = _fetch_html(url, session)
+                _time.sleep(1.5)  # polite between requests
+
+                if not html:
+                    logger.debug(
+                        "[ncaa-enrich-websites-ncaaid] could not fetch %s for %s",
+                        url, tag,
+                    )
+                    errors += 1
+                    continue
+
+                website = extract_school_website(html, ncaa_id)
+                if not website:
+                    logger.debug(
+                        "[ncaa-enrich-websites-ncaaid] no website found for %s",
+                        tag,
+                    )
+                    missed += 1
+                    continue
+
+                if dry_run:
+                    logger.info(
+                        "[ncaa-enrich-websites-ncaaid] [dry-run] %s → website=%s",
+                        tag, website,
+                    )
+                else:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE colleges SET website = %s WHERE id = %s",
+                            (website, college_id),
+                        )
+                    conn.commit()
+                    logger.info(
+                        "[ncaa-enrich-websites-ncaaid] %s → website=%s",
+                        tag, website,
+                    )
+                filled += 1
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    logger.info(
+        "[ncaa-enrich-websites-ncaaid] done: filled=%d missed=%d errors=%d%s",
+        filled, missed, errors, " (dry-run)" if dry_run else "",
+    )
+    if filled > 0 and not dry_run:
+        logger.info(
+            "[ncaa-enrich-websites-ncaaid] run --source ncaa-resolve-urls "
+            "to SIDEARM-probe the %d newly-filled website rows",
+            filled,
+        )
+
+
 def _handle_ncaa_discover_urls_ncsa(args: argparse.Namespace) -> None:
     """Fill ``colleges.soccer_program_url`` via NCSA Sports college directory.
 
@@ -3083,6 +3219,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_resolve_urls_wikipedia": _handle_ncaa_resolve_urls_wikipedia,
     "ncaa-discover-urls-google": _handle_ncaa_discover_urls_google,
     "ncaa_discover_urls_google": _handle_ncaa_discover_urls_google,
+    "ncaa-enrich-websites-ncaaid": _handle_ncaa_enrich_websites_ncaaid,
+    "ncaa_enrich_websites_ncaaid": _handle_ncaa_enrich_websites_ncaaid,
     "ncaa-discover-urls-ncsa": _handle_ncaa_discover_urls_ncsa,
     "ncaa_discover_urls_ncsa": _handle_ncaa_discover_urls_ncsa,
     "ncaa-seed-ncsa": _handle_ncaa_seed_ncsa,
@@ -3138,7 +3276,8 @@ SOURCE_HELP: dict[str, str] = {
     "ncaa-resolve-urls": "resolve colleges.soccer_program_url by probing the canonical SIDEARM roster path for each college.website. Scoped by --division (default D1); --limit N for smoke-tests; --dry-run.",
     "ncaa-resolve-urls-wikipedia": "resolve D1/D2 colleges.soccer_program_url by walking each program's own Wikipedia article infobox for the athletics-website URL, then probing the canonical SIDEARM roster path. Closes the gap left by ncaa-resolve-urls (which requires website IS NOT NULL) — D1/D2 seeders don't write a website column, so 76% of those rows are unreachable today. Scope is D1+D2 only (D3 has working category-seeded URL coverage; NAIA has --source naia-resolve-urls). Optional --division D1|D2 (default both); --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run.",
     "ncaa-discover-urls-google": "fill colleges.soccer_program_url (or website) for rows where URL is NULL via Google Custom Search Engine. Two-pass per school: pass 1 targets the soccer roster page directly; pass 2 finds the athletics homepage as a fallback. Requires GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX env vars. Default --limit 100 (free tier cap). Optional --division, --gender mens|womens|both, --dry-run.",
-    "ncaa-discover-urls-ncsa": "fill colleges.soccer_program_url (or website) via NCSA Sports college soccer directory (ncsasports.org). Replaces ncaa-discover-urls-google for installs where the Google CSE engine cannot search the entire web (engines created after Jan 20 2026 are permanently site-restricted). Fetches directory + individual profile pages; probes SIDEARM on athletics homepages. Default --limit 500. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both, --dry-run.",
+    "ncaa-enrich-websites-ncaaid": "fill colleges.website by fetching each school's stats.ncaa.org team page (via stored ncaa_id) and extracting the outbound athletics-homepage link. Only targets rows with ncaa_id IS NOT NULL AND website IS NULL. After running, execute --source ncaa-resolve-urls to SIDEARM-probe the newly-filled website rows for soccer_program_url. Default --division D1 (only D1 seeds carry ncaa_id); default --limit 200; --dry-run.",
+    "ncaa-discover-urls-ncsa": "fill colleges.soccer_program_url (or website) via NCSA Sports college soccer directory (ncsasports.org). NOTE: ncsasports.org is a JavaScript SPA — this source returns 0 listings on most pages. Prefer ncaa-enrich-websites-ncaaid instead. Kept for future use if NCSA adds a static sitemap. Default --limit 500. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both, --dry-run.",
     "naia-resolve-urls": "resolve NAIA colleges.website + soccer_program_url via naia.org per-team detail pages (closes the gap left by ncaa-resolve-urls, which requires website IS NOT NULL — NAIA seeds carry no website). Phase-1 fetches the naia.org index per gender for a name→slug map; phase-2 GETs each detail page, extracts the athletics outbound link, and probes SIDEARM. Optional --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run. Production runs require proxy_config.yaml — Replit IPs hit naia.org's WAF (HTTP 405).",
     "ncaa-seed-ncsa": "fill colleges.soccer_program_url gaps from curated NCSA/productiverecruit seed CSVs (scraper/seeds/ncaa_urls_*.csv); Jaro-Winkler >= 0.88 match within division+gender. Optional: --division D1|D2|D3|NAIA, --dry-run.",
 }
