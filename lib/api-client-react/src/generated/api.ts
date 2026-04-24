@@ -42,6 +42,10 @@ import type {
   CollegeDuplicateMergeRequest,
   CollegeDuplicateMergeResponse,
   CollegeListResponse,
+  CollegeRosterQualityFlagsResponse,
+  GetCollegeRosterQualityFlagsParams,
+  ResolveCollegeRosterQualityFlagWithUrlBody,
+  ResolveCollegeRosterQualityFlagWithUrlResponse,
   CoverageLeagueDetailResponse,
   CoverageLeagueHistoryResponse,
   CoverageLeaguesHistoryResponse,
@@ -5356,4 +5360,181 @@ export function useGetSchedulerJob<
   };
 
   return { ...query, queryKey: queryOptions.queryKey };
+}
+
+// ---------------------------------------------------------------------------
+// college_roster_quality_flags — GET list + PATCH resolve-url hooks
+// ---------------------------------------------------------------------------
+
+/**
+ * @summary Paginated list of college_roster_quality_flags rows
+ */
+export const getGetCollegeRosterQualityFlagsUrl = (
+  params?: GetCollegeRosterQualityFlagsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/college-roster-quality-flags?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/college-roster-quality-flags`;
+};
+
+export const getCollegeRosterQualityFlags = async (
+  params?: GetCollegeRosterQualityFlagsParams,
+  options?: RequestInit,
+): Promise<CollegeRosterQualityFlagsResponse> => {
+  return customFetch<CollegeRosterQualityFlagsResponse>(
+    getGetCollegeRosterQualityFlagsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetCollegeRosterQualityFlagsQueryKey = (
+  params?: GetCollegeRosterQualityFlagsParams,
+) => {
+  return [
+    `/api/v1/admin/data-quality/college-roster-quality-flags`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetCollegeRosterQualityFlagsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCollegeRosterQualityFlags>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetCollegeRosterQualityFlagsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCollegeRosterQualityFlags>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCollegeRosterQualityFlagsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCollegeRosterQualityFlags>>
+  > = ({ signal }) =>
+    getCollegeRosterQualityFlags(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCollegeRosterQualityFlags>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCollegeRosterQualityFlagsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCollegeRosterQualityFlags>>
+>;
+export type GetCollegeRosterQualityFlagsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Paginated list of college_roster_quality_flags rows
+ */
+export function useGetCollegeRosterQualityFlags<
+  TData = Awaited<ReturnType<typeof getCollegeRosterQualityFlags>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetCollegeRosterQualityFlagsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCollegeRosterQualityFlags>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCollegeRosterQualityFlagsQueryOptions(
+    params,
+    options,
+  );
+
+  const queryResult = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...queryResult, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Resolve a college roster quality flag by providing the corrected soccer_program_url
+ */
+export const resolveCollegeRosterQualityFlagWithUrl = async (
+  id: number,
+  resolveCollegeRosterQualityFlagWithUrlBody: ResolveCollegeRosterQualityFlagWithUrlBody,
+  options?: RequestInit,
+): Promise<ResolveCollegeRosterQualityFlagWithUrlResponse> => {
+  return customFetch<ResolveCollegeRosterQualityFlagWithUrlResponse>(
+    `/api/v1/admin/data-quality/college-roster-quality-flags/${id}/resolve-url`,
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(resolveCollegeRosterQualityFlagWithUrlBody),
+    },
+  );
+};
+
+export type ResolveCollegeRosterQualityFlagWithUrlMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resolveCollegeRosterQualityFlagWithUrl>>
+>;
+export type ResolveCollegeRosterQualityFlagWithUrlMutationBody =
+  ResolveCollegeRosterQualityFlagWithUrlBody;
+export type ResolveCollegeRosterQualityFlagWithUrlMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Resolve a college roster quality flag by providing the corrected soccer_program_url
+ */
+export function useResolveCollegeRosterQualityFlagWithUrl<
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveCollegeRosterQualityFlagWithUrl>>,
+    TError,
+    { id: number; data: ResolveCollegeRosterQualityFlagWithUrlBody },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resolveCollegeRosterQualityFlagWithUrl>>,
+  TError,
+  { id: number; data: ResolveCollegeRosterQualityFlagWithUrlBody },
+  TContext
+> {
+  const { mutation: mutationOptions, request: requestOptions } = options ?? {};
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resolveCollegeRosterQualityFlagWithUrl>>,
+    { id: number; data: ResolveCollegeRosterQualityFlagWithUrlBody }
+  > = (props) => {
+    const { id, data } = props ?? {};
+    return resolveCollegeRosterQualityFlagWithUrl(id, data, requestOptions);
+  };
+
+  return useMutation<
+    Awaited<ReturnType<typeof resolveCollegeRosterQualityFlagWithUrl>>,
+    TError,
+    { id: number; data: ResolveCollegeRosterQualityFlagWithUrlBody },
+    TContext
+  >({ mutationFn, ...mutationOptions });
 }

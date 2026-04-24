@@ -1758,6 +1758,158 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/data-quality/college-roster-quality-flags:
+    get:
+      operationId: getCollegeRosterQualityFlags
+      tags: [admin]
+      summary: college_roster_quality_flags rows, joined with college context
+      description: >
+        Paginated list of `college_roster_quality_flags` rows joined to
+        `colleges` (for `college_name`) and `admin_users` (for
+        `resolved_by_email`). Supports filtering by `flag_type`, `resolved`
+        state, and `college_id`.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: flag_type
+          in: query
+          description: Optional filter by flag_type (CHECK-list values).
+          schema:
+            type: string
+            enum:
+              - historical_no_data
+              - partial_parse
+              - url_needs_review
+        - name: resolved
+          in: query
+          description: >
+            If true, return only resolved flags; if false, return only
+            active (unresolved) flags; if omitted, return both.
+          schema:
+            type: boolean
+        - name: college_id
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Paginated list of college-roster-quality-flag rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollegeRosterQualityFlagsResponse"
+
+  /v1/admin/data-quality/college-roster-quality-flags/{id}/resolve:
+    patch:
+      operationId: resolveCollegeRosterQualityFlag
+      tags: [admin]
+      summary: Mark a college_roster_quality_flags row as resolved
+      description: >
+        Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on
+        the flag. The `colleges` row is NOT mutated by this endpoint — use
+        `resolve-url` to update the URL and resolve in one transaction.
+
+        Returns 400 if the flag is already resolved, 404 if unknown id.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  description: Optional resolution note.
+      responses:
+        "204":
+          description: Flag resolved
+        "400":
+          description: Invalid id or flag already resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No college_roster_quality_flags row with that id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/data-quality/college-roster-quality-flags/{id}/resolve-url:
+    patch:
+      operationId: resolveCollegeRosterQualityFlagWithUrl
+      tags: [admin]
+      summary: Resolve a college quality flag by providing the corrected soccer_program_url
+      description: >
+        Accepts `{ new_soccer_program_url: string }`. In a single transaction:
+          1. Validates the flag exists and is unresolved.
+          2. Updates `colleges.soccer_program_url` for the flag's `college_id`.
+          3. Marks the flag resolved with `resolution_note = 'url_provided'`.
+
+        Returns 400 if the URL is missing/invalid or the flag is already
+        resolved, 404 if the flag id is unknown.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveCollegeRosterQualityFlagWithUrlRequest"
+      responses:
+        "200":
+          description: URL written and flag resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolveCollegeRosterQualityFlagWithUrlResponse"
+        "400":
+          description: Invalid id, invalid/missing URL, or flag already resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No college_roster_quality_flags row with that id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/pro-academies:
     get:
       operationId: getProAcademies
@@ -3966,6 +4118,91 @@ components:
         - total
         - page
         - pageSize
+
+    CollegeRosterQualityFlagItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        collegeId:
+          type: integer
+        collegeName:
+          type: string
+        academicYear:
+          type: string
+        flagType:
+          type: string
+          enum: [historical_no_data, partial_parse, url_needs_review]
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolvedByEmail:
+          type: string
+          nullable: true
+        resolutionNote:
+          type: string
+          nullable: true
+      required:
+        - id
+        - collegeId
+        - collegeName
+        - academicYear
+        - flagType
+        - metadata
+        - createdAt
+        - resolvedAt
+        - resolvedByEmail
+        - resolutionNote
+
+    CollegeRosterQualityFlagsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CollegeRosterQualityFlagItem"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - items
+        - total
+        - page
+        - pageSize
+
+    ResolveCollegeRosterQualityFlagWithUrlRequest:
+      type: object
+      properties:
+        new_soccer_program_url:
+          type: string
+          format: uri
+          description: The corrected soccer program URL to write to colleges.soccer_program_url.
+      required:
+        - new_soccer_program_url
+
+    ResolveCollegeRosterQualityFlagWithUrlResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        college_id:
+          type: integer
+        new_soccer_program_url:
+          type: string
+      required:
+        - success
+        - college_id
+        - new_soccer_program_url
 
     ScrapedCountsDelta:
       type: object

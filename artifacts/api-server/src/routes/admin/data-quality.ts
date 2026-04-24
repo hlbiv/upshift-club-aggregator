@@ -268,6 +268,12 @@ export function makeDataQualityRouter(deps: DataQualityDeps): IRouter {
       prodResolveCollegeRosterQualityFlagDeps,
     ),
   );
+  router.patch(
+    "/college-roster-quality-flags/:id/resolve-url",
+    makeResolveCollegeRosterQualityFlagWithUrlHandler(
+      prodResolveCollegeRosterQualityFlagWithUrlDeps,
+    ),
+  );
   return router;
 }
 
@@ -1800,6 +1806,27 @@ export interface ResolveCollegeRosterQualityFlagDeps {
   }) => Promise<{ outcome: ResolveOutcome }>;
 }
 
+// ---------------------------------------------------------------------------
+// Resolve college_roster_quality_flags with a corrected URL — DI surface +
+// handler factory + prod wiring.
+//
+// PATCH /api/v1/admin/data-quality/college-roster-quality-flags/:id/resolve-url
+//
+// Accepts { new_soccer_program_url: string }, writes to `colleges` AND
+// marks the flag resolved — all in a single transaction.
+// ---------------------------------------------------------------------------
+
+export interface ResolveCollegeRosterQualityFlagWithUrlDeps {
+  resolveWithUrl: (args: {
+    id: number;
+    newUrl: string;
+    resolvedBy: number | null;
+  }) => Promise<{
+    outcome: ResolveOutcome;
+    collegeId?: number;
+  }>;
+}
+
 /**
  * PATCH /api/v1/admin/data-quality/college-roster-quality-flags/:id/resolve
  * Body: { note?: string }
@@ -1840,6 +1867,126 @@ export function makeResolveCollegeRosterQualityFlagHandler(
     }
   };
 }
+
+/**
+ * PATCH /api/v1/admin/data-quality/college-roster-quality-flags/:id/resolve-url
+ *
+ * Body: { new_soccer_program_url: string }
+ *
+ * In a single transaction:
+ *   1. Validates the flag exists and is unresolved.
+ *   2. Updates `colleges.soccer_program_url` for the flag's `college_id`.
+ *   3. Marks the flag resolved with resolution_note = 'url_provided'.
+ *
+ * Returns { success: true, college_id, new_soccer_program_url } on 200.
+ * 400 for invalid/missing URL or already-resolved flag, 404 if flag id unknown.
+ */
+export function makeResolveCollegeRosterQualityFlagWithUrlHandler(
+  deps: ResolveCollegeRosterQualityFlagWithUrlDeps,
+): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const rawUrl = req.body?.new_soccer_program_url;
+      if (typeof rawUrl !== "string" || rawUrl.trim() === "") {
+        res.status(400).json({ error: "new_soccer_program_url is required" });
+        return;
+      }
+      // Basic URL format check — must start with http:// or https://.
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(rawUrl.trim());
+      } catch {
+        res.status(400).json({ error: "new_soccer_program_url must be a valid URL" });
+        return;
+      }
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        res.status(400).json({ error: "new_soccer_program_url must use http or https" });
+        return;
+      }
+
+      const newUrl = rawUrl.trim();
+      const adminUserId =
+        req.adminAuth?.kind === "session" ? req.adminAuth.userId : null;
+
+      const { outcome, collegeId } = await deps.resolveWithUrl({
+        id,
+        newUrl,
+        resolvedBy: adminUserId,
+      });
+
+      if (outcome === "not_found") {
+        res.status(404).json({ error: "CollegeRosterQualityFlag not found" });
+        return;
+      }
+      if (outcome === "already_resolved") {
+        res.status(400).json({ error: "Flag is already resolved" });
+        return;
+      }
+      res.json({ success: true, college_id: collegeId, new_soccer_program_url: newUrl });
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export const prodResolveCollegeRosterQualityFlagWithUrlDeps: ResolveCollegeRosterQualityFlagWithUrlDeps =
+  {
+    resolveWithUrl: async ({ id, newUrl, resolvedBy }) => {
+      return defaultDb.transaction(async (tx) => {
+        // Step 1: fetch the flag to get college_id and check resolved state.
+        const flagRows = await tx.execute<{
+          id: number;
+          college_id: number;
+          resolved_at: Date | string | null;
+        }>(sql`
+          SELECT id, college_id, resolved_at
+          FROM ${collegeRosterQualityFlags}
+          WHERE id = ${id}
+          LIMIT 1
+        `);
+        const flagList = Array.from(
+          flagRows as unknown as Array<{
+            id: number;
+            college_id: number;
+            resolved_at: Date | string | null;
+          }>,
+        );
+        if (flagList.length === 0) {
+          return { outcome: "not_found" as ResolveOutcome };
+        }
+        const flag = flagList[0];
+        if (flag.resolved_at !== null) {
+          return { outcome: "already_resolved" as ResolveOutcome };
+        }
+
+        const collegeId = flag.college_id;
+
+        // Step 2: update colleges.soccer_program_url.
+        await tx.execute(sql`
+          UPDATE ${colleges}
+          SET soccer_program_url = ${newUrl}
+          WHERE id = ${collegeId}
+        `);
+
+        // Step 3: mark the flag resolved.
+        await tx.execute(sql`
+          UPDATE ${collegeRosterQualityFlags}
+          SET resolved_at = NOW(),
+              resolved_by = ${resolvedBy},
+              resolution_note = 'url_provided'
+          WHERE id = ${id}
+        `);
+
+        return { outcome: "resolved" as ResolveOutcome, collegeId };
+      });
+    },
+  };
 
 export const prodResolveCollegeRosterQualityFlagDeps: ResolveCollegeRosterQualityFlagDeps =
   {

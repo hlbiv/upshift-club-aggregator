@@ -128,6 +128,11 @@ export default function Sidebar() {
           icon: Link,
         },
         {
+          label: "College roster quality",
+          to: "/data-quality/college-roster",
+          icon: Layers,
+        },
+        {
           label: "Pro academies",
           to: "/data-quality/pro-academies",
           icon: Trophy,
