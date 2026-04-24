@@ -17,7 +17,7 @@ GREATEST(left_college_id, right_college_id)``, and the writer uses
 pair ordering) will never double-queue a pair.
 
 Usage:
-    python -m dedup.college_dedup [--threshold 0.85] [--dry-run]
+    python -m dedup.college_dedup [--threshold 0.92] [--dry-run]
                                   [--division D1] [--gender womens]
                                   [--persist]
 
@@ -132,6 +132,19 @@ def token_set_similarity(s1: str, s2: str) -> float:
     return len(intersection) / len(union)
 
 
+def _is_prefix_extension(a: str, b: str) -> bool:
+    """Return True if one name is just the other with extra words appended.
+
+    Catches: "South Carolina" vs "South Carolina State"
+             "North Dakota" vs "North Dakota State"
+             "Jacksonville" vs "Jacksonville State"
+    """
+    a_tokens = a.lower().split()
+    b_tokens = b.lower().split()
+    shorter, longer = (a_tokens, b_tokens) if len(a_tokens) <= len(b_tokens) else (b_tokens, a_tokens)
+    return longer[:len(shorter)] == shorter
+
+
 def combined_similarity(s1: str, s2: str) -> float:
     """Combine Levenshtein and token-set similarity (weighted average).
 
@@ -208,7 +221,7 @@ def _fetch_all_colleges(
 
 def find_duplicate_pairs(
     colleges: List[Dict],
-    threshold: float = 0.85,
+    threshold: float = 0.92,
 ) -> List[DedupPair]:
     """Compare colleges within the same (division, gender_program) group."""
     # Group by (division, gender_program) — only meaningful to compare
@@ -233,6 +246,8 @@ def find_duplicate_pairs(
             for j in range(i + 1, n):
                 a = group_colleges[i]
                 b = group_colleges[j]
+                if _is_prefix_extension(a["name"], b["name"]):
+                    continue
                 sim = combined_similarity(a["name"], b["name"])
                 if sim >= threshold:
                     # Order by id for stable pair representation
@@ -379,7 +394,7 @@ def print_report(pairs: List[DedupPair]) -> None:
 
 def run_college_dedup(
     *,
-    threshold: float = 0.85,
+    threshold: float = 0.92,
     dry_run: bool = False,
     division: Optional[str] = None,
     gender: Optional[str] = None,
@@ -428,8 +443,8 @@ def main() -> None:
         description="Fuzzy dedup utility for colleges",
     )
     parser.add_argument(
-        "--threshold", type=float, default=0.85,
-        help="Similarity threshold (0-1, default 0.85)",
+        "--threshold", type=float, default=0.92,
+        help="Similarity threshold (0-1, default 0.92)",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
