@@ -2618,6 +2618,27 @@ def _handle_hs_cif_ca(args: argparse.Namespace) -> None:
     _cif_print_summary(outcome)
 
 
+def _handle_ncaa_seed_ncsa(args: argparse.Namespace) -> None:
+    import psycopg2  # type: ignore
+    from extractors.ncaa_seed_ncsa import run_ncaa_seed_ncsa
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.error("[ncaa-seed-ncsa] DATABASE_URL env var not set")
+        sys.exit(1)
+
+    conn = psycopg2.connect(database_url)
+    try:
+        stats = run_ncaa_seed_ncsa(
+            conn,
+            division=getattr(args, "division", None),
+            dry_run=bool(getattr(args, "dry_run", False)),
+        )
+        print(f"[ncaa-seed-ncsa] Stats: {stats}")
+    finally:
+        conn.close()
+
+
 # Kebab-case is the canonical, documented form in the CLI help output;
 # snake-case aliases exist only because early scripts sometimes passed
 # them. Keep both in SOURCE_HANDLERS but ONLY kebab in SOURCE_HELP (snake
@@ -2712,6 +2733,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_resolve_urls_wikipedia": _handle_ncaa_resolve_urls_wikipedia,
     "ncaa-discover-urls-google": _handle_ncaa_discover_urls_google,
     "ncaa_discover_urls_google": _handle_ncaa_discover_urls_google,
+    "ncaa-seed-ncsa": _handle_ncaa_seed_ncsa,
+    "ncaa_seed_ncsa": _handle_ncaa_seed_ncsa,
 }
 
 # One entry per UNIQUE source (kebab form only). Used to build the
@@ -2763,6 +2786,7 @@ SOURCE_HELP: dict[str, str] = {
     "ncaa-resolve-urls-wikipedia": "resolve D1/D2 colleges.soccer_program_url by walking each program's own Wikipedia article infobox for the athletics-website URL, then probing the canonical SIDEARM roster path. Closes the gap left by ncaa-resolve-urls (which requires website IS NOT NULL) — D1/D2 seeders don't write a website column, so 76% of those rows are unreachable today. Scope is D1+D2 only (D3 has working category-seeded URL coverage; NAIA has --source naia-resolve-urls). Optional --division D1|D2 (default both); --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run.",
     "ncaa-discover-urls-google": "fill colleges.soccer_program_url (or website) for rows where URL is NULL via Google Custom Search Engine. Two-pass per school: pass 1 targets the soccer roster page directly; pass 2 finds the athletics homepage as a fallback. Requires GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX env vars. Default --limit 100 (free tier cap). Optional --division, --gender mens|womens|both, --dry-run.",
     "naia-resolve-urls": "resolve NAIA colleges.website + soccer_program_url via naia.org per-team detail pages (closes the gap left by ncaa-resolve-urls, which requires website IS NOT NULL — NAIA seeds carry no website). Phase-1 fetches the naia.org index per gender for a name→slug map; phase-2 GETs each detail page, extracts the athletics outbound link, and probes SIDEARM. Optional --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run. Production runs require proxy_config.yaml — Replit IPs hit naia.org's WAF (HTTP 405).",
+    "ncaa-seed-ncsa": "fill colleges.soccer_program_url gaps from curated NCSA/productiverecruit seed CSVs (scraper/seeds/ncaa_urls_*.csv); Jaro-Winkler >= 0.88 match within division+gender. Optional: --division D1|D2|D3|NAIA, --dry-run.",
 }
 
 
