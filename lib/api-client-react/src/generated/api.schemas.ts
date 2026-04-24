@@ -1625,3 +1625,51 @@ export const GetCoverageLeagueDetailStatus = {
   never_scraped: "never_scraped",
   stale: "stale",
 } as const;
+
+// ---------------------------------------------------------------------------
+// college_roster_quality_flags — GET list + PATCH resolve-url
+// ---------------------------------------------------------------------------
+
+export type GetCollegeRosterQualityFlagsParams = {
+  flag_type?: "historical_no_data" | "partial_parse" | "url_needs_review";
+  /** If true, return only resolved flags; if false, return only active flags; if omitted, return both. */
+  resolved?: boolean;
+  college_id?: number;
+  /** @minimum 1 */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  page_size?: number;
+};
+
+export type CollegeRosterQualityFlagItem = {
+  id: number;
+  collegeId: number;
+  collegeName: string;
+  academicYear: string;
+  flagType: "historical_no_data" | "partial_parse" | "url_needs_review";
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedByEmail: string | null;
+  resolutionNote: string | null;
+};
+
+export type CollegeRosterQualityFlagsResponse = {
+  items: CollegeRosterQualityFlagItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type ResolveCollegeRosterQualityFlagWithUrlBody = {
+  new_soccer_program_url: string;
+};
+
+export type ResolveCollegeRosterQualityFlagWithUrlResponse = {
+  success: boolean;
+  college_id: number;
+  new_soccer_program_url: string;
+};

@@ -15,6 +15,7 @@ import NavLeakedPage from "./pages/dataquality/NavLeaked";
 import NumericOnlyPage from "./pages/dataquality/NumericOnly";
 import ProAcademiesPage from "./pages/dataquality/ProAcademies";
 import CollegeUrlTriagePage from "./pages/dataquality/CollegeUrlTriage";
+import CollegeRosterQualityPage from "./pages/dataquality/CollegeRosterQuality";
 import GrowthPage from "./pages/Growth";
 import CoveragePage from "./pages/Coverage";
 import CoverageLeaguePage from "./pages/CoverageLeague";
@@ -42,6 +43,7 @@ import SchedulerPage from "./pages/Scheduler";
  *   /data-quality/stale-scrapes       → stale-scrapes queue
  *   /data-quality/nav-leaked          → nav-leaked-names queue (M/R workflow)
  *   /data-quality/numeric-only        → numeric-only-names queue (M/R workflow)
+ *   /data-quality/college-roster      → college roster quality flags (resolve-url)
  *
  * ProtectedRoute calls GET /api/v1/admin/me on mount; 200 → render
  * children, 401 → <Navigate to="/login" />.
@@ -162,6 +164,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <CollegeUrlTriagePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/data-quality/college-roster"
+        element={
+          <ProtectedRoute>
+            <CollegeRosterQualityPage />
           </ProtectedRoute>
         }
       />
