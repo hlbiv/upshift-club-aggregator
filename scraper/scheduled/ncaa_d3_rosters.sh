@@ -19,6 +19,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+CADENCE=$(python3 -c "from scraper.lib.season_cadence import scrape_cadence; print(scrape_cadence())")
+echo "[scheduler] NCAA roster scrape cadence: $CADENCE"
+
 export SCRAPE_TRIGGERED_BY=scheduler
 export COACH_MISSES_REPORT_ENABLED=true
 
