@@ -3005,6 +3005,18 @@ def _run_rollup(args) -> None:
             )
         return
 
+    if key == "college-dedup":
+        import os
+        import psycopg2
+        from dedup.college_dedup import run_college_dedup
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        try:
+            run_college_dedup(conn, dry_run=args.dry_run)
+        finally:
+            conn.close()
+        return
+
     logger.error("Unknown --rollup key: %s", key)
     sys.exit(2)
 
@@ -3112,7 +3124,7 @@ def main() -> None:
                         help="Sport identifier for --source ncaa-* handlers. "
                              "Default 'soccer'. New handlers ship with required=True; "
                              "existing handlers use this optional default.")
-    parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune"],
+    parser.add_argument("--rollup", choices=["club-results", "scrape-health", "retention-prune", "college-dedup"],
                         help="Run a derived-data rollup over existing DB rows.")
     parser.add_argument("--full-scan", action="store_true", dest="full_scan",
                         help="For --source nav-leaked-names-detect / numeric-only-names-detect: "
