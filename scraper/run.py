@@ -1830,6 +1830,322 @@ def _handle_ncaa_discover_urls_google(args: argparse.Namespace) -> None:
         )
 
 
+def _handle_ncaa_discover_urls_ncsa(args: argparse.Namespace) -> None:
+    """Fill ``colleges.soccer_program_url`` via NCSA Sports college directory.
+
+    Replaces / complements ``ncaa-discover-urls-google`` for installs where
+    the Google CSE engine cannot search the entire web (engines created after
+    Google's January 20 2026 policy change are permanently site-restricted).
+
+    Scrapes:
+      https://www.ncsasports.org/womens-soccer/colleges
+      https://www.ncsasports.org/mens-soccer/colleges
+
+    For each school with NULL ``soccer_program_url`` the handler:
+      1. Fetches the school's NCSA profile page.
+      2. Extracts the outbound athletics / program URL.
+      3. If it's a direct soccer URL → writes to ``colleges.soccer_program_url``.
+      4. If it's an athletics homepage → SIDEARM-probes it for the soccer
+         page; writes both ``website`` + ``soccer_program_url`` on success.
+
+    Optional flags:
+      --division D1|D2|D3|NAIA  (default: all)
+      --gender mens|womens|both  (default: both)
+      --limit N  (default: 500)
+      --dry-run
+    """
+    import time as _time
+
+    from extractors.ncaa_discover_urls_ncsa import (
+        _make_session,
+        _fetch_html,
+        _DIRECTORY_URLS,
+        parse_directory_page,
+        extract_program_url_from_profile,
+        classify_url,
+        _best_match,
+    )
+    from extractors.ncaa_directory import (
+        resolve_soccer_program_url,
+        USER_AGENT as _NCAA_UA,
+    )
+
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        logger.error("[ncaa-discover-urls-ncsa] psycopg2 not available")
+        sys.exit(1)
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.error("[ncaa-discover-urls-ncsa] DATABASE_URL env var not set")
+        sys.exit(1)
+
+    division_arg = getattr(args, "division", None)
+    gender_arg = getattr(args, "gender", None) or "both"
+    gender_arg = {"boys": "mens", "girls": "womens"}.get(gender_arg, gender_arg)
+    dry_run = bool(getattr(args, "dry_run", False))
+    limit = int(getattr(args, "limit", None) or 500)
+
+    if gender_arg == "both":
+        genders = ["mens", "womens"]
+    elif gender_arg in ("mens", "womens"):
+        genders = [gender_arg]
+    else:
+        logger.error(
+            "[ncaa-discover-urls-ncsa] --gender must be mens|womens|both (got %r)",
+            gender_arg,
+        )
+        sys.exit(2)
+
+    import requests as _requests
+
+    ncsa_session = _make_session()
+    sidearm_session = _requests.Session()
+    sidearm_session.headers.update({
+        "User-Agent": _NCAA_UA,
+        "Accept": "text/html,application/xhtml+xml,*/*",
+    })
+
+    resolved_direct = 0
+    resolved_via_sidearm = 0
+    website_filled = 0
+    missed = 0
+    errors = 0
+
+    try:
+        conn = psycopg2.connect(database_url)
+        try:
+            # Load all colleges with NULL soccer_program_url once.
+            with conn.cursor() as cur:
+                base_sql = """
+                    SELECT id, name, division, gender_program
+                    FROM colleges
+                    WHERE soccer_program_url IS NULL
+                """
+                clauses: list[str] = []
+                params: list = []
+                if division_arg:
+                    clauses.append("AND division = %s")
+                    params.append(division_arg)
+                if gender_arg != "both":
+                    clauses.append("AND gender_program = %s")
+                    params.append(gender_arg)
+                cur.execute(base_sql + " ".join(clauses) + " ORDER BY name", params)
+                all_null_rows = cur.fetchall()
+
+            logger.info(
+                "[ncaa-discover-urls-ncsa] %d college(s) with NULL "
+                "soccer_program_url to process%s",
+                len(all_null_rows), " (dry-run)" if dry_run else "",
+            )
+
+            processed = 0
+
+            for gender in genders:
+                if processed >= limit:
+                    break
+
+                dir_url = _DIRECTORY_URLS[gender]
+                logger.info(
+                    "[ncaa-discover-urls-ncsa] fetching %s directory: %s",
+                    gender, dir_url,
+                )
+                html = _fetch_html(dir_url, ncsa_session)
+                if not html:
+                    logger.warning(
+                        "[ncaa-discover-urls-ncsa] could not fetch NCSA %s "
+                        "directory — skipping gender",
+                        gender,
+                    )
+                    continue
+
+                listings = parse_directory_page(html, gender)
+                if not listings:
+                    logger.warning(
+                        "[ncaa-discover-urls-ncsa] no listings parsed from %s "
+                        "directory — NCSA may have changed their page structure; "
+                        "check %s manually",
+                        gender, dir_url,
+                    )
+                    continue
+
+                # Filter to colleges we actually need (NULL url + matching gender)
+                target_rows = [
+                    r for r in all_null_rows if r[3] == gender
+                ]
+                if division_arg:
+                    target_rows = [r for r in target_rows if r[2] == division_arg]
+
+                logger.info(
+                    "[ncaa-discover-urls-ncsa] %d %s target(s); %d NCSA listings",
+                    len(target_rows), gender, len(listings),
+                )
+
+                for listing in listings:
+                    if processed >= limit:
+                        break
+
+                    # Fuzzy-match listing.name → DB row
+                    match = _best_match(listing.name, target_rows, threshold=88)
+                    if match is None:
+                        logger.debug(
+                            "[ncaa-discover-urls-ncsa] no DB match for NCSA "
+                            "listing %r",
+                            listing.name,
+                        )
+                        continue
+
+                    college_id, db_name, db_div, db_gender = match
+                    tag = f"{db_name} ({db_div} {db_gender})"
+
+                    # Fetch NCSA profile page
+                    profile_html = _fetch_html(listing.profile_url, ncsa_session)
+                    _time.sleep(1.5)
+                    processed += 1
+
+                    if not profile_html:
+                        logger.debug(
+                            "[ncaa-discover-urls-ncsa] could not fetch profile for %s",
+                            tag,
+                        )
+                        errors += 1
+                        continue
+
+                    raw_url = extract_program_url_from_profile(profile_html)
+                    if not raw_url:
+                        logger.debug(
+                            "[ncaa-discover-urls-ncsa] no outbound URL found on "
+                            "NCSA profile for %s",
+                            tag,
+                        )
+                        missed += 1
+                        continue
+
+                    kind = classify_url(raw_url)
+                    if kind is None:
+                        logger.debug(
+                            "[ncaa-discover-urls-ncsa] URL %r for %s not "
+                            "classifiable — skipping",
+                            raw_url, tag,
+                        )
+                        missed += 1
+                        continue
+
+                    if kind == "soccer_program_url":
+                        if dry_run:
+                            logger.info(
+                                "[ncaa-discover-urls-ncsa] [dry-run] %s → "
+                                "soccer_program_url=%s",
+                                tag, raw_url,
+                            )
+                        else:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    "UPDATE colleges SET soccer_program_url = %s "
+                                    "WHERE id = %s",
+                                    (raw_url, college_id),
+                                )
+                            conn.commit()
+                            logger.info(
+                                "[ncaa-discover-urls-ncsa] %s → soccer_program_url=%s",
+                                tag, raw_url,
+                            )
+                        resolved_direct += 1
+
+                    elif kind == "website":
+                        # Probe SIDEARM on the athletics homepage
+                        probed_url: Optional[str] = None
+                        try:
+                            probed_url = resolve_soccer_program_url(
+                                raw_url, gender, session=sidearm_session
+                            )
+                        except Exception as exc:
+                            logger.debug(
+                                "[ncaa-discover-urls-ncsa] SIDEARM probe failed "
+                                "for %s (%s): %s",
+                                tag, raw_url, exc,
+                            )
+
+                        if probed_url:
+                            if dry_run:
+                                logger.info(
+                                    "[ncaa-discover-urls-ncsa] [dry-run] %s → "
+                                    "website=%s soccer_program_url=%s",
+                                    tag, raw_url, probed_url,
+                                )
+                            else:
+                                with conn.cursor() as cur:
+                                    cur.execute(
+                                        """UPDATE colleges
+                                           SET website = COALESCE(website, %s),
+                                               soccer_program_url = %s
+                                           WHERE id = %s""",
+                                        (raw_url, probed_url, college_id),
+                                    )
+                                conn.commit()
+                                logger.info(
+                                    "[ncaa-discover-urls-ncsa] %s → "
+                                    "website=%s soccer_program_url=%s",
+                                    tag, raw_url, probed_url,
+                                )
+                            resolved_via_sidearm += 1
+                        else:
+                            # Fill website only; ncaa-resolve-urls can retry.
+                            if dry_run:
+                                logger.info(
+                                    "[ncaa-discover-urls-ncsa] [dry-run] %s → "
+                                    "website=%s (SIDEARM miss)",
+                                    tag, raw_url,
+                                )
+                            else:
+                                with conn.cursor() as cur:
+                                    cur.execute(
+                                        "UPDATE colleges "
+                                        "SET website = COALESCE(website, %s) "
+                                        "WHERE id = %s",
+                                        (raw_url, college_id),
+                                    )
+                                conn.commit()
+                                logger.info(
+                                    "[ncaa-discover-urls-ncsa] %s → "
+                                    "website=%s (SIDEARM miss — URL only)",
+                                    tag, raw_url,
+                                )
+                            website_filled += 1
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    finally:
+        try:
+            ncsa_session.close()
+        except Exception:
+            pass
+        try:
+            sidearm_session.close()
+        except Exception:
+            pass
+
+    total_updated = resolved_direct + resolved_via_sidearm + website_filled
+    logger.info(
+        "[ncaa-discover-urls-ncsa] done: "
+        "soccer_program_url_direct=%d soccer_program_url_via_sidearm=%d "
+        "website_only=%d missed=%d errors=%d%s",
+        resolved_direct, resolved_via_sidearm,
+        website_filled, missed, errors,
+        " (dry-run)" if dry_run else "",
+    )
+    if total_updated > 0:
+        logger.info(
+            "[ncaa-discover-urls-ncsa] total rows updated: %d "
+            "(run ncaa-resolve-urls after to probe website-only fills)",
+            total_updated,
+        )
+
+
 def _handle_naia_resolve_urls(args: argparse.Namespace) -> None:
     """Resolve NAIA ``colleges.website`` + ``soccer_program_url`` via naia.org.
 
@@ -2767,6 +3083,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_resolve_urls_wikipedia": _handle_ncaa_resolve_urls_wikipedia,
     "ncaa-discover-urls-google": _handle_ncaa_discover_urls_google,
     "ncaa_discover_urls_google": _handle_ncaa_discover_urls_google,
+    "ncaa-discover-urls-ncsa": _handle_ncaa_discover_urls_ncsa,
+    "ncaa_discover_urls_ncsa": _handle_ncaa_discover_urls_ncsa,
     "ncaa-seed-ncsa": _handle_ncaa_seed_ncsa,
     "ncaa_seed_ncsa": _handle_ncaa_seed_ncsa,
 }
@@ -2820,6 +3138,7 @@ SOURCE_HELP: dict[str, str] = {
     "ncaa-resolve-urls": "resolve colleges.soccer_program_url by probing the canonical SIDEARM roster path for each college.website. Scoped by --division (default D1); --limit N for smoke-tests; --dry-run.",
     "ncaa-resolve-urls-wikipedia": "resolve D1/D2 colleges.soccer_program_url by walking each program's own Wikipedia article infobox for the athletics-website URL, then probing the canonical SIDEARM roster path. Closes the gap left by ncaa-resolve-urls (which requires website IS NOT NULL) — D1/D2 seeders don't write a website column, so 76% of those rows are unreachable today. Scope is D1+D2 only (D3 has working category-seeded URL coverage; NAIA has --source naia-resolve-urls). Optional --division D1|D2 (default both); --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run.",
     "ncaa-discover-urls-google": "fill colleges.soccer_program_url (or website) for rows where URL is NULL via Google Custom Search Engine. Two-pass per school: pass 1 targets the soccer roster page directly; pass 2 finds the athletics homepage as a fallback. Requires GOOGLE_CSE_API_KEY + GOOGLE_CSE_CX env vars. Default --limit 100 (free tier cap). Optional --division, --gender mens|womens|both, --dry-run.",
+    "ncaa-discover-urls-ncsa": "fill colleges.soccer_program_url (or website) via NCSA Sports college soccer directory (ncsasports.org). Replaces ncaa-discover-urls-google for installs where the Google CSE engine cannot search the entire web (engines created after Jan 20 2026 are permanently site-restricted). Fetches directory + individual profile pages; probes SIDEARM on athletics homepages. Default --limit 500. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both, --dry-run.",
     "naia-resolve-urls": "resolve NAIA colleges.website + soccer_program_url via naia.org per-team detail pages (closes the gap left by ncaa-resolve-urls, which requires website IS NOT NULL — NAIA seeds carry no website). Phase-1 fetches the naia.org index per gender for a name→slug map; phase-2 GETs each detail page, extracts the athletics outbound link, and probes SIDEARM. Optional --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run. Production runs require proxy_config.yaml — Replit IPs hit naia.org's WAF (HTTP 405).",
     "ncaa-seed-ncsa": "fill colleges.soccer_program_url gaps from curated NCSA/productiverecruit seed CSVs (scraper/seeds/ncaa_urls_*.csv); Jaro-Winkler >= 0.88 match within division+gender. Optional: --division D1|D2|D3|NAIA, --dry-run.",
 }
