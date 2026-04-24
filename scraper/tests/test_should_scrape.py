@@ -29,7 +29,7 @@ except (ImportError, AttributeError):
     class _UndefinedTable(Exception):  # type: ignore[no-redef]
         pass
 
-from extractors.ncaa_soccer_rosters import should_scrape, _MAX_HISTORICAL_ATTEMPTS  # noqa: E402
+from extractors.ncaa_soccer_rosters import should_scrape, _MAX_HISTORICAL_ATTEMPTS, LIKELY_COVID_SEASONS  # noqa: E402
 
 CURRENT = "2025-26"
 HISTORICAL = "2024-25"
@@ -70,6 +70,52 @@ class TestForceFlags:
             COLLEGE, HISTORICAL, CURRENT, conn=conn, force_historical="2022-23"
         )
         assert go is True
+
+
+class TestCovidShortCircuit:
+    COVID_SEASON = "2020-21"
+
+    def test_covid_season_is_skipped(self):
+        """2020-21 season should be skipped without force_rescrape."""
+        conn = _conn([])
+        go, reason = should_scrape(
+            COLLEGE, self.COVID_SEASON, CURRENT, conn=conn
+        )
+        assert go is False
+        assert reason == "likely_covid_cancelled"
+
+    def test_covid_season_force_rescrape_overrides(self):
+        """force_rescrape=True should bypass the COVID skip entirely."""
+        # With force_rescrape the function returns before reaching the COVID guard;
+        # just confirm the early-return fires and reason is force_rescrape.
+        conn = _conn([])
+        go, reason = should_scrape(
+            COLLEGE, self.COVID_SEASON, CURRENT, conn=conn, force_rescrape=True
+        )
+        assert go is True
+        assert "force_rescrape" in reason
+
+    def test_covid_season_force_historical_matching_overrides(self):
+        """force_historical matching the COVID season should bypass the COVID skip."""
+        conn = _conn([])
+        go, reason = should_scrape(
+            COLLEGE, self.COVID_SEASON, CURRENT, conn=conn, force_historical=self.COVID_SEASON
+        )
+        assert go is True
+        assert "force_historical" in reason
+
+    def test_covid_season_force_historical_non_matching_still_skips(self):
+        """force_historical for a different season does not override the COVID skip."""
+        conn = _conn([])
+        go, reason = should_scrape(
+            COLLEGE, self.COVID_SEASON, CURRENT, conn=conn, force_historical="2022-23"
+        )
+        assert go is False
+        assert reason == "likely_covid_cancelled"
+
+    def test_likely_covid_seasons_constant_contains_2020_21(self):
+        """Sanity-check the constant itself."""
+        assert "2020-21" in LIKELY_COVID_SEASONS
 
 
 class TestCurrentSeasonFreshness:

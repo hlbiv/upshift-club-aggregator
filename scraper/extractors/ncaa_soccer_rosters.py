@@ -2089,6 +2089,9 @@ def _prior_academic_years(current: str, n: int) -> List[str]:
 
 _MAX_HISTORICAL_ATTEMPTS = 3
 
+# Seasons with widespread programme cancellations — skip Playwright fallback entirely
+LIKELY_COVID_SEASONS = {"2020-21"}
+
 
 def should_scrape(
     college: Dict,
@@ -2107,11 +2110,12 @@ def should_scrape(
     Decision tree:
       1. force_rescrape=True → always scrape (override everything)
       2. force_historical matches this season → always scrape
-      3. Current season: skip if last_scraped_at < skip_fresh_days ago
-      4. Historical with ≥10 existing players → NEVER re-scrape (data is done)
-      5. Historical with unresolved url_needs_review flag → skip (operator must triage)
-      6. Historical with ≥3 failed attempts (tracked in flag metadata) → skip permanently
-      7. Otherwise: scrape
+      3. COVID season (LIKELY_COVID_SEASONS) → skip (likely_covid_cancelled)
+      4. Current season: skip if last_scraped_at < skip_fresh_days ago
+      5. Historical with ≥10 existing players → NEVER re-scrape (data is done)
+      6. Historical with unresolved url_needs_review flag → skip (operator must triage)
+      7. Historical with ≥3 failed attempts (tracked in flag metadata) → skip permanently
+      8. Otherwise: scrape
 
     Degrades gracefully if ``college_roster_quality_flags`` doesn't exist
     (pre-PR-24 DB push) — skips flag checks and proceeds.
@@ -2120,6 +2124,8 @@ def should_scrape(
         return (True, "force_rescrape")
     if force_historical and force_historical == season:
         return (True, "force_historical")
+    if season in LIKELY_COVID_SEASONS and not force_rescrape and force_historical != season:
+        return (False, "likely_covid_cancelled")
 
     college_id = college["id"]
     is_current = season == current_season
