@@ -973,6 +973,128 @@ export const RejectClubDuplicateResponse = zod
   );
 
 /**
+ * Populated by `scraper/dedup/college_dedup.py --persist`. Default status is `pending`; pass `status=merged|rejected|all` to widen. Rows are sorted by score DESC so the strongest candidates surface first. Primary use: collapse D1 womens duplicate rows seeded from multiple scrapers.
+
+ * @summary List college-duplicate pairs in the review queue
+ */
+export const listCollegeDuplicatesQueryStatusDefault = `pending`;
+export const listCollegeDuplicatesQueryPageDefault = 1;
+export const listCollegeDuplicatesQueryPageSizeDefault = 20;
+export const listCollegeDuplicatesQueryPageSizeMax = 100;
+
+export const ListCollegeDuplicatesQueryParams = zod.object({
+  status: zod
+    .enum(["pending", "merged", "rejected", "all"])
+    .default(listCollegeDuplicatesQueryStatusDefault),
+  page: zod.coerce.number().default(listCollegeDuplicatesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(listCollegeDuplicatesQueryPageSizeMax)
+    .default(listCollegeDuplicatesQueryPageSizeDefault),
+  limit: zod.coerce.number().optional().describe("Alias for page_size"),
+});
+
+export const ListCollegeDuplicatesResponse = zod.object({
+  pairs: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        leftCollegeId: zod.number(),
+        rightCollegeId: zod.number(),
+        score: zod.number(),
+        method: zod.string(),
+        status: zod.enum(["pending", "merged", "rejected"]),
+        createdAt: zod.coerce.date(),
+        reviewedAt: zod.coerce.date().nullable(),
+        reviewedBy: zod.number().nullable(),
+        leftSnapshot: zod.record(zod.string(), zod.unknown()),
+        rightSnapshot: zod.record(zod.string(), zod.unknown()),
+      })
+      .describe(
+        "One college-duplicate pair record surfaced in the dedup review queue.",
+      ),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
+ * Extends the queue row with the live `colleges` rows on both sides — everything a reviewer needs on one screen.
+
+ * @summary College-duplicate detail with live side-by-side context
+ */
+export const GetCollegeDuplicateParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCollegeDuplicateResponse = zod
+  .object({
+    id: zod.number(),
+    leftCollegeId: zod.number(),
+    rightCollegeId: zod.number(),
+    score: zod.number(),
+    method: zod.string(),
+    status: zod.enum(["pending", "merged", "rejected"]),
+    createdAt: zod.coerce.date(),
+    reviewedAt: zod.coerce.date().nullable(),
+    reviewedBy: zod.number().nullable(),
+    leftSnapshot: zod.record(zod.string(), zod.unknown()),
+    rightSnapshot: zod.record(zod.string(), zod.unknown()),
+  })
+  .describe(
+    "One college-duplicate pair record surfaced in the dedup review queue.",
+  )
+  .and(
+    zod.object({
+      leftCurrent: zod.record(zod.string(), zod.unknown()),
+      rightCurrent: zod.record(zod.string(), zod.unknown()),
+    }),
+  );
+
+/**
+ * Invokes the transactional `mergeColleges` helper. Reparents `college_coaches`, `college_roster_history`, and `college_coach_tenures` from the loser to the winner, inserts an audit `college_aliases` row, and deletes the loser. The merge result is logged server-side; the 5-field contract projection returns to the caller.
+
+ * @summary Merge a duplicate-college pair (transactional reparent + alias)
+ */
+export const MergeCollegeDuplicateParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const MergeCollegeDuplicateBody = zod.object({
+  winnerId: zod.number(),
+  loserId: zod.number(),
+  notes: zod.string().optional(),
+});
+
+export const MergeCollegeDuplicateResponse = zod.object({
+  ok: zod.literal(true),
+  winnerId: zod.number(),
+  loserAliasesCreated: zod.number(),
+  coachesReparented: zod.number(),
+  rosterRowsReparented: zod.number(),
+  tenuresReparented: zod.number(),
+});
+
+/**
+ * Flips the queue row to `status=rejected` with optional `notes`. No data reparenting; the two colleges remain separate rows.
+
+ * @summary Reject a duplicate-college pair (no merge performed)
+ */
+export const RejectCollegeDuplicateParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RejectCollegeDuplicateBody = zod.object({
+  notes: zod.string().optional(),
+});
+
+export const RejectCollegeDuplicateResponse = zod.object({
+  ok: zod.literal(true),
+  id: zod.number(),
+});
+
+/**
  * Identifies `club_roster_snapshots` rows whose `club_name_raw` is a nav-menu token (FACILITIES, STAFF, NEWS, …) rather than a real club name. Default `dryRun=true` returns counts + sample names; pass `dryRun=false` to DELETE up to `limit` matching rows in a transaction.
 
  * @summary Scan or delete GA Premier nav-token orphans in club_roster_snapshots

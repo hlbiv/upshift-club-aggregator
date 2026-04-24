@@ -330,6 +330,7 @@ export * from "./api-keys";
 export * from "./admin";
 export * from "./scheduler-jobs";
 export * from "./club-duplicates";
+export * from "./college-duplicates";
 export * from "./player-id-selections";
 export * from "./ynt";
 export * from "./video-sources";

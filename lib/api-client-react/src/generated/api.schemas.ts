@@ -498,6 +498,67 @@ export interface ClubDuplicateRejectRequest {
   notes?: string;
 }
 
+export type CollegeDuplicateStatus =
+  (typeof CollegeDuplicateStatus)[keyof typeof CollegeDuplicateStatus];
+
+export const CollegeDuplicateStatus = {
+  pending: "pending",
+  merged: "merged",
+  rejected: "rejected",
+} as const;
+
+export type CollegeDuplicateLeftSnapshot = { [key: string]: unknown };
+
+export type CollegeDuplicateRightSnapshot = { [key: string]: unknown };
+
+/**
+ * One college-duplicate pair record surfaced in the dedup review queue.
+ */
+export interface CollegeDuplicate {
+  id: number;
+  leftCollegeId: number;
+  rightCollegeId: number;
+  score: number;
+  method: string;
+  status: CollegeDuplicateStatus;
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewedBy: number | null;
+  leftSnapshot: CollegeDuplicateLeftSnapshot;
+  rightSnapshot: CollegeDuplicateRightSnapshot;
+}
+
+export interface CollegeDuplicateList {
+  pairs: CollegeDuplicate[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type CollegeDuplicateDetailLeftCurrent = { [key: string]: unknown };
+
+export type CollegeDuplicateDetailRightCurrent = { [key: string]: unknown };
+
+export type CollegeDuplicateDetail = CollegeDuplicate & {
+  leftCurrent: CollegeDuplicateDetailLeftCurrent;
+  rightCurrent: CollegeDuplicateDetailRightCurrent;
+};
+
+export interface CollegeDuplicateMergeRequest {
+  winnerId: number;
+  loserId: number;
+  notes?: string;
+}
+
+export interface CollegeDuplicateMergeResponse {
+  ok: boolean;
+  winnerId: number;
+  loserAliasesCreated: number;
+  coachesReparented: number;
+  rosterRowsReparented: number;
+  tenuresReparented: number;
+}
+
 /**
  * `reject` returns a minimal acknowledgement. Inspect `/dedup/clubs/{id}` to read the flipped `status` + `reviewedAt`/`reviewedBy`.
 
@@ -1274,6 +1335,38 @@ export const ListClubDuplicatesStatus = {
   rejected: "rejected",
   all: "all",
 } as const;
+
+export type ListCollegeDuplicatesParams = {
+  status?: ListCollegeDuplicatesStatus;
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
+  /**
+   * Alias for page_size
+   */
+  limit?: number;
+};
+
+export type ListCollegeDuplicatesStatus =
+  (typeof ListCollegeDuplicatesStatus)[keyof typeof ListCollegeDuplicatesStatus];
+
+export const ListCollegeDuplicatesStatus = {
+  pending: "pending",
+  merged: "merged",
+  rejected: "rejected",
+  all: "all",
+} as const;
+
+export type RejectCollegeDuplicateBody = {
+  notes?: string;
+};
+
+export type RejectCollegeDuplicate200 = {
+  ok: boolean;
+  id: number;
+};
 
 export type GetEmptyStaffPagesParams = {
   /**

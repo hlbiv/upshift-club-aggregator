@@ -140,6 +140,61 @@ export const ClubDuplicateMergeResponse = z.object({
 });
 export type ClubDuplicateMergeResponse = z.infer<typeof ClubDuplicateMergeResponse>;
 
+// ---------------------------------------------------------------------------
+// College dedup schemas
+// ---------------------------------------------------------------------------
+
+/** Single college-duplicate pair record surfaced in the dedup review queue. */
+export const CollegeDuplicate = z.object({
+  id: z.number().int(),
+  leftCollegeId: z.number().int(),
+  rightCollegeId: z.number().int(),
+  score: z.number(),
+  method: z.string(),
+  status: z.enum(["pending", "merged", "rejected"]),
+  createdAt: z.string().datetime(),
+  reviewedAt: z.string().datetime().nullable(),
+  reviewedBy: z.number().int().nullable(),
+  leftSnapshot: z.record(z.unknown()),
+  rightSnapshot: z.record(z.unknown()),
+});
+export type CollegeDuplicate = z.infer<typeof CollegeDuplicate>;
+
+/** Paginated envelope of CollegeDuplicate pairs. */
+export const CollegeDuplicateList = z.object({
+  pairs: z.array(CollegeDuplicate),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export type CollegeDuplicateList = z.infer<typeof CollegeDuplicateList>;
+
+/** CollegeDuplicate extended with live side-by-side context for the detail view. */
+export const CollegeDuplicateDetail = CollegeDuplicate.extend({
+  leftCurrent: z.record(z.unknown()),
+  rightCurrent: z.record(z.unknown()),
+});
+export type CollegeDuplicateDetail = z.infer<typeof CollegeDuplicateDetail>;
+
+/** Request body for POST /v1/admin/dedup/colleges/:id/merge. */
+export const CollegeDuplicateMergeRequest = z.object({
+  winnerId: z.number().int(),
+  loserId: z.number().int(),
+  notes: z.string().optional(),
+});
+export type CollegeDuplicateMergeRequest = z.infer<typeof CollegeDuplicateMergeRequest>;
+
+/** Response body for POST /v1/admin/dedup/colleges/:id/merge. */
+export const CollegeDuplicateMergeResponse = z.object({
+  ok: z.literal(true),
+  winnerId: z.number().int(),
+  loserAliasesCreated: z.number().int(),
+  coachesReparented: z.number().int(),
+  rosterRowsReparented: z.number().int(),
+  tenuresReparented: z.number().int(),
+});
+export type CollegeDuplicateMergeResponse = z.infer<typeof CollegeDuplicateMergeResponse>;
+
 /**
  * Request body for POST /v1/admin/data-quality/ga-premier-orphans.
  *
