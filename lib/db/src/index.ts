@@ -17,3 +17,4 @@ export * from "./schema";
 export * from "./api-keys";
 export * from "./admin-sessions";
 export * from "./dedup/merge-clubs";
+export * from "./dedup/merge-colleges";

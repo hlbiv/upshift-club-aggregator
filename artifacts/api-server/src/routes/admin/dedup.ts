@@ -44,10 +44,15 @@ import {
   canonicalClubs,
   clubAffiliations,
   clubRosterSnapshots,
+  collegeDuplicates,
+  colleges as collegesTable,
   mergeClubs as defaultMergeClubs,
+  mergeColleges as defaultMergeColleges,
   type ClubDuplicate as ClubDuplicateRow,
   type CanonicalClub,
   type MergeClubsResult,
+  type CollegeDuplicate as CollegeDuplicateRow,
+  type MergeCollegesResult,
 } from "@workspace/db";
 import {
   ClubDuplicate,
@@ -55,8 +60,16 @@ import {
   ClubDuplicateDetail,
   ClubDuplicateMergeRequest,
   ClubDuplicateMergeResponse,
+  CollegeDuplicate,
+  CollegeDuplicateList,
+  CollegeDuplicateDetail,
+  CollegeDuplicateMergeRequest,
+  CollegeDuplicateMergeResponse,
 } from "@hlbiv/api-zod/admin";
 import { parsePagination } from "../../lib/pagination";
+
+// Type for a colleges row (subset of fields we expose)
+type CollegeRow = typeof collegesTable.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // Dependency injection surface.
@@ -506,3 +519,397 @@ export const dedupRouter: IRouter = makeDedupRouter({
 });
 
 export default dedupRouter;
+
+// ===========================================================================
+// College dedup routes
+// ===========================================================================
+
+/**
+ * `/api/v1/admin/dedup/colleges/*` — college duplicate-review routes.
+ *
+ *   GET  /api/v1/admin/dedup/colleges?status=pending&limit=50&page=1
+ *   GET  /api/v1/admin/dedup/colleges/:id
+ *   POST /api/v1/admin/dedup/colleges/:id/merge
+ *   POST /api/v1/admin/dedup/colleges/:id/reject
+ *
+ * Factory pattern mirrors the club dedup router above.
+ */
+
+export interface CollegeDedupDeps {
+  listCollegePairs: (args: {
+    status: string;
+    limit: number;
+    offset: number;
+  }) => Promise<{ rows: CollegeDuplicateRow[]; total: number }>;
+  getCollegePairById: (id: number) => Promise<CollegeDuplicateRow | null>;
+  getCollegeById: (id: number) => Promise<CollegeRow | null>;
+  mergeCollegesAndMarkReviewed: (args: {
+    pairId: number;
+    winnerId: number;
+    loserId: number;
+    reviewedBy: number | null;
+    notes?: string;
+  }) => Promise<MergeCollegesResult>;
+  rejectCollegePair: (args: {
+    pairId: number;
+    reviewedBy: number | null;
+    notes?: string;
+  }) => Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Row → contract projections for colleges.
+// ---------------------------------------------------------------------------
+
+function toContractCollegeStatus(s: string): "pending" | "merged" | "rejected" {
+  if (s === "merged" || s === "rejected") return s;
+  return "pending";
+}
+
+function collegeRowToContract(row: CollegeDuplicateRow): unknown {
+  return {
+    id: row.id,
+    leftCollegeId: row.leftCollegeId,
+    rightCollegeId: row.rightCollegeId,
+    score: row.score,
+    method: row.method,
+    status: toContractCollegeStatus(row.status),
+    createdAt: row.createdAt.toISOString(),
+    reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+    reviewedBy: row.reviewedBy ?? null,
+    leftSnapshot: (row.leftSnapshot as Record<string, unknown> | null) ?? {},
+    rightSnapshot: (row.rightSnapshot as Record<string, unknown> | null) ?? {},
+  };
+}
+
+function collegeToRecord(college: CollegeRow | null): Record<string, unknown> {
+  if (!college) return {};
+  return {
+    id: college.id,
+    name: college.name,
+    slug: college.slug,
+    division: college.division,
+    genderProgram: college.genderProgram,
+    conference: college.conference,
+    state: college.state,
+    city: college.city,
+    website: college.website,
+    logoUrl: college.logoUrl,
+    lastScrapedAt: college.lastScrapedAt
+      ? college.lastScrapedAt.toISOString()
+      : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Handler factories for colleges.
+// ---------------------------------------------------------------------------
+
+export function makeCollegeListHandler(deps: CollegeDedupDeps): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const rawStatus = req.query.status;
+      const status =
+        typeof rawStatus === "string" && rawStatus.length > 0
+          ? rawStatus
+          : "pending";
+
+      const { page, pageSize, offset } = parsePagination(
+        req.query.page,
+        req.query.limit ?? req.query.page_size,
+      );
+
+      const { rows, total } = await deps.listCollegePairs({
+        status,
+        limit: pageSize,
+        offset,
+      });
+
+      res.json(
+        CollegeDuplicateList.parse({
+          pairs: rows.map(collegeRowToContract),
+          total,
+          page,
+          pageSize,
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export function makeCollegeDetailHandler(deps: CollegeDedupDeps): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const pair = await deps.getCollegePairById(id);
+      if (!pair) {
+        res.status(404).json({ error: "CollegeDuplicate not found" });
+        return;
+      }
+
+      const [leftCurrent, rightCurrent] = await Promise.all([
+        deps.getCollegeById(pair.leftCollegeId),
+        deps.getCollegeById(pair.rightCollegeId),
+      ]);
+
+      const base = collegeRowToContract(pair) as Record<string, unknown>;
+      res.json(
+        CollegeDuplicateDetail.parse({
+          ...base,
+          leftCurrent: collegeToRecord(leftCurrent),
+          rightCurrent: collegeToRecord(rightCurrent),
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export function makeCollegeMergeHandler(deps: CollegeDedupDeps): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const parsed = CollegeDuplicateMergeRequest.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid request body" });
+        return;
+      }
+      const { winnerId, loserId, notes } = parsed.data;
+
+      const pair = await deps.getCollegePairById(id);
+      if (!pair) {
+        res.status(404).json({ error: "CollegeDuplicate not found" });
+        return;
+      }
+
+      if (pair.status !== "pending") {
+        res.status(409).json({
+          error: "already_reviewed",
+          status: pair.status,
+        });
+        return;
+      }
+
+      // Accept either orientation of (winner, loser) relative to (left, right).
+      const matchesOrder =
+        winnerId === pair.leftCollegeId && loserId === pair.rightCollegeId;
+      const matchesReversed =
+        winnerId === pair.rightCollegeId && loserId === pair.leftCollegeId;
+      if (!matchesOrder && !matchesReversed) {
+        res.status(400).json({ error: "winner_loser_mismatch" });
+        return;
+      }
+
+      const adminUserId =
+        req.adminAuth?.kind === "session" ? req.adminAuth.userId : null;
+
+      const result = await deps.mergeCollegesAndMarkReviewed({
+        pairId: id,
+        winnerId,
+        loserId,
+        reviewedBy: adminUserId,
+        notes,
+      });
+
+      // eslint-disable-next-line no-console
+      console.info("[admin-dedup] college merge completed", {
+        pairId: id,
+        winnerId,
+        loserId,
+        reviewedBy: adminUserId,
+        result,
+      });
+
+      res.json(
+        CollegeDuplicateMergeResponse.parse({
+          ok: true,
+          winnerId: result.winnerId,
+          loserAliasesCreated: result.loserAliasesCreated,
+          coachesReparented: result.coachesReparented,
+          rosterRowsReparented: result.rosterRowsReparented,
+          tenuresReparented: result.tenuresReparented,
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export function makeCollegeRejectHandler(deps: CollegeDedupDeps): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "Invalid id" });
+        return;
+      }
+
+      const notes =
+        req.body &&
+        typeof req.body === "object" &&
+        typeof (req.body as { notes?: unknown }).notes === "string"
+          ? (req.body as { notes: string }).notes
+          : undefined;
+
+      const pair = await deps.getCollegePairById(id);
+      if (!pair) {
+        res.status(404).json({ error: "CollegeDuplicate not found" });
+        return;
+      }
+      if (pair.status !== "pending") {
+        res.status(409).json({
+          error: "already_reviewed",
+          status: pair.status,
+        });
+        return;
+      }
+
+      const adminUserId =
+        req.adminAuth?.kind === "session" ? req.adminAuth.userId : null;
+
+      await deps.rejectCollegePair({
+        pairId: id,
+        reviewedBy: adminUserId,
+        notes,
+      });
+
+      res.json({ ok: true, id });
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// College router factory + default wiring.
+// ---------------------------------------------------------------------------
+
+export function makeCollegeDedupRouter(deps: CollegeDedupDeps): IRouter {
+  const router: IRouter = Router();
+  router.get("/colleges", makeCollegeListHandler(deps));
+  router.get("/colleges/:id", makeCollegeDetailHandler(deps));
+  router.post("/colleges/:id/merge", makeCollegeMergeHandler(deps));
+  router.post("/colleges/:id/reject", makeCollegeRejectHandler(deps));
+  return router;
+}
+
+// ---------------------------------------------------------------------------
+// Production (live DB) college dependency wiring.
+// ---------------------------------------------------------------------------
+
+async function listCollegePairs(args: {
+  status: string;
+  limit: number;
+  offset: number;
+}): Promise<{ rows: CollegeDuplicateRow[]; total: number }> {
+  const conditions: SQL[] = [];
+  const { status } = args;
+  if (status === "pending" || status === "merged" || status === "rejected") {
+    conditions.push(eq(collegeDuplicates.status, status));
+  } else if (status === "all") {
+    // No predicate — include every row.
+  } else {
+    conditions.push(sql`1 = 0`);
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [countRow] = await defaultDb
+    .select({ count: sql<number>`count(*)::int` })
+    .from(collegeDuplicates)
+    .where(where);
+
+  const rows = await defaultDb
+    .select()
+    .from(collegeDuplicates)
+    .where(where)
+    .orderBy(sql`${collegeDuplicates.score} DESC`, asc(collegeDuplicates.id))
+    .limit(args.limit)
+    .offset(args.offset);
+
+  return { rows, total: countRow?.count ?? 0 };
+}
+
+async function getCollegePairById(id: number): Promise<CollegeDuplicateRow | null> {
+  const [row] = await defaultDb
+    .select()
+    .from(collegeDuplicates)
+    .where(eq(collegeDuplicates.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+async function getCollegeById(id: number): Promise<CollegeRow | null> {
+  const [row] = await defaultDb
+    .select()
+    .from(collegesTable)
+    .where(eq(collegesTable.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+async function mergeCollegesAndMarkReviewed(args: {
+  pairId: number;
+  winnerId: number;
+  loserId: number;
+  reviewedBy: number | null;
+  notes?: string;
+}): Promise<MergeCollegesResult> {
+  return defaultDb.transaction(async (tx) => {
+    const result = await defaultMergeColleges({
+      db: tx as unknown as typeof defaultDb,
+      winnerId: args.winnerId,
+      loserId: args.loserId,
+      reviewedBy: args.reviewedBy,
+      notes: args.notes,
+    });
+    await tx
+      .update(collegeDuplicates)
+      .set({
+        status: "merged",
+        reviewedAt: new Date(),
+        reviewedBy: args.reviewedBy,
+        notes: args.notes ?? null,
+      })
+      .where(eq(collegeDuplicates.id, args.pairId));
+    return result;
+  });
+}
+
+async function rejectCollegePair(args: {
+  pairId: number;
+  reviewedBy: number | null;
+  notes?: string;
+}): Promise<void> {
+  await defaultDb
+    .update(collegeDuplicates)
+    .set({
+      status: "rejected",
+      reviewedAt: new Date(),
+      reviewedBy: args.reviewedBy,
+      notes: args.notes ?? null,
+    })
+    .where(eq(collegeDuplicates.id, args.pairId));
+}
+
+export const collegeDedupRouter: IRouter = makeCollegeDedupRouter({
+  listCollegePairs,
+  getCollegePairById,
+  getCollegeById,
+  mergeCollegesAndMarkReviewed,
+  rejectCollegePair,
+});

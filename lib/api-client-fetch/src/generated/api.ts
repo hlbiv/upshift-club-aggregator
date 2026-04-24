@@ -26,6 +26,10 @@ import type {
   CoachMissesResponse,
   CoachQualityFlagsResponse,
   CoachSearchResponse,
+  CollegeDuplicateDetail,
+  CollegeDuplicateList,
+  CollegeDuplicateMergeRequest,
+  CollegeDuplicateMergeResponse,
   CollegeListResponse,
   CoverageLeagueDetailResponse,
   CoverageLeagueHistoryResponse,
@@ -59,6 +63,7 @@ import type {
   LeagueListResponse,
   ListClubDuplicatesParams,
   ListClubsParams,
+  ListCollegeDuplicatesParams,
   ListCollegesParams,
   ListScrapeHealthParams,
   ListScrapeRunsParams,
@@ -68,6 +73,8 @@ import type {
   NumericOnlyNamesResponse,
   OverlapResponse,
   ProAcademiesResponse,
+  RejectCollegeDuplicate200,
+  RejectCollegeDuplicateBody,
   ResolveCollegeUrlBody,
   ResolveRosterQualityFlagRequest,
   RunNowRequest,
@@ -755,6 +762,111 @@ export const rejectClubDuplicate = async (
       method: "POST",
       headers: { "Content-Type": "application/json", ...options?.headers },
       body: JSON.stringify(clubDuplicateRejectRequest),
+    },
+  );
+};
+
+/**
+ * Populated by `scraper/dedup/college_dedup.py --persist`. Default status is `pending`; pass `status=merged|rejected|all` to widen. Rows are sorted by score DESC so the strongest candidates surface first. Primary use: collapse D1 womens duplicate rows seeded from multiple scrapers.
+
+ * @summary List college-duplicate pairs in the review queue
+ */
+export const getListCollegeDuplicatesUrl = (
+  params?: ListCollegeDuplicatesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/dedup/colleges?${stringifiedParams}`
+    : `/api/v1/admin/dedup/colleges`;
+};
+
+export const listCollegeDuplicates = async (
+  params?: ListCollegeDuplicatesParams,
+  options?: RequestInit,
+): Promise<CollegeDuplicateList> => {
+  return customFetch<CollegeDuplicateList>(
+    getListCollegeDuplicatesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * Extends the queue row with the live `colleges` rows on both sides — everything a reviewer needs on one screen.
+
+ * @summary College-duplicate detail with live side-by-side context
+ */
+export const getGetCollegeDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/colleges/${id}`;
+};
+
+export const getCollegeDuplicate = async (
+  id: number,
+  options?: RequestInit,
+): Promise<CollegeDuplicateDetail> => {
+  return customFetch<CollegeDuplicateDetail>(getGetCollegeDuplicateUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Invokes the transactional `mergeColleges` helper. Reparents `college_coaches`, `college_roster_history`, and `college_coach_tenures` from the loser to the winner, inserts an audit `college_aliases` row, and deletes the loser. The merge result is logged server-side; the 5-field contract projection returns to the caller.
+
+ * @summary Merge a duplicate-college pair (transactional reparent + alias)
+ */
+export const getMergeCollegeDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/colleges/${id}/merge`;
+};
+
+export const mergeCollegeDuplicate = async (
+  id: number,
+  collegeDuplicateMergeRequest: CollegeDuplicateMergeRequest,
+  options?: RequestInit,
+): Promise<CollegeDuplicateMergeResponse> => {
+  return customFetch<CollegeDuplicateMergeResponse>(
+    getMergeCollegeDuplicateUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(collegeDuplicateMergeRequest),
+    },
+  );
+};
+
+/**
+ * Flips the queue row to `status=rejected` with optional `notes`. No data reparenting; the two colleges remain separate rows.
+
+ * @summary Reject a duplicate-college pair (no merge performed)
+ */
+export const getRejectCollegeDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/colleges/${id}/reject`;
+};
+
+export const rejectCollegeDuplicate = async (
+  id: number,
+  rejectCollegeDuplicateBody?: RejectCollegeDuplicateBody,
+  options?: RequestInit,
+): Promise<RejectCollegeDuplicate200> => {
+  return customFetch<RejectCollegeDuplicate200>(
+    getRejectCollegeDuplicateUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(rejectCollegeDuplicateBody),
     },
   );
 };

@@ -1025,6 +1025,200 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/dedup/colleges:
+    get:
+      operationId: listCollegeDuplicates
+      tags: [admin]
+      summary: List college-duplicate pairs in the review queue
+      description: >
+        Populated by `scraper/dedup/college_dedup.py --persist`. Default status
+        is `pending`; pass `status=merged|rejected|all` to widen. Rows are
+        sorted by score DESC so the strongest candidates surface first.
+        Primary use: collapse D1 womens duplicate rows seeded from multiple
+        scrapers.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, merged, rejected, all]
+            default: pending
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: limit
+          in: query
+          schema:
+            type: integer
+          description: Alias for page_size
+      responses:
+        "200":
+          description: Paginated CollegeDuplicate rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollegeDuplicateList"
+
+  /v1/admin/dedup/colleges/{id}:
+    get:
+      operationId: getCollegeDuplicate
+      tags: [admin]
+      summary: College-duplicate detail with live side-by-side context
+      description: >
+        Extends the queue row with the live `colleges` rows on both sides —
+        everything a reviewer needs on one screen.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: CollegeDuplicateDetail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollegeDuplicateDetail"
+        "400":
+          description: Invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/dedup/colleges/{id}/merge:
+    post:
+      operationId: mergeCollegeDuplicate
+      tags: [admin]
+      summary: Merge a duplicate-college pair (transactional reparent + alias)
+      description: >
+        Invokes the transactional `mergeColleges` helper. Reparents
+        `college_coaches`, `college_roster_history`, and
+        `college_coach_tenures` from the loser to the winner, inserts an audit
+        `college_aliases` row, and deletes the loser. The merge result is
+        logged server-side; the 5-field contract projection returns to the
+        caller.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CollegeDuplicateMergeRequest"
+      responses:
+        "200":
+          description: Merge succeeded; queue row flipped to `status=merged`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollegeDuplicateMergeResponse"
+        "400":
+          description: Invalid id, body, or (winner, loser) mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Pair not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Pair already reviewed (status != pending)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/dedup/colleges/{id}/reject:
+    post:
+      operationId: rejectCollegeDuplicate
+      tags: [admin]
+      summary: Reject a duplicate-college pair (no merge performed)
+      description: >
+        Flips the queue row to `status=rejected` with optional `notes`. No
+        data reparenting; the two colleges remain separate rows.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+      responses:
+        "200":
+          description: Pair marked rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+                  id:
+                    type: integer
+                required: [ok, id]
+        "400":
+          description: Invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Pair not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Pair already reviewed (status != pending)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/data-quality/ga-premier-orphans:
     post:
       operationId: gaPremierOrphanCleanup
@@ -3199,6 +3393,123 @@ components:
       properties:
         notes:
           type: string
+
+    CollegeDuplicate:
+      type: object
+      description: One college-duplicate pair record surfaced in the dedup review queue.
+      properties:
+        id:
+          type: integer
+        leftCollegeId:
+          type: integer
+        rightCollegeId:
+          type: integer
+        score:
+          type: number
+        method:
+          type: string
+        status:
+          type: string
+          enum: [pending, merged, rejected]
+        createdAt:
+          type: string
+          format: date-time
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        reviewedBy:
+          type: integer
+          nullable: true
+        leftSnapshot:
+          type: object
+          additionalProperties: true
+        rightSnapshot:
+          type: object
+          additionalProperties: true
+      required:
+        - id
+        - leftCollegeId
+        - rightCollegeId
+        - score
+        - method
+        - status
+        - createdAt
+        - reviewedAt
+        - reviewedBy
+        - leftSnapshot
+        - rightSnapshot
+
+    CollegeDuplicateList:
+      type: object
+      properties:
+        pairs:
+          type: array
+          items:
+            $ref: "#/components/schemas/CollegeDuplicate"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - pairs
+        - total
+        - page
+        - pageSize
+
+    CollegeDuplicateDetail:
+      allOf:
+        - $ref: "#/components/schemas/CollegeDuplicate"
+        - type: object
+          properties:
+            leftCurrent:
+              type: object
+              additionalProperties: true
+            rightCurrent:
+              type: object
+              additionalProperties: true
+          required:
+            - leftCurrent
+            - rightCurrent
+
+    CollegeDuplicateMergeRequest:
+      type: object
+      properties:
+        winnerId:
+          type: integer
+        loserId:
+          type: integer
+        notes:
+          type: string
+      required:
+        - winnerId
+        - loserId
+
+    CollegeDuplicateMergeResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        winnerId:
+          type: integer
+        loserAliasesCreated:
+          type: integer
+        coachesReparented:
+          type: integer
+        rosterRowsReparented:
+          type: integer
+        tenuresReparented:
+          type: integer
+      required:
+        - ok
+        - winnerId
+        - loserAliasesCreated
+        - coachesReparented
+        - rosterRowsReparented
+        - tenuresReparented
 
     ClubDuplicateRejectResponse:
       type: object

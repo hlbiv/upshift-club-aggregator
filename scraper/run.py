@@ -621,6 +621,18 @@ def _handle_club_dedup(args: argparse.Namespace) -> None:
     print_report(pairs)
 
 
+def _handle_college_dedup(args: argparse.Namespace) -> None:
+    from dedup.college_dedup import run_college_dedup, print_report
+    pairs = run_college_dedup(
+        threshold=getattr(args, "threshold", 0.85),
+        dry_run=args.dry_run,
+        division=getattr(args, "division", None),
+        gender=getattr(args, "gender", None),
+        persist=getattr(args, "persist", False),
+    )
+    print_report(pairs)
+
+
 def _handle_club_dedup_resolve(args: argparse.Namespace) -> None:
     # Tiered resolver — auto-merges high-confidence pairs, writes a
     # review CSV for the rest. **DEFAULTS TO DRY-RUN** even when
@@ -2719,6 +2731,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "club_enrichment": _handle_club_enrichment,
     "club-dedup": _handle_club_dedup,
     "club_dedup": _handle_club_dedup,
+    "college-dedup": _handle_college_dedup,
+    "college_dedup": _handle_college_dedup,
     "club-dedup-resolve": _handle_club_dedup_resolve,
     "club_dedup_resolve": _handle_club_dedup_resolve,
     "usclub-sanctioned": _handle_usclub_sanctioned,
@@ -2791,6 +2805,7 @@ SOURCE_HELP: dict[str, str] = {
     "club-enrichment": "enrich canonical_clubs with logo/socials/status",
     "club-dedup": "fuzzy dedup report for canonical_clubs",
     "club-dedup-resolve": "tiered: auto-merges high-confidence pairs + writes review CSV; defaults to dry-run, requires --no-dry-run to commit",
+    "college-dedup": "fuzzy dedup report for colleges grouped by (division, gender_program); --persist queues pairs into college_duplicates for admin review. Primary use: collapse D1 womens duplicate rows seeded from multiple scrapers. Optional --division, --gender, --threshold.",
     "usclub-sanctioned": "discover US Club Soccer sanctioned tournaments + seed National Cup/NPL events",
     "usclub-seeds": "seed only — National Cup + NPL Finals GotSport events, skip discovery",
     "usclub-id": "discover US Club iD National Pool / Training Center articles via SoccerWire WP REST API (scaffold)",

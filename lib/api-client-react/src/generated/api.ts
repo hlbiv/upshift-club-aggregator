@@ -37,6 +37,10 @@ import type {
   CoachMissesResponse,
   CoachQualityFlagsResponse,
   CoachSearchResponse,
+  CollegeDuplicateDetail,
+  CollegeDuplicateList,
+  CollegeDuplicateMergeRequest,
+  CollegeDuplicateMergeResponse,
   CollegeListResponse,
   CoverageLeagueDetailResponse,
   CoverageLeagueHistoryResponse,
@@ -71,6 +75,7 @@ import type {
   LeagueListResponse,
   ListClubDuplicatesParams,
   ListClubsParams,
+  ListCollegeDuplicatesParams,
   ListCollegesParams,
   ListScrapeHealthParams,
   ListScrapeRunsParams,
@@ -80,6 +85,8 @@ import type {
   NumericOnlyNamesResponse,
   OverlapResponse,
   ProAcademiesResponse,
+  RejectCollegeDuplicate200,
+  RejectCollegeDuplicateBody,
   ResolveCollegeUrlBody,
   ResolveRosterQualityFlagRequest,
   RunNowRequest,
@@ -2571,6 +2578,386 @@ export const useRejectClubDuplicate = <
   TContext
 > => {
   return useMutation(getRejectClubDuplicateMutationOptions(options));
+};
+
+/**
+ * Populated by `scraper/dedup/college_dedup.py --persist`. Default status is `pending`; pass `status=merged|rejected|all` to widen. Rows are sorted by score DESC so the strongest candidates surface first. Primary use: collapse D1 womens duplicate rows seeded from multiple scrapers.
+
+ * @summary List college-duplicate pairs in the review queue
+ */
+export const getListCollegeDuplicatesUrl = (
+  params?: ListCollegeDuplicatesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/dedup/colleges?${stringifiedParams}`
+    : `/api/v1/admin/dedup/colleges`;
+};
+
+export const listCollegeDuplicates = async (
+  params?: ListCollegeDuplicatesParams,
+  options?: RequestInit,
+): Promise<CollegeDuplicateList> => {
+  return customFetch<CollegeDuplicateList>(
+    getListCollegeDuplicatesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListCollegeDuplicatesQueryKey = (
+  params?: ListCollegeDuplicatesParams,
+) => {
+  return [`/api/v1/admin/dedup/colleges`, ...(params ? [params] : [])] as const;
+};
+
+export const getListCollegeDuplicatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCollegeDuplicates>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListCollegeDuplicatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCollegeDuplicates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCollegeDuplicatesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCollegeDuplicates>>
+  > = ({ signal }) =>
+    listCollegeDuplicates(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCollegeDuplicates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCollegeDuplicatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCollegeDuplicates>>
+>;
+export type ListCollegeDuplicatesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List college-duplicate pairs in the review queue
+ */
+
+export function useListCollegeDuplicates<
+  TData = Awaited<ReturnType<typeof listCollegeDuplicates>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListCollegeDuplicatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCollegeDuplicates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCollegeDuplicatesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Extends the queue row with the live `colleges` rows on both sides — everything a reviewer needs on one screen.
+
+ * @summary College-duplicate detail with live side-by-side context
+ */
+export const getGetCollegeDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/colleges/${id}`;
+};
+
+export const getCollegeDuplicate = async (
+  id: number,
+  options?: RequestInit,
+): Promise<CollegeDuplicateDetail> => {
+  return customFetch<CollegeDuplicateDetail>(getGetCollegeDuplicateUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCollegeDuplicateQueryKey = (id: number) => {
+  return [`/api/v1/admin/dedup/colleges/${id}`] as const;
+};
+
+export const getGetCollegeDuplicateQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCollegeDuplicate>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCollegeDuplicate>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCollegeDuplicateQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCollegeDuplicate>>
+  > = ({ signal }) => getCollegeDuplicate(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCollegeDuplicate>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCollegeDuplicateQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCollegeDuplicate>>
+>;
+export type GetCollegeDuplicateQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary College-duplicate detail with live side-by-side context
+ */
+
+export function useGetCollegeDuplicate<
+  TData = Awaited<ReturnType<typeof getCollegeDuplicate>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCollegeDuplicate>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCollegeDuplicateQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Invokes the transactional `mergeColleges` helper. Reparents `college_coaches`, `college_roster_history`, and `college_coach_tenures` from the loser to the winner, inserts an audit `college_aliases` row, and deletes the loser. The merge result is logged server-side; the 5-field contract projection returns to the caller.
+
+ * @summary Merge a duplicate-college pair (transactional reparent + alias)
+ */
+export const getMergeCollegeDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/colleges/${id}/merge`;
+};
+
+export const mergeCollegeDuplicate = async (
+  id: number,
+  collegeDuplicateMergeRequest: CollegeDuplicateMergeRequest,
+  options?: RequestInit,
+): Promise<CollegeDuplicateMergeResponse> => {
+  return customFetch<CollegeDuplicateMergeResponse>(
+    getMergeCollegeDuplicateUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(collegeDuplicateMergeRequest),
+    },
+  );
+};
+
+export const getMergeCollegeDuplicateMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeCollegeDuplicate>>,
+    TError,
+    { id: number; data: BodyType<CollegeDuplicateMergeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mergeCollegeDuplicate>>,
+  TError,
+  { id: number; data: BodyType<CollegeDuplicateMergeRequest> },
+  TContext
+> => {
+  const mutationKey = ["mergeCollegeDuplicate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mergeCollegeDuplicate>>,
+    { id: number; data: BodyType<CollegeDuplicateMergeRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return mergeCollegeDuplicate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MergeCollegeDuplicateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mergeCollegeDuplicate>>
+>;
+export type MergeCollegeDuplicateMutationBody =
+  BodyType<CollegeDuplicateMergeRequest>;
+export type MergeCollegeDuplicateMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Merge a duplicate-college pair (transactional reparent + alias)
+ */
+export const useMergeCollegeDuplicate = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeCollegeDuplicate>>,
+    TError,
+    { id: number; data: BodyType<CollegeDuplicateMergeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof mergeCollegeDuplicate>>,
+  TError,
+  { id: number; data: BodyType<CollegeDuplicateMergeRequest> },
+  TContext
+> => {
+  return useMutation(getMergeCollegeDuplicateMutationOptions(options));
+};
+
+/**
+ * Flips the queue row to `status=rejected` with optional `notes`. No data reparenting; the two colleges remain separate rows.
+
+ * @summary Reject a duplicate-college pair (no merge performed)
+ */
+export const getRejectCollegeDuplicateUrl = (id: number) => {
+  return `/api/v1/admin/dedup/colleges/${id}/reject`;
+};
+
+export const rejectCollegeDuplicate = async (
+  id: number,
+  rejectCollegeDuplicateBody?: RejectCollegeDuplicateBody,
+  options?: RequestInit,
+): Promise<RejectCollegeDuplicate200> => {
+  return customFetch<RejectCollegeDuplicate200>(
+    getRejectCollegeDuplicateUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(rejectCollegeDuplicateBody),
+    },
+  );
+};
+
+export const getRejectCollegeDuplicateMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectCollegeDuplicate>>,
+    TError,
+    { id: number; data: BodyType<RejectCollegeDuplicateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectCollegeDuplicate>>,
+  TError,
+  { id: number; data: BodyType<RejectCollegeDuplicateBody> },
+  TContext
+> => {
+  const mutationKey = ["rejectCollegeDuplicate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectCollegeDuplicate>>,
+    { id: number; data: BodyType<RejectCollegeDuplicateBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return rejectCollegeDuplicate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectCollegeDuplicateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectCollegeDuplicate>>
+>;
+export type RejectCollegeDuplicateMutationBody =
+  BodyType<RejectCollegeDuplicateBody>;
+export type RejectCollegeDuplicateMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Reject a duplicate-college pair (no merge performed)
+ */
+export const useRejectCollegeDuplicate = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectCollegeDuplicate>>,
+    TError,
+    { id: number; data: BodyType<RejectCollegeDuplicateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectCollegeDuplicate>>,
+  TError,
+  { id: number; data: BodyType<RejectCollegeDuplicateBody> },
+  TContext
+> => {
+  return useMutation(getRejectCollegeDuplicateMutationOptions(options));
 };
 
 /**
