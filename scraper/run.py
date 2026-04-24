@@ -953,15 +953,18 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
             )
             sys.exit(2)
         force_covid = bool(getattr(args, "force_covid", False))
+        max_age_days = int(getattr(args, "max_age_days", 30) or 30)
+        force_rescrape = bool(getattr(args, "force_rescrape", False))
         _run_ncaa_rosters_all(
             division=division,
             gender_program=gender_program,
             dry_run=bool(getattr(args, "dry_run", False)),
             backfill_seasons=backfill_seasons,
             skip_fresh_days=int(getattr(args, "skip_fresh_days", 30) or 30),
-            force_rescrape=bool(getattr(args, "force_rescrape", False)),
+            force_rescrape=force_rescrape,
             force_historical=getattr(args, "force_historical", None),
             force_covid=force_covid,
+            max_age_days=max_age_days,
         )
         return
 
@@ -1069,6 +1072,7 @@ def _run_ncaa_rosters_all(
     force_rescrape: bool = False,
     force_historical: Optional[str] = None,
     force_covid: bool = False,
+    max_age_days: int = 30,
 ) -> None:
     """Dispatch to the pre-existing bulk enumerator.
 
@@ -1083,14 +1087,20 @@ def _run_ncaa_rosters_all(
 
     ``force_covid=False`` (default) skips the 2020-21 season entirely.
     Pass True to bypass the guard (e.g. for targeted investigation).
+
+    ``skip_fresh_days`` and ``force_rescrape`` control the per-season
+    ``should_scrape`` guard inside the loop. ``max_age_days`` is a
+    coarser pre-filter that removes colleges from the candidate list
+    before any HTTP requests are made (pass ``force_rescrape=True`` or
+    ``max_age_days=0`` to bypass it).
     """
     from extractors.ncaa_soccer_rosters import scrape_college_rosters
 
     logger.info(
         "[ncaa-rosters] --all division=%s gender=%s dry_run=%s backfill_seasons=%d "
-        "skip_fresh_days=%d force_rescrape=%s force_historical=%s force_covid=%s",
+        "skip_fresh_days=%d force_rescrape=%s force_historical=%s force_covid=%s max_age_days=%d",
         division, gender_program, dry_run, backfill_seasons,
-        skip_fresh_days, force_rescrape, force_historical, force_covid,
+        skip_fresh_days, force_rescrape, force_historical, force_covid, max_age_days,
     )
     result = scrape_college_rosters(
         division=division,
@@ -1101,10 +1111,12 @@ def _run_ncaa_rosters_all(
         force_rescrape=force_rescrape,
         force_historical=force_historical,
         force_covid=force_covid,
+        max_age_days=max_age_days,
     )
     logger.info(
-        "[ncaa-rosters] --all done: scraped=%d inserted=%d updated=%d errors=%d covid_skipped=%d",
+        "[ncaa-rosters] --all done: scraped=%d skipped_fresh=%d inserted=%d updated=%d errors=%d covid_skipped=%d",
         result.get("scraped", 0),
+        result.get("skipped_fresh", 0),
         result.get("rows_inserted", 0),
         result.get("rows_updated", 0),
         result.get("errors", 0),
@@ -3130,10 +3142,13 @@ def main() -> None:
     parser.add_argument("--skip-fresh-days", metavar="N", type=int,
                         dest="skip_fresh_days", default=30,
                         help="For --source ncaa-rosters --all: skip current-season "
-                             "colleges whose last_scraped_at is within N days. Default 30.")
+                             "colleges whose last_scraped_at is within N days (per-season "
+                             "guard inside the main loop). Default 30.")
     parser.add_argument("--force-rescrape", action="store_true", dest="force_rescrape",
+                        default=False,
                         help="For --source ncaa-rosters --all: bypass all should_scrape "
-                             "guards (freshness, historical-has-data, max-attempts).")
+                             "guards (freshness, historical-has-data, max-attempts) AND "
+                             "the pre-filter skip guard.")
     parser.add_argument("--force-historical", metavar="YYYY-YY", dest="force_historical",
                         default=None,
                         help="For --source ncaa-rosters --all: bypass guards for this "
@@ -3144,6 +3159,12 @@ def main() -> None:
                              "--source ncaa-rosters --all. By default the scraper "
                              "skips 2020-21 entirely (NCAA cancelled soccer that "
                              "year) to avoid wasting Playwright retries.")
+    parser.add_argument("--max-age-days", metavar="N", type=int,
+                        dest="max_age_days", default=30,
+                        help="For --source ncaa-rosters --all: pre-filter colleges that "
+                             "already have current-season roster rows and were scraped "
+                             "within this many days. Default 30. Set to 0 to disable "
+                             "(same effect as --force-rescrape for the pre-filter).")
     parser.add_argument("--sport", metavar="SPORT", dest="sport", default="soccer",
                         help="Sport identifier for --source ncaa-* handlers. "
                              "Default 'soccer'. New handlers ship with required=True; "
