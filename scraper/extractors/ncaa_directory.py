@@ -204,29 +204,53 @@ def fetch_d1_programs(
 # ---------------------------------------------------------------------------
 
 # Ordered candidate paths per gender. First 200 wins. Patterns observed
-# across real D1 SIDEARM sites (2025-26 season):
+# across real D1 SIDEARM + PrestoSports/CBS Sports sites (2025-26 season):
 #
-#   /sports/mens-soccer/roster    — canonical (Georgetown, UNC, Duke, ...)
-#   /sports/msoc/roster           — 4-letter abbreviation (Kentucky, Iowa)
-#   /sports/soccer/roster         — combined page (Purdue, Nebraska — one
-#                                   page serves both gender programs)
-#   /sports/m-soccer/roster       — dash variant (rare but observed)
+#   /sports/mens-soccer/roster    — canonical SIDEARM (Georgetown, UNC, Duke…)
+#   /sports/msoc/roster           — 4-letter SIDEARM (Kentucky, Iowa)
+#   /sports/soccer/roster         — combined gender SIDEARM (Purdue, Nebraska)
+#   /sports/m-soccer/roster       — dash variant SIDEARM (rare but observed)
+#
+#   PrestoSports / CBS Sports Digital — same 4-letter codes but sport
+#   homepages may redirect to a season-scoped sub-URL
+#   (e.g. /sports/wsoc/2025-26/).  The _final_url_matches_path check
+#   passes as long as the sport-code prefix is preserved in the redirect,
+#   so probing WITHOUT /roster reaches these schools:
+#   /sports/msoc                  — PrestoSports sport-homepage (Georgia Tech, LSU…)
+#   /sports/wsoc                  — PrestoSports sport-homepage
+#   /sports/mens-soccer           — long-form sport-homepage fallback
+#   /sports/womens-soccer         — long-form sport-homepage fallback
+#   /sports/m-soccer              — dash variant without /roster
+#   /sports/w-soccer              — dash variant without /roster
+#   /sports/soccer                — gender-neutral without /roster
 #
 # The same shape applies to D2/D3/NAIA/NJCAA — SIDEARM's routing
 # conventions are consistent across divisions. Adding a new path here
 # improves every division at once.
 _SIDEARM_PATHS: dict[str, tuple[str, ...]] = {
     "mens": (
+        # SIDEARM (with /roster — preferred; links directly to the roster page)
         "/sports/mens-soccer/roster",
         "/sports/msoc/roster",
         "/sports/soccer/roster",
         "/sports/m-soccer/roster",
+        # PrestoSports / CBS Sports (sport homepage — no /roster suffix)
+        "/sports/msoc",
+        "/sports/mens-soccer",
+        "/sports/m-soccer",
+        "/sports/soccer",
     ),
     "womens": (
+        # SIDEARM (with /roster)
         "/sports/womens-soccer/roster",
         "/sports/wsoc/roster",
         "/sports/soccer/roster",
         "/sports/w-soccer/roster",
+        # PrestoSports / CBS Sports (sport homepage)
+        "/sports/wsoc",
+        "/sports/womens-soccer",
+        "/sports/w-soccer",
+        "/sports/soccer",
     ),
 }
 
