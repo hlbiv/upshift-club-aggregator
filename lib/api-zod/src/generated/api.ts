@@ -1266,6 +1266,30 @@ export const ResolveCoachQualityFlagParams = zod.object({
 });
 
 /**
+ * Atomically sets `colleges.soccer_program_url` to the supplied URL and stamps `resolved_at = NOW()`, `resolved_by = <admin user id>`, and `resolution_note = <note>` on every open `url_needs_review` flag for that college in a single transaction.
+The URL must begin with `https://`. The optional `note` field is stored as `resolution_note` on each resolved flag row.
+API-key callers get `resolved_by = NULL`; session callers get their admin user id stamped — same pattern as the other PATCH admin endpoints.
+Returns 404 if no `colleges` row exists with that id. Returns 400 if the body is missing, the URL is invalid, or the URL does not start with `https://`.
+
+ * @summary Set soccer_program_url and resolve open url_needs_review flags
+ */
+
+export const ResolveCollegeUrlParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const ResolveCollegeUrlBody = zod.object({
+  url: zod
+    .string()
+    .url()
+    .describe("The soccer program URL to set (must start with https:\/\/)"),
+  note: zod
+    .string()
+    .optional()
+    .describe("Optional resolution note stored on resolved flag rows"),
+});
+
+/**
  * Paginated list of `scrape_health` rows whose `last_scraped_at` is older than `threshold_days` days or NULL. `entityName` is a best-effort human label joined from `canonical_clubs` / `leagues_master` / `colleges` / `coaches` per `entity_type`; when the join fails (deleted entity, unjoinable type) it is null.
 
  * @summary scrape_health entities whose last_scraped_at exceeds a threshold

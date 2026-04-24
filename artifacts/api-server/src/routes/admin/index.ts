@@ -20,7 +20,7 @@ import meRouter from "./me";
 import scrapeRunsRouter from "./scrape-runs";
 import scrapeHealthRouter from "./scrape-health";
 import { dedupRouter } from "./dedup";
-import { dataQualityRouter } from "./data-quality";
+import { dataQualityRouter, resolveCollegeUrlHandler } from "./data-quality";
 import { proAcademiesRouter } from "./pro-academies";
 import growthRouter from "./growth";
 import coverageRouter from "./coverage";
@@ -46,3 +46,4 @@ authedAdminRouter.use("/coverage", coverageRouter);
 // the read endpoints inherit the surrounding requireAdmin guard.
 authedAdminRouter.use("/scraper-schedules", buildScraperSchedulesRouter());
 authedAdminRouter.use("/scheduler-jobs", buildSchedulerJobsRouter());
+authedAdminRouter.patch("/colleges/:id/resolve-url", resolveCollegeUrlHandler);

@@ -43,6 +43,7 @@ import {
   timestamp,
   jsonb,
   unique,
+  uniqueIndex,
   check,
   index,
 } from "drizzle-orm/pg-core";
@@ -91,6 +92,16 @@ export const collegeRosterQualityFlags = pgTable(
     index("college_roster_quality_flags_active_idx")
       .on(t.flagType)
       .where(sql`resolved_at IS NULL`),
+    // Prevents a college from accumulating two open flags of the same type.
+    // When the scraper writes a new url_needs_review flag it must either
+    // resolve the prior open one first, or rely on the existing
+    // (college_id, academic_year, flag_type) natural-key unique constraint.
+    // This partial index is the enforcement point for "one open flag per
+    // (college, type)" — the operator workflow guarantees only one live
+    // url_needs_review at a time per college.
+    uniqueIndex("crqf_college_flag_type_open_uq")
+      .on(t.collegeId, t.flagType)
+      .where(sql`${t.resolvedAt} IS NULL`),
   ],
 );
 

@@ -85,10 +85,10 @@ import {
   coachDiscoveries,
   coachQualityFlags,
   collegeRosterQualityFlags,
+  colleges,
   scrapeHealth,
   coachMisses,
   leaguesMaster,
-  colleges,
   coaches,
   rosterQualityFlags,
   adminUsers,
@@ -1871,6 +1871,93 @@ export const prodResolveCollegeRosterQualityFlagDeps: ResolveCollegeRosterQualit
       };
     },
   };
+
+// ---------------------------------------------------------------------------
+// PATCH /api/v1/admin/colleges/:id/resolve-url
+//
+// Atomic action: set soccer_program_url on the colleges row AND resolve all
+// open url_needs_review flags for that college in a single transaction.
+// ---------------------------------------------------------------------------
+
+function parseResolveCollegeUrlBody(
+  body: unknown,
+): { ok: true; url: string; note: string | undefined } | { ok: false } {
+  if (body === null || typeof body !== "object") return { ok: false };
+  const b = body as Record<string, unknown>;
+  const url = b.url;
+  if (typeof url !== "string") return { ok: false };
+  // Must be a valid https:// URL.
+  if (!url.startsWith("https://")) return { ok: false };
+  try {
+    new URL(url);
+  } catch {
+    return { ok: false };
+  }
+  const note =
+    typeof b.note === "string" ? b.note : undefined;
+  return { ok: true, url, note };
+}
+
+export const resolveCollegeUrlHandler: RequestHandler = async (
+  req,
+  res,
+  next,
+): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+
+    const parsed = parseResolveCollegeUrlBody(req.body ?? {});
+    if (!parsed.ok) {
+      res.status(400).json({ error: "Invalid request body" });
+      return;
+    }
+    const { url, note } = parsed;
+
+    const adminUserId =
+      req.adminAuth?.kind === "session" ? req.adminAuth.userId : null;
+
+    await defaultDb.transaction(async (tx) => {
+      // 3a. Update the college row.
+      const updated = await tx.execute<{ id: number }>(sql`
+        UPDATE ${colleges}
+        SET soccer_program_url = ${url}
+        WHERE id = ${id}
+        RETURNING id
+      `);
+      if (
+        Array.from(updated as unknown as Array<{ id: number }>).length === 0
+      ) {
+        throw Object.assign(new Error("not_found"), { code: "not_found" });
+      }
+
+      // 3b. Resolve all open url_needs_review flags for this college.
+      await tx.execute(sql`
+        UPDATE ${collegeRosterQualityFlags}
+        SET resolved_at = NOW(),
+            resolved_by = ${adminUserId},
+            resolution_note = ${note ?? null}
+        WHERE college_id = ${id}
+          AND flag_type = 'url_needs_review'
+          AND resolved_at IS NULL
+      `);
+    });
+
+    res.status(204).send();
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      (err as Error & { code?: string }).code === "not_found"
+    ) {
+      res.status(404).json({ error: "College not found" });
+      return;
+    }
+    next(err);
+  }
+};
 
 export const dataQualityRouter: IRouter = makeDataQualityRouter({
   scanOrphans,

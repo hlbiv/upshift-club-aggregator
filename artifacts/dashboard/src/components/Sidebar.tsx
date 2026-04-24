@@ -9,6 +9,7 @@ import {
   Home,
   Layers,
   LineChart,
+  Link,
   ListChecks,
   Map,
   Settings2,
@@ -120,6 +121,11 @@ export default function Sidebar() {
           label: "Coach misses",
           to: "/data-quality/coach-misses",
           icon: AlertOctagon,
+        },
+        {
+          label: "College URL triage",
+          to: "/data-quality/college-url-triage",
+          icon: Link,
         },
         {
           label: "Pro academies",
