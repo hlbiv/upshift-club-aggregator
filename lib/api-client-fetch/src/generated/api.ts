@@ -68,6 +68,7 @@ import type {
   NumericOnlyNamesResponse,
   OverlapResponse,
   ProAcademiesResponse,
+  ResolveCollegeUrlBody,
   ResolveRosterQualityFlagRequest,
   RunNowRequest,
   RunNowResponse,
@@ -971,6 +972,31 @@ export const resolveCoachQualityFlag = async (
   return customFetch<void>(getResolveCoachQualityFlagUrl(id), {
     ...options,
     method: "PATCH",
+  });
+};
+
+/**
+ * Atomically sets `colleges.soccer_program_url` to the supplied URL and stamps `resolved_at = NOW()`, `resolved_by = <admin user id>`, and `resolution_note = <note>` on every open `url_needs_review` flag for that college in a single transaction.
+The URL must begin with `https://`. The optional `note` field is stored as `resolution_note` on each resolved flag row.
+API-key callers get `resolved_by = NULL`; session callers get their admin user id stamped — same pattern as the other PATCH admin endpoints.
+Returns 404 if no `colleges` row exists with that id. Returns 400 if the body is missing, the URL is invalid, or the URL does not start with `https://`.
+
+ * @summary Set soccer_program_url and resolve open url_needs_review flags
+ */
+export const getResolveCollegeUrlUrl = (id: number) => {
+  return `/api/v1/admin/colleges/${id}/resolve-url`;
+};
+
+export const resolveCollegeUrl = async (
+  id: number,
+  resolveCollegeUrlBody: ResolveCollegeUrlBody,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getResolveCollegeUrlUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resolveCollegeUrlBody),
   });
 };
 

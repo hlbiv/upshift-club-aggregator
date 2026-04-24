@@ -1377,6 +1377,13 @@ export const GetCoachQualityFlagsFlagType = {
   nav_leaked: "nav_leaked",
 } as const;
 
+export type ResolveCollegeUrlBody = {
+  /** The soccer program URL to set (must start with https://) */
+  url: string;
+  /** Optional resolution note stored on resolved flag rows */
+  note?: string;
+};
+
 export type GetStaleScrapesParams = {
   /**
    * @minimum 1

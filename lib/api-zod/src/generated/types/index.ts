@@ -124,6 +124,7 @@ export * from "./proAcademiesResponse";
 export * from "./proAcademyAffiliation";
 export * from "./proAcademyRow";
 export * from "./proAcademyRowCompetitiveTier";
+export * from "./resolveCollegeUrlBody";
 export * from "./resolveRosterQualityFlagRequest";
 export * from "./resolveRosterQualityFlagRequestReason";
 export * from "./runNowRequest";

@@ -14,6 +14,7 @@ import CoachMissesPage from "./pages/dataquality/CoachMisses";
 import NavLeakedPage from "./pages/dataquality/NavLeaked";
 import NumericOnlyPage from "./pages/dataquality/NumericOnly";
 import ProAcademiesPage from "./pages/dataquality/ProAcademies";
+import CollegeUrlTriagePage from "./pages/dataquality/CollegeUrlTriage";
 import GrowthPage from "./pages/Growth";
 import CoveragePage from "./pages/Coverage";
 import CoverageLeaguePage from "./pages/CoverageLeague";
@@ -153,6 +154,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ProAcademiesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/data-quality/college-url-triage"
+        element={
+          <ProtectedRoute>
+            <CollegeUrlTriagePage />
           </ProtectedRoute>
         }
       />

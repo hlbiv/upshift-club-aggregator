@@ -1400,6 +1400,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/admin/colleges/{id}/resolve-url:
+    patch:
+      operationId: resolveCollegeUrl
+      tags: [admin, data-quality]
+      summary: Set soccer_program_url and resolve open url_needs_review flags
+      description: >
+        Atomically sets `colleges.soccer_program_url` to the supplied URL and
+        stamps `resolved_at = NOW()`, `resolved_by = <admin user id>`, and
+        `resolution_note = <note>` on every open `url_needs_review` flag for
+        that college in a single transaction.
+
+        The URL must begin with `https://`. The optional `note` field is
+        stored as `resolution_note` on each resolved flag row.
+
+        API-key callers get `resolved_by = NULL`; session callers get their
+        admin user id stamped — same pattern as the other PATCH admin
+        endpoints.
+
+        Returns 404 if no `colleges` row exists with that id. Returns 400 if
+        the body is missing, the URL is invalid, or the URL does not start
+        with `https://`.
+      security:
+        - sessionAuth: []
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: The soccer program URL to set (must start with https://)
+                note:
+                  type: string
+                  description: Optional resolution note stored on resolved flag rows
+      responses:
+        "204":
+          description: URL set and open url_needs_review flags resolved
+        "400":
+          description: Invalid id or invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No college with that id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/data-quality/stale-scrapes:
     get:
       operationId: getStaleScrapes
