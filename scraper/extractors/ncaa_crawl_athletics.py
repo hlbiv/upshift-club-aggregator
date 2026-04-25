@@ -71,9 +71,21 @@ _USER_AGENT = (
 # ---------------------------------------------------------------------------
 
 # Path-level patterns — high confidence: URL itself contains sport slug.
+# The lookahead (?=/|$|\?|#|-\d) requires the keyword to end at a path
+# boundary, preventing false matches like /events/womens-soccer-alumni-game
+# where "womens-soccer" is just a prefix of a longer event slug.
 _SOCCER_PATH_RE = re.compile(
     r"/(?:sports?/)?(?:womens?[-_]soccer|mens?[-_]soccer|[wm]-soccer"
-    r"|wsoc|msoc|w_soc|m_soc|soccer)",
+    r"|wsoc|msoc|w_soc|m_soc|soccer)(?=/|$|\?|#)",
+    re.IGNORECASE,
+)
+
+# Path prefixes that indicate content pages rather than sport programs.
+# A hard hit on /events/womens-soccer-alumni-game is a false positive.
+_EXCLUDE_PATH_PREFIXES = re.compile(
+    r"^/(?:events?|news|articles?|gallery|galleries|photos?|videos?|"
+    r"calendar|press-release|release|story|stories|media|blog|tag|"
+    r"archives?|schedule)/",
     re.IGNORECASE,
 )
 
@@ -156,8 +168,8 @@ def _score_anchor(href: str, text: str, gender: str) -> int:
     if _SKIP_HOSTS.search(host):
         return 0
 
-    # Hard hit: soccer in path
-    if _SOCCER_PATH_RE.search(path):
+    # Hard hit: soccer in path (and not a content/event page)
+    if _SOCCER_PATH_RE.search(path) and not _EXCLUDE_PATH_PREFIXES.match(path):
         score = 10
         if gender == "womens" and _WOMENS_SIGNALS.search(path):
             score += 5
