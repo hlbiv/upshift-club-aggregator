@@ -3121,6 +3121,143 @@ def _handle_ncaa_seed_ncsa(args: argparse.Namespace) -> None:
         conn.close()
 
 
+def _handle_ncaa_crawl_athletics_pages(args: argparse.Namespace) -> None:
+    """Fill ``colleges.soccer_program_url`` by crawling each school's
+    athletics homepage and extracting soccer-program links from the HTML.
+
+    For each college row with ``website IS NOT NULL AND soccer_program_url IS NULL``,
+    GETs the athletics homepage, parses all ``<a href="…">`` anchors, scores
+    each by soccer-keyword presence in the URL path (hard hit, score ≥ 10)
+    and gender preference (+5), and writes the best match.
+
+    Unlike ``ncaa-resolve-urls`` (which probes pre-known SIDEARM/PrestoSports
+    paths via HEAD), this handler works for any CMS — BlueStar, AthleticNet,
+    custom .edu/athletics pages — because it reads what the site actually links
+    to rather than guessing path patterns. Ideal for D2/D3 where CMS diversity
+    makes SIDEARM probing ineffective.
+
+    Optional flags:
+      --division D1|D2|D3|NAIA  (default: all)
+      --gender mens|womens|both  (default: both)
+      --limit N   (default: 300)
+      --dry-run
+    """
+    import time as _time
+
+    from extractors.ncaa_crawl_athletics import (
+        make_session,
+        fetch_html,
+        find_soccer_url,
+    )
+
+    try:
+        import psycopg2  # type: ignore
+    except ImportError:
+        logger.error("[ncaa-crawl-athletics] psycopg2 not available")
+        sys.exit(1)
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.error("[ncaa-crawl-athletics] DATABASE_URL env var not set")
+        sys.exit(1)
+
+    division_arg = getattr(args, "division", None)
+    gender_arg = getattr(args, "gender", None) or "both"
+    dry_run = bool(getattr(args, "dry_run", False))
+    limit = int(getattr(args, "limit", None) or 300)
+
+    genders = ["mens", "womens"] if gender_arg in ("both", None) else [gender_arg]
+
+    session = make_session()
+    filled = 0
+    missed = 0
+    errors = 0
+
+    try:
+        conn = psycopg2.connect(database_url)
+        try:
+            for gender in genders:
+                with conn.cursor() as cur:
+                    sql = """
+                        SELECT id, name, division, gender_program, website
+                        FROM colleges
+                        WHERE website IS NOT NULL
+                          AND soccer_program_url IS NULL
+                          AND gender_program = %s
+                    """
+                    params: list = [gender]
+                    if division_arg:
+                        sql += " AND division = %s"
+                        params.append(division_arg)
+                    sql += " ORDER BY name LIMIT %s"
+                    params.append(limit)
+                    cur.execute(sql, params)
+                    rows = cur.fetchall()
+
+                logger.info(
+                    "[ncaa-crawl-athletics] %d %s college(s) with website but "
+                    "no soccer_program_url%s",
+                    len(rows), gender, " (dry-run)" if dry_run else "",
+                )
+
+                for college_id, name, division, gender_program, website in rows:
+                    tag = f"{name} ({division} {gender_program})"
+
+                    html = fetch_html(website, session)
+                    _time.sleep(1.5)
+
+                    if not html:
+                        logger.debug(
+                            "[ncaa-crawl-athletics] could not fetch %s for %s",
+                            website, tag,
+                        )
+                        errors += 1
+                        continue
+
+                    soccer_url = find_soccer_url(html, website, gender)
+                    if not soccer_url:
+                        logger.debug(
+                            "[ncaa-crawl-athletics] no soccer link found on %s for %s",
+                            website, tag,
+                        )
+                        missed += 1
+                        continue
+
+                    if dry_run:
+                        logger.info(
+                            "[ncaa-crawl-athletics] [dry-run] %s → soccer_program_url=%s",
+                            tag, soccer_url,
+                        )
+                    else:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE colleges SET soccer_program_url = %s WHERE id = %s",
+                                (soccer_url, college_id),
+                            )
+                        conn.commit()
+                        logger.info(
+                            "[ncaa-crawl-athletics] %s → soccer_program_url=%s",
+                            tag, soccer_url,
+                        )
+                    filled += 1
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    logger.info(
+        "[ncaa-crawl-athletics] done: filled=%d missed=%d errors=%d%s",
+        filled, missed, errors, " (dry-run)" if dry_run else "",
+    )
+
+
 # Kebab-case is the canonical, documented form in the CLI help output;
 # snake-case aliases exist only because early scripts sometimes passed
 # them. Keep both in SOURCE_HANDLERS but ONLY kebab in SOURCE_HELP (snake
@@ -3223,6 +3360,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_discover_urls_ncsa": _handle_ncaa_discover_urls_ncsa,
     "ncaa-seed-ncsa": _handle_ncaa_seed_ncsa,
     "ncaa_seed_ncsa": _handle_ncaa_seed_ncsa,
+    "ncaa-crawl-athletics-pages": _handle_ncaa_crawl_athletics_pages,
+    "ncaa_crawl_athletics_pages": _handle_ncaa_crawl_athletics_pages,
 }
 
 # One entry per UNIQUE source (kebab form only). Used to build the
@@ -3278,6 +3417,7 @@ SOURCE_HELP: dict[str, str] = {
     "ncaa-discover-urls-ncsa": "fill colleges.soccer_program_url (or website) via NCSA Sports college soccer directory (ncsasports.org). NOTE: ncsasports.org is a JavaScript SPA — returns 0 listings. Prefer ncaa-enrich-websites-ncaaid. Default --limit 500. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both, --dry-run.",
     "naia-resolve-urls": "resolve NAIA colleges.website + soccer_program_url via naia.org per-team detail pages (closes the gap left by ncaa-resolve-urls, which requires website IS NOT NULL — NAIA seeds carry no website). Phase-1 fetches the naia.org index per gender for a name→slug map; phase-2 GETs each detail page, extracts the athletics outbound link, and probes SIDEARM. Optional --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run. Production runs require proxy_config.yaml — Replit IPs hit naia.org's WAF (HTTP 405).",
     "ncaa-seed-ncsa": "fill colleges.soccer_program_url gaps from curated NCSA/productiverecruit seed CSVs (scraper/seeds/ncaa_urls_*.csv); Jaro-Winkler >= 0.88 match within division+gender. Optional: --division D1|D2|D3|NAIA, --dry-run.",
+    "ncaa-crawl-athletics-pages": "fill colleges.soccer_program_url by GETting each school's athletics homepage (colleges.website) and extracting soccer-program links from the page HTML. CMS-agnostic — works for BlueStar, AthleticNet, custom .edu sites, and any platform that links to a soccer page. Only requires a hard hit (soccer keyword in the href path). Targets rows where website IS NOT NULL AND soccer_program_url IS NULL. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both (default both), --limit N (default 300), --dry-run.",
 }
 
 
