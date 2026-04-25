@@ -201,24 +201,35 @@ def parse_directory_page(html: str, gender: str) -> List[NcsaSchoolListing]:
     listings: List[NcsaSchoolListing] = []
     seen: set[str] = set()
 
-    # NCSA school profile links look like:
+    # NCSA school profile links — two URL structures observed:
+    #
+    # Old (pre-2026):
     #   /womens-soccer/colleges/stanford-university
     #   /mens-soccer/colleges/duke-university
-    # They may also appear as /college-athletic-scholarships/soccer/...
+    #
+    # New (2026+):
+    #   https://www.ncsasports.org/athletic-scholarships/womens-soccer/california/stanford-university
+    #   /athletic-scholarships/mens-soccer/north-carolina/duke-university
+    #
     sport_slug = "womens-soccer" if gender == "womens" else "mens-soccer"
     href_pattern = re.compile(
-        rf"/{re.escape(sport_slug)}/colleges/[a-z0-9-]+",
+        rf"(?:https?://(?:www\.)?ncsasports\.org)?/{re.escape(sport_slug)}/colleges/[a-z0-9-]+",
         re.IGNORECASE,
     )
-    # Broader fallback in case URL structure differs:
+    # New structure: /athletic-scholarships/[gender]-soccer/[state]/[school]
+    new_pattern = re.compile(
+        rf"(?:https?://(?:www\.)?ncsasports\.org)?/athletic-scholarships/{re.escape(sport_slug)}/[a-z-]+/[a-z0-9-]+",
+        re.IGNORECASE,
+    )
+    # Broader fallback:
     broader_pattern = re.compile(
-        r"/(?:college-athletic-scholarships/soccer|[a-z-]+-soccer)/colleges/[a-z0-9-]+",
+        r"(?:https?://(?:www\.)?ncsasports\.org)?/(?:college-athletic-scholarships/soccer|[a-z-]+-soccer)/colleges/[a-z0-9-]+",
         re.IGNORECASE,
     )
 
     for anchor in soup.find_all("a", href=True):
         href: str = anchor["href"]
-        if not (href_pattern.match(href) or broader_pattern.match(href)):
+        if not (href_pattern.search(href) or new_pattern.search(href) or broader_pattern.search(href)):
             continue
         name = anchor.get_text(strip=True)
         # Skip nav labels and empty anchors
@@ -226,8 +237,11 @@ def parse_directory_page(html: str, gender: str) -> List[NcsaSchoolListing]:
             "view all", "see all", "learn more", "apply", "home", "contact",
         ):
             continue
-        # Build absolute URL
-        full_url = urljoin(_NCSA_BASE, href)
+        # Build absolute URL (href may already be absolute)
+        if href.startswith("http"):
+            full_url = href
+        else:
+            full_url = urljoin(_NCSA_BASE, href)
         if full_url in seen:
             continue
         seen.add(full_url)
