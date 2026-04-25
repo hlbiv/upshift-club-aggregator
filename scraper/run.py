@@ -3121,6 +3121,173 @@ def _handle_ncaa_seed_ncsa(args: argparse.Namespace) -> None:
         conn.close()
 
 
+def _handle_validate_college_websites(args: argparse.Namespace) -> None:
+    """HEAD-check every ``colleges.website`` and clear values that fail DNS.
+
+    Many ``website`` values were scraped from Wikipedia months or years ago.
+    Schools close (Alderson Broaddus 2023), merge (Cal U → PennWest 2022),
+    or rebrand their athletics domain — leaving dead URLs that block the
+    entire URL pipeline (SIDEARM probe gets 404, crawl gets DNS failure,
+    Wikipedia won't overwrite an existing value).
+
+    This handler clears those dead ``website`` values (sets them to NULL) so
+    subsequent pipeline steps can re-fill them from a fresh source:
+
+      1. python3 run.py --source validate-college-websites --division D2 --dry-run
+      2. python3 run.py --source validate-college-websites --division D2
+      3. python3 run.py --source ncaa-resolve-urls-wikipedia --division D2
+      4. python3 run.py --source ncaa-resolve-urls --division D2
+
+    Only DNS failures (``NameResolutionError`` / ``ConnectionError``) clear
+    the value — a 403 or 429 means the site is alive but blocking us, so
+    the ``website`` is kept. Timeouts are treated as transient and kept too.
+
+    Optional flags:
+      --division D1|D2|D3|NAIA  (default: all)
+      --gender mens|womens|both  (default: both)
+      --limit N   (default: 1000)
+      --dry-run
+    """
+    import time as _time
+
+    try:
+        import requests as _requests
+        import psycopg2  # type: ignore
+    except ImportError as exc:
+        logger.error("[validate-college-websites] missing dependency: %s", exc)
+        sys.exit(1)
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.error("[validate-college-websites] DATABASE_URL env var not set")
+        sys.exit(1)
+
+    division_arg = getattr(args, "division", None)
+    gender_arg = getattr(args, "gender", None) or "both"
+    dry_run = bool(getattr(args, "dry_run", False))
+    limit = int(getattr(args, "limit", None) or 1000)
+
+    genders = ["mens", "womens"] if gender_arg in ("both", None) else [gender_arg]
+
+    _UA = (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+    session = _requests.Session()
+    session.headers.update({"User-Agent": _UA, "Accept": "*/*"})
+
+    cleared = 0
+    alive = 0
+    errors = 0  # timeouts / blocked — keep the website value
+
+    # Track already-checked websites to avoid re-probing the same domain
+    # multiple times (many schools share a website domain).
+    _dns_dead: set[str] = set()
+    _dns_alive: set[str] = set()
+
+    def _is_dead(url: str) -> bool:
+        """HEAD-check url; return True only on DNS failure (domain gone)."""
+        from urllib.parse import urlparse as _up
+        origin = _up(url).scheme + "://" + _up(url).netloc
+        if origin in _dns_dead:
+            return True
+        if origin in _dns_alive:
+            return False
+        try:
+            resp = session.head(url, timeout=10, allow_redirects=True)
+            # Any HTTP response means DNS resolved → site is alive.
+            _dns_alive.add(origin)
+            return False
+        except _requests.ConnectionError:
+            # NameResolutionError wraps as ConnectionError — domain is gone.
+            _dns_dead.add(origin)
+            return True
+        except _requests.Timeout:
+            # Transient — keep the website.
+            _dns_alive.add(origin)
+            return False
+        except Exception:
+            _dns_alive.add(origin)
+            return False
+
+    try:
+        conn = psycopg2.connect(database_url)
+        try:
+            sql = """
+                SELECT id, name, division, gender_program, website
+                FROM colleges
+                WHERE website IS NOT NULL
+                  AND soccer_program_url IS NULL
+                  AND gender_program = ANY(%s)
+            """
+            params: list = [genders]
+            if division_arg:
+                sql += " AND division = %s"
+                params.append(division_arg)
+            sql += " ORDER BY name LIMIT %s"
+            params.append(limit)
+
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+            logger.info(
+                "[validate-college-websites] checking %d college website(s)%s",
+                len(rows), " (dry-run)" if dry_run else "",
+            )
+
+            for college_id, name, division, gender_program, website in rows:
+                tag = f"{name} ({division} {gender_program})"
+                dead = _is_dead(website)
+                _time.sleep(0.3)  # light throttle — HEAD is cheap
+
+                if dead:
+                    if dry_run:
+                        logger.info(
+                            "[validate-college-websites] [dry-run] DEAD %s → website=%s",
+                            tag, website,
+                        )
+                    else:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE colleges SET website = NULL WHERE id = %s",
+                                (college_id,),
+                            )
+                        conn.commit()
+                        logger.info(
+                            "[validate-college-websites] cleared dead website for %s (%s)",
+                            tag, website,
+                        )
+                    cleared += 1
+                else:
+                    logger.debug(
+                        "[validate-college-websites] alive: %s → %s", tag, website,
+                    )
+                    alive += 1
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    logger.info(
+        "[validate-college-websites] done: cleared=%d alive=%d%s",
+        cleared, alive, " (dry-run)" if dry_run else "",
+    )
+    if cleared > 0 and not dry_run:
+        logger.info(
+            "[validate-college-websites] run --source ncaa-resolve-urls-wikipedia "
+            "to re-fill the %d cleared website rows from Wikipedia",
+            cleared,
+        )
+
+
 def _handle_ncaa_crawl_athletics_pages(args: argparse.Namespace) -> None:
     """Fill ``colleges.soccer_program_url`` by crawling each school's
     athletics homepage and extracting soccer-program links from the HTML.
@@ -3362,6 +3529,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_seed_ncsa": _handle_ncaa_seed_ncsa,
     "ncaa-crawl-athletics-pages": _handle_ncaa_crawl_athletics_pages,
     "ncaa_crawl_athletics_pages": _handle_ncaa_crawl_athletics_pages,
+    "validate-college-websites": _handle_validate_college_websites,
+    "validate_college_websites": _handle_validate_college_websites,
 }
 
 # One entry per UNIQUE source (kebab form only). Used to build the
@@ -3418,6 +3587,7 @@ SOURCE_HELP: dict[str, str] = {
     "naia-resolve-urls": "resolve NAIA colleges.website + soccer_program_url via naia.org per-team detail pages (closes the gap left by ncaa-resolve-urls, which requires website IS NOT NULL — NAIA seeds carry no website). Phase-1 fetches the naia.org index per gender for a name→slug map; phase-2 GETs each detail page, extracts the athletics outbound link, and probes SIDEARM. Optional --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run. Production runs require proxy_config.yaml — Replit IPs hit naia.org's WAF (HTTP 405).",
     "ncaa-seed-ncsa": "fill colleges.soccer_program_url gaps from curated NCSA/productiverecruit seed CSVs (scraper/seeds/ncaa_urls_*.csv); Jaro-Winkler >= 0.88 match within division+gender. Optional: --division D1|D2|D3|NAIA, --dry-run.",
     "ncaa-crawl-athletics-pages": "fill colleges.soccer_program_url by GETting each school's athletics homepage (colleges.website) and extracting soccer-program links from the page HTML. CMS-agnostic — works for BlueStar, AthleticNet, custom .edu sites, and any platform that links to a soccer page. Only requires a hard hit (soccer keyword in the href path). Targets rows where website IS NOT NULL AND soccer_program_url IS NULL. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both (default both), --limit N (default 300), --dry-run.",
+    "validate-college-websites": "HEAD-check every colleges.website (where soccer_program_url IS NULL) and set website=NULL for any that fail DNS resolution (NameResolutionError = domain gone/expired). Keeps 403/429/timeout values — those sites are alive but blocking. Run before ncaa-resolve-urls-wikipedia to clear stale domains so Wikipedia can re-fill them. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both (default both), --limit N (default 1000), --dry-run.",
 }
 
 
