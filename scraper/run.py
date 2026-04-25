@@ -3253,6 +3253,198 @@ def _handle_ncaa_seed_ncsa(args: argparse.Namespace) -> None:
         conn.close()
 
 
+def _handle_ncaa_enrich_websites_conferences(args: argparse.Namespace) -> None:
+    """Fill ``colleges.website`` by scraping D2/D3 conference member directories.
+
+    For each unique conference in ``colleges.conference`` (filtered by
+    division/gender), looks up the conference member-directory URL in
+    ``CONFERENCE_DIRECTORY_URLS``, fetches the page, extracts
+    ``(school_name, athletics_url)`` pairs, fuzzy-matches them to college
+    rows, and writes ``website`` for matched rows where it is NULL.
+
+    Fuzzy match: rapidfuzz token_set_ratio >= 88 within the same division.
+    Never overwrites an existing ``website`` value.
+
+    Optional flags:
+      --division D2|D3|both  (default: both)
+      --gender mens|womens|both  (default: both)
+      --limit N  (default: 500)
+      --dry-run
+    """
+    import time as _time
+
+    try:
+        from rapidfuzz import fuzz as _fuzz
+        import psycopg2  # type: ignore
+    except ImportError as exc:
+        logger.error("[ncaa-enrich-websites-conferences] missing dependency: %s", exc)
+        sys.exit(1)
+
+    from extractors.ncaa_conference_websites import (
+        make_session,
+        fetch_html,
+        extract_member_schools,
+        conference_directory_url,
+    )
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.error("[ncaa-enrich-websites-conferences] DATABASE_URL env var not set")
+        sys.exit(1)
+
+    division_arg = (getattr(args, "division", None) or "both").upper()
+    if division_arg in ("D2", "D3"):
+        divisions = [division_arg]
+    elif division_arg in ("BOTH", "ALL"):
+        divisions = ["D2", "D3"]
+    else:
+        logger.error(
+            "[ncaa-enrich-websites-conferences] --division must be D2|D3|both (got %r)",
+            division_arg,
+        )
+        sys.exit(2)
+
+    gender_arg = getattr(args, "gender", None) or "both"
+    genders = ["mens", "womens"] if gender_arg in ("both", None) else [gender_arg]
+    dry_run = bool(getattr(args, "dry_run", False))
+    limit = int(getattr(args, "limit", None) or 500)
+
+    session = make_session()
+    filled = 0
+    skipped_has_website = 0
+    no_match = 0
+
+    # Cache: conference_url → list[(school_name, athletics_url)]
+    _conf_cache: dict[str, list[tuple[str, str]]] = {}
+
+    try:
+        conn = psycopg2.connect(database_url)
+        try:
+            for division in divisions:
+                for gender in genders:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT id, name, conference, website
+                            FROM colleges
+                            WHERE division = %s AND gender_program = %s
+                              AND conference IS NOT NULL
+                            ORDER BY name
+                            LIMIT %s
+                            """,
+                            (division, gender, limit),
+                        )
+                        rows = cur.fetchall()
+
+                    logger.info(
+                        "[ncaa-enrich-websites-conferences] %s %s: %d rows to process%s",
+                        division, gender, len(rows),
+                        " (dry-run)" if dry_run else "",
+                    )
+
+                    for college_id, name, conference, existing_website in rows:
+                        if existing_website:
+                            skipped_has_website += 1
+                            continue
+
+                        conf_url = conference_directory_url(conference)
+                        if not conf_url:
+                            logger.debug(
+                                "[ncaa-enrich-websites-conferences] no directory URL "
+                                "for conference %r (college: %s)", conference, name,
+                            )
+                            no_match += 1
+                            continue
+
+                        # Fetch + cache the conference member page
+                        if conf_url not in _conf_cache:
+                            html = fetch_html(conf_url, session)
+                            _time.sleep(1.0)
+                            if not html:
+                                logger.warning(
+                                    "[ncaa-enrich-websites-conferences] could not "
+                                    "fetch conference page %s", conf_url,
+                                )
+                                _conf_cache[conf_url] = []
+                            else:
+                                pairs = extract_member_schools(html, conf_url)
+                                _conf_cache[conf_url] = pairs
+                                logger.info(
+                                    "[ncaa-enrich-websites-conferences] %s: "
+                                    "extracted %d school entries",
+                                    conf_url, len(pairs),
+                                )
+
+                        pairs = _conf_cache[conf_url]
+                        if not pairs:
+                            no_match += 1
+                            continue
+
+                        # Fuzzy match school name to conference entries
+                        best_score = 0
+                        best_url: Optional[str] = None
+                        norm_name = name.lower()
+                        for conf_school, conf_athletics_url in pairs:
+                            score = _fuzz.token_set_ratio(
+                                norm_name, conf_school.lower()
+                            )
+                            if score > best_score:
+                                best_score = score
+                                best_url = conf_athletics_url
+
+                        if best_score < 88 or not best_url:
+                            logger.debug(
+                                "[ncaa-enrich-websites-conferences] no match for %s "
+                                "(best score=%d)", name, best_score,
+                            )
+                            no_match += 1
+                            continue
+
+                        if dry_run:
+                            logger.info(
+                                "[ncaa-enrich-websites-conferences] [dry-run] "
+                                "%s (%s %s) → website=%s (score=%d)",
+                                name, division, gender, best_url, best_score,
+                            )
+                        else:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    "UPDATE colleges SET website = %s "
+                                    "WHERE id = %s AND website IS NULL",
+                                    (best_url, college_id),
+                                )
+                            conn.commit()
+                            logger.info(
+                                "[ncaa-enrich-websites-conferences] %s (%s %s) "
+                                "→ website=%s (score=%d conf=%s)",
+                                name, division, gender, best_url, best_score, conference,
+                            )
+                        filled += 1
+
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    logger.info(
+        "[ncaa-enrich-websites-conferences] done: filled=%d "
+        "skipped_has_website=%d no_match=%d%s",
+        filled, skipped_has_website, no_match,
+        " (dry-run)" if dry_run else "",
+    )
+    if filled > 0 and not dry_run:
+        logger.info(
+            "[ncaa-enrich-websites-conferences] run --source ncaa-resolve-urls "
+            "to SIDEARM-probe the %d newly-filled website rows", filled,
+        )
+
+
 def _handle_validate_college_websites(args: argparse.Namespace) -> None:
     """HEAD-check every ``colleges.website`` and clear values that fail DNS.
 
@@ -3665,6 +3857,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_crawl_athletics_pages": _handle_ncaa_crawl_athletics_pages,
     "validate-college-websites": _handle_validate_college_websites,
     "validate_college_websites": _handle_validate_college_websites,
+    "ncaa-enrich-websites-conferences": _handle_ncaa_enrich_websites_conferences,
+    "ncaa_enrich_websites_conferences": _handle_ncaa_enrich_websites_conferences,
 }
 
 # One entry per UNIQUE source (kebab form only). Used to build the
@@ -3722,6 +3916,7 @@ SOURCE_HELP: dict[str, str] = {
     "naia-resolve-urls": "resolve NAIA colleges.website + soccer_program_url via naia.org per-team detail pages (closes the gap left by ncaa-resolve-urls, which requires website IS NOT NULL — NAIA seeds carry no website). Phase-1 fetches the naia.org index per gender for a name→slug map; phase-2 GETs each detail page, extracts the athletics outbound link, and probes SIDEARM. Optional --gender mens|womens|both (default both); --limit N for smoke-tests; --dry-run. Production runs require proxy_config.yaml — Replit IPs hit naia.org's WAF (HTTP 405).",
     "ncaa-seed-ncsa": "fill colleges.soccer_program_url gaps from curated NCSA/productiverecruit seed CSVs (scraper/seeds/ncaa_urls_*.csv); Jaro-Winkler >= 0.88 match within division+gender. Optional: --division D1|D2|D3|NAIA, --dry-run.",
     "ncaa-crawl-athletics-pages": "fill colleges.soccer_program_url by GETting each school's athletics homepage (colleges.website) and extracting soccer-program links from the page HTML. CMS-agnostic — works for BlueStar, AthleticNet, custom .edu sites, and any platform that links to a soccer page. Only requires a hard hit (soccer keyword in the href path). Targets rows where website IS NOT NULL AND soccer_program_url IS NULL. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both (default both), --limit N (default 300), --dry-run.",
+    "ncaa-enrich-websites-conferences": "fill colleges.website for D2/D3 rows by scraping conference member-school directories. Maps colleges.conference to a curated conference→URL dict, fetches each member page, extracts (school_name, athletics_url) pairs, fuzzy-matches (token_set_ratio >= 88) to college rows, and writes website where NULL. Never overwrites existing data. Optional --division D2|D3|both (default both), --gender, --limit N (default 500), --dry-run.",
     "validate-college-websites": "HEAD-check every colleges.website (where soccer_program_url IS NULL) and set website=NULL for any that fail DNS resolution (NameResolutionError = domain gone/expired). Keeps 403/429/timeout values — those sites are alive but blocking. Run before ncaa-resolve-urls-wikipedia to clear stale domains so Wikipedia can re-fill them. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both (default both), --limit N (default 1000), --dry-run.",
 }
 
