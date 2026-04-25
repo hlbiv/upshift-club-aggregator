@@ -2702,6 +2702,123 @@ def _handle_ncaa_seed_d1(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_ncaa_seed_d2_d3(args: argparse.Namespace) -> None:
+    """Seed/update ``colleges.ncaa_id`` from stats.ncaa.org's D2 and D3 lists.
+
+    Walks ``/team/inst_team_list?sport_code=MSO|WSO&division=2|3`` and
+    upserts seed rows via ``ingest.ncaa_roster_writer.upsert_college``.
+    Also writes ``ncaa_id`` for existing rows that were seeded from Wikipedia
+    without one (the primary value of this source for D2/D3).
+
+    After this runs, execute ``--source ncaa-enrich-websites-ncaaid`` with
+    ``--division D2`` (or D3) to fetch each team's current athletics URL from
+    the stats.ncaa.org team page — the NCAA maintains these links and they
+    reflect current domains, unlike the stale Wikipedia ``| website =`` field.
+
+    Optional flags:
+      --division D2|D3|both  (default: both)
+      --gender mens|womens|both  (default: both)
+      --dry-run
+    """
+    from extractors.ncaa_directory import fetch_programs
+    from ingest.ncaa_roster_writer import upsert_college
+
+    division_arg = (getattr(args, "division", None) or "both").upper()
+    if division_arg in ("D2", "D3"):
+        divisions = [division_arg]
+    elif division_arg in ("BOTH", "ALL"):
+        divisions = ["D2", "D3"]
+    else:
+        logger.error(
+            "--source ncaa-seed-d2-d3: --division must be D2|D3|both (got %r)",
+            division_arg,
+        )
+        sys.exit(2)
+
+    gender_arg = getattr(args, "gender", None) or "both"
+    gender_arg = {"boys": "mens", "girls": "womens"}.get(gender_arg, gender_arg)
+    if gender_arg == "both":
+        genders = ["mens", "womens"]
+    elif gender_arg in ("mens", "womens"):
+        genders = [gender_arg]
+    else:
+        logger.error(
+            "--source ncaa-seed-d2-d3: --gender must be mens|womens|both (got %r)",
+            gender_arg,
+        )
+        sys.exit(2)
+
+    dry_run = bool(getattr(args, "dry_run", False))
+    grand = {"fetched": 0, "inserted": 0, "updated": 0, "errors": 0}
+
+    for division in divisions:
+        for gender in genders:
+            run_log: Optional[ScrapeRunLogger] = None
+            sport_code = "MSO" if gender == "mens" else "WSO"
+            div_num = division[1]  # "2" or "3"
+            source_url = f"https://stats.ncaa.org/team/inst_team_list?sport_code={sport_code}&division={div_num}"
+
+            if not dry_run:
+                run_log = ScrapeRunLogger(
+                    scraper_key=f"ncaa-seed-d2-d3-{division.lower()}-{gender}",
+                    league_name=f"NCAA {division} {gender}",
+                )
+                run_log.start(source_url=source_url)
+
+            try:
+                seeds = fetch_programs(gender, division)
+            except Exception as exc:
+                kind = _classify_exception(exc)
+                logger.error(
+                    "[ncaa-seed-d2-d3] fetch failed for %s %s: %s",
+                    division, gender, exc,
+                )
+                if run_log is not None:
+                    run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                grand["errors"] += 1
+                continue
+
+            grand["fetched"] += len(seeds)
+            inserted = updated = errors = 0
+            for seed in seeds:
+                try:
+                    _cid, was_inserted = upsert_college(seed.to_upsert_row(), dry_run=dry_run)
+                except Exception as exc:
+                    logger.warning(
+                        "[ncaa-seed-d2-d3] upsert failed for %s: %s", seed.name, exc,
+                    )
+                    errors += 1
+                    continue
+                if dry_run:
+                    continue
+                if was_inserted:
+                    inserted += 1
+                else:
+                    updated += 1
+
+            logger.info(
+                "[ncaa-seed-d2-d3] %s %s: fetched=%d inserted=%d updated=%d errors=%d%s",
+                division, gender, len(seeds), inserted, updated, errors,
+                " (dry-run)" if dry_run else "",
+            )
+            grand["inserted"] += inserted
+            grand["updated"] += updated
+            grand["errors"] += errors
+
+            if run_log is not None:
+                run_log.finish_ok(
+                    records_created=inserted,
+                    records_updated=updated,
+                    records_failed=errors,
+                )
+
+    logger.info(
+        "[ncaa-seed-d2-d3] done: fetched=%d inserted=%d updated=%d errors=%d%s",
+        grand["fetched"], grand["inserted"], grand["updated"], grand["errors"],
+        " (dry-run)" if dry_run else "",
+    )
+
+
 def _handle_ncaa_seed_wikipedia(args: argparse.Namespace) -> None:
     """Seed ``colleges`` from Wikipedia's D2/D3/NAIA soccer-program lists.
 
@@ -3522,6 +3639,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "ncaa_rosters": _handle_ncaa_rosters,
     "ncaa-seed-d1": _handle_ncaa_seed_d1,
     "ncaa_seed_d1": _handle_ncaa_seed_d1,
+    "ncaa-seed-d2-d3": _handle_ncaa_seed_d2_d3,
+    "ncaa_seed_d2_d3": _handle_ncaa_seed_d2_d3,
     "ncaa-seed-wikipedia": _handle_ncaa_seed_wikipedia,
     "ncaa_seed_wikipedia": _handle_ncaa_seed_wikipedia,
     "ncaa-seed-wikipedia-category": _handle_ncaa_seed_wikipedia_category,
@@ -3591,6 +3710,7 @@ SOURCE_HELP: dict[str, str] = {
     "mlsnext-video": "scrape the MLS NEXT video library (mlssoccer.com/mlsnext/video) Brightcove cards into video_sources (source_platform='mls_com')",
     "ncaa-rosters": "NCAA D1/D2/D3 soccer roster scrape (SIDEARM-first). Exactly one of --school-url (single) OR --all (bulk; --division + --gender required). Writes colleges + college_coaches + college_roster_history.",
     "ncaa-seed-d1": "seed colleges table from stats.ncaa.org D1 men's + women's soccer program lists. Optional --gender mens|womens (default: both); --dry-run.",
+    "ncaa-seed-d2-d3": "seed/update colleges.ncaa_id from stats.ncaa.org D2 and D3 soccer program lists. Primary value: writes ncaa_id onto existing rows seeded from Wikipedia (which lack it), enabling ncaa-enrich-websites-ncaaid to fetch current athletics URLs. Optional --division D2|D3|both (default: both), --gender mens|womens|both (default: both), --dry-run. After running, execute ncaa-enrich-websites-ncaaid --division D2 (or D3).",
     "ncaa-seed-wikipedia": "seed colleges table from Wikipedia's D1/D2/D3/NAIA soccer-program lists. Requires --division {D1,D2,D3,NAIA}. Optional --gender mens|womens (default: both); --dry-run. D1 support is a FALLBACK for when stats.ncaa.org 403s the scraper — prefer --source ncaa-seed-d1 for D1 when it works (richer conference data). NAIA Wikipedia pages are deprecated; use --source naia-seed-official instead. NJCAA not supported — Wikipedia coverage too fragmented.",
     "ncaa-seed-wikipedia-category": "seed colleges table from Wikipedia's MediaWiki category pages. Use when the plain 'List of ...' page doesn't exist (D3 as of April 2026). Requires --division D3. Optional --gender mens|womens (default: both); --dry-run. Partial coverage (only schools with their own Wikipedia article — ~60-80% of the real universe); remaining long tail lands in the kid's manual-entry CSV.",
     "naia-seed-official": "seed colleges table from naia.org's 2021-22 soccer teams index (last working listing endpoint — current-season listings 302-redirect to the first team). Covers ~95% of current NAIA membership; ~5-program/year churn means the rest comes in via manual entry. Optional --gender mens|womens (default: both); --dry-run.",

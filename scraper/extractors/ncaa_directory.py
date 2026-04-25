@@ -87,15 +87,24 @@ class CollegeSeed:
         return row
 
 
-def directory_url(gender: str) -> str:
-    """Return the stats.ncaa.org D1 directory URL for ``gender``."""
+_DIVISION_NUM = {"D1": "1", "D2": "2", "D3": "3"}
+
+
+def directory_url(gender: str, division: str = "D1") -> str:
+    """Return the stats.ncaa.org directory URL for ``gender`` and ``division``.
+
+    ``division`` must be one of ``'D1'``, ``'D2'``, or ``'D3'``.
+    """
     code = _SPORT_CODE.get(gender)
     if code is None:
         raise ValueError(f"gender must be 'mens' or 'womens' (got {gender!r})")
-    return f"{_BASE_URL}?sport_code={code}&division=1"
+    div_num = _DIVISION_NUM.get(division)
+    if div_num is None:
+        raise ValueError(f"division must be D1, D2, or D3 (got {division!r})")
+    return f"{_BASE_URL}?sport_code={code}&division={div_num}"
 
 
-def parse_directory_html(html: str, gender: str) -> List[CollegeSeed]:
+def parse_directory_html(html: str, gender: str, division: str = "D1") -> List[CollegeSeed]:
     """Parse a stats.ncaa.org inst_team_list page into seed rows.
 
     Logic:
@@ -105,9 +114,15 @@ def parse_directory_html(html: str, gender: str) -> List[CollegeSeed]:
         from the anchor, conference from the next ``<td>`` if present.
       - Dedup by (lowercased name, gender_program) in the rare case the
         page re-renders the same program twice (historical variant).
+
+    ``division`` is passed through to ``CollegeSeed.division`` — use
+    ``'D2'`` or ``'D3'`` when parsing pages fetched with those division
+    numbers.
     """
     if gender not in ("mens", "womens"):
         raise ValueError(f"gender must be 'mens' or 'womens' (got {gender!r})")
+    if division not in _DIVISION_NUM:
+        raise ValueError(f"division must be D1, D2, or D3 (got {division!r})")
 
     soup = BeautifulSoup(html, "html.parser")
     seeds: List[CollegeSeed] = []
@@ -142,7 +157,7 @@ def parse_directory_html(html: str, gender: str) -> List[CollegeSeed]:
         seeds.append(
             CollegeSeed(
                 name=name,
-                division="D1",
+                division=division,
                 gender_program=gender,
                 ncaa_id=ncaa_id,
                 conference=conference,
@@ -152,18 +167,18 @@ def parse_directory_html(html: str, gender: str) -> List[CollegeSeed]:
     return seeds
 
 
-def fetch_d1_programs(
+def fetch_programs(
     gender: str,
+    division: str = "D1",
     *,
     session: Optional[requests.Session] = None,
 ) -> List[CollegeSeed]:
-    """Fetch + parse the D1 directory page for the given gender.
+    """Fetch + parse the stats.ncaa.org directory page for the given gender and division.
 
-    Retries once on transient errors (``requests.RequestException``).
-    stats.ncaa.org sometimes 403s on unconfigured UAs; a realistic
+    Supports D1, D2, and D3. Retries on transient errors; a realistic
     browser UA is set on the session.
     """
-    url = directory_url(gender)
+    url = directory_url(gender, division)
     own_session = session is None
     if own_session:
         session = requests.Session()
@@ -185,7 +200,7 @@ def fetch_d1_programs(
             max_retries=2,
             base_delay=2.0,
             retryable_exceptions=(requests.RequestException,),
-            label=f"ncaa-directory-{gender}",
+            label=f"ncaa-directory-{division}-{gender}",
         )
     finally:
         if own_session:
@@ -194,9 +209,18 @@ def fetch_d1_programs(
             except Exception:
                 pass
 
-    seeds = parse_directory_html(response.text, gender)
-    log.info("[ncaa-directory] fetched %d %s D1 programs", len(seeds), gender)
+    seeds = parse_directory_html(response.text, gender, division)
+    log.info("[ncaa-directory] fetched %d %s %s programs", len(seeds), division, gender)
     return seeds
+
+
+def fetch_d1_programs(
+    gender: str,
+    *,
+    session: Optional[requests.Session] = None,
+) -> List[CollegeSeed]:
+    """Fetch + parse the D1 directory page. Back-compat alias for fetch_programs."""
+    return fetch_programs(gender, "D1", session=session)
 
 
 # ---------------------------------------------------------------------------
