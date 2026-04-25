@@ -114,9 +114,15 @@ def fetch_html(url: str, session: requests.Session) -> Optional[str]:
             _do,
             max_retries=2,
             base_delay=2.0,
-            retryable_exceptions=(requests.ConnectionError, requests.Timeout),
+            # Only retry genuine timeouts — DNS failures (NameResolutionError,
+            # which wraps as ConnectionError) are not transient and should fail
+            # fast rather than burning 6+ seconds per dead domain.
+            retryable_exceptions=(requests.Timeout,),
             label=f"ncaa-crawl-{url[-50:]}",
         )
+    except requests.ConnectionError as exc:
+        log.debug("[ncaa-crawl] DNS/connection error for %s: %s", url, exc)
+        return None
     except Exception as exc:
         log.debug("[ncaa-crawl] network error for %s: %s", url, exc)
         return None
