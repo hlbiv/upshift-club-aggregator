@@ -2188,18 +2188,33 @@ def _handle_ncaa_discover_urls_ncsa(args: argparse.Namespace) -> None:
                         resolved_direct += 1
 
                     elif kind == "website":
-                        # Probe SIDEARM on the athletics homepage
+                        # Probe SIDEARM on the athletics homepage.
+                        # If the root domain misses, also try athletics.{domain}
+                        # (common pattern: athletics.school.edu/sports/womens-soccer).
                         probed_url: Optional[str] = None
+                        _probe_urls = [raw_url]
                         try:
-                            probed_url = resolve_soccer_program_url(
-                                raw_url, gender, session=sidearm_session
-                            )
-                        except Exception as exc:
-                            logger.debug(
-                                "[ncaa-discover-urls-ncsa] SIDEARM probe failed "
-                                "for %s (%s): %s",
-                                tag, raw_url, exc,
-                            )
+                            from urllib.parse import urlparse as _urlparse
+                            _p = _urlparse(raw_url)
+                            _host = _p.netloc.lstrip("www.")
+                            _athletics_url = f"{_p.scheme}://athletics.{_host}/"
+                            if _athletics_url.rstrip("/") != raw_url.rstrip("/"):
+                                _probe_urls.append(_athletics_url)
+                        except Exception:
+                            pass
+                        for _probe_url in _probe_urls:
+                            try:
+                                probed_url = resolve_soccer_program_url(
+                                    _probe_url, gender, session=sidearm_session
+                                )
+                            except Exception as exc:
+                                logger.debug(
+                                    "[ncaa-discover-urls-ncsa] SIDEARM probe failed "
+                                    "for %s (%s): %s",
+                                    tag, _probe_url, exc,
+                                )
+                            if probed_url:
+                                break
 
                         if probed_url:
                             if dry_run:
