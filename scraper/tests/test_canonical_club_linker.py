@@ -766,6 +766,80 @@ def test_linker_target_tables_coverage():
         )
 
 
+class _AliasUpsertFakeCursor:
+    """
+    Mini in-memory cursor that models the alias-table ``ON CONFLICT``
+    semantics introduced in PR 11. The production ``_insert_alias`` always
+    writes ``source='linker-fuzzy'``; this cursor lets the test issue the
+    same SQL shape with different source values to exercise the
+    promotion path (operator flips ``source='linker-fuzzy'`` →
+    ``source='manual'`` out of band, then the linker re-runs).
+
+    Records every write so the test can assert that:
+      * the first INSERT inserts a row,
+      * a second INSERT with a DIFFERENT source UPDATES the existing row,
+      * a third INSERT with the SAME source is a no-op (the
+        ``IS DISTINCT FROM`` guard short-circuits the UPDATE).
+    """
+
+    def __init__(self):
+        # key (club_id, alias_name) -> source
+        self.rows: dict = {}
+        self.ops: list = []  # ("insert"|"update"|"noop", club_id, alias_name, source)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql: str, params=None):
+        sql = sql.strip()
+        assert sql.startswith("INSERT INTO club_aliases"), sql
+        assert "ON CONFLICT ON CONSTRAINT club_aliases_club_alias_uq" in sql
+        assert "DO UPDATE SET source = EXCLUDED.source" in sql
+        assert "WHERE club_aliases.source IS DISTINCT FROM EXCLUDED.source" in sql
+        club_id, alias_name, source = params
+        key = (club_id, alias_name)
+        if key not in self.rows:
+            self.rows[key] = source
+            self.ops.append(("insert", club_id, alias_name, source))
+        elif self.rows[key] != source:
+            self.rows[key] = source
+            self.ops.append(("update", club_id, alias_name, source))
+        else:
+            self.ops.append(("noop", club_id, alias_name, source))
+
+
+def test_alias_insert_audit_trail_promotes_source_then_noops():
+    """
+    PR 11 regression — the alias upsert must preserve the operator's
+    audit trail when a fuzzy-cached alias is later promoted to manual,
+    while staying a true no-op when nothing changed.
+    """
+    cur = _AliasUpsertFakeCursor()
+    sql = (
+        "INSERT INTO club_aliases (club_id, alias_name, source, is_official) "
+        "VALUES (%s, %s, %s, false) "
+        "ON CONFLICT ON CONSTRAINT club_aliases_club_alias_uq "
+        "DO UPDATE SET source = EXCLUDED.source "
+        "WHERE club_aliases.source IS DISTINCT FROM EXCLUDED.source"
+    )
+    # 1. First write — fuzzy linker caches the alias.
+    cur.execute(sql, (101, "Concorde Fire Phoenix", "linker-fuzzy"))
+    # 2. Operator promotes to manual out of band — second INSERT must
+    #    UPDATE the row's source.
+    cur.execute(sql, (101, "Concorde Fire Phoenix", "manual"))
+    # 3. A subsequent linker pass (or an idempotency retry) issues the
+    #    same INSERT with the same source — IS DISTINCT FROM guard
+    #    short-circuits the UPDATE.
+    cur.execute(sql, (101, "Concorde Fire Phoenix", "manual"))
+
+    assert cur.rows[(101, "Concorde Fire Phoenix")] == "manual"
+    op_kinds = [op[0] for op in cur.ops]
+    assert op_kinds == ["insert", "update", "noop"], op_kinds
+
+
 def test_link_all_picks_up_all_new_tables_end_to_end():
     """
     End-to-end smoke: a candidate row in each of the 4 new tables is
