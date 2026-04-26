@@ -309,6 +309,87 @@ expectThrows(() => chunk([1, 2], -1), "chunk-negative-rejected", "chunk size");
 }
 
 // ---------------------------------------------------------------------------
+// 6. Mid-transaction re-SELECT abort.
+//
+//    Between the original SELECT-targets and the DELETE, an operator
+//    can resolve a flag (setting `resolved_at` from NULL to non-NULL),
+//    which would turn a previously-targeted discovery into one that
+//    must NOT be purged. The script's contract: re-SELECT under the
+//    same predicate immediately before DELETE; if the set differs,
+//    abort + roll back.
+//
+//    The DB-touching sequence lives in main(); we verify the contract
+//    by simulating set-diff math identical to the inline check.
+// ---------------------------------------------------------------------------
+
+function checkSetUnchanged(
+  original: readonly number[],
+  recheck: readonly number[],
+): { thrown: boolean; message: string } {
+  try {
+    const o = new Set(original);
+    const r = new Set(recheck);
+    let added = 0;
+    let removed = 0;
+    for (const id of recheck) if (!o.has(id)) added += 1;
+    for (const id of original) if (!r.has(id)) removed += 1;
+    if (added !== 0 || removed !== 0) {
+      throw new Error(
+        `target set changed between SELECT and DELETE: ` +
+          `${removed} id(s) removed (likely operator-resolved), ` +
+          `${added} id(s) added (likely new flags landed) — ` +
+          `aborting transaction. Re-run to pick up the new target set.`,
+      );
+    }
+    return { thrown: false, message: "" };
+  } catch (err) {
+    return { thrown: true, message: (err as Error).message };
+  }
+}
+
+{
+  // 6a. unchanged set — no throw
+  const r = checkSetUnchanged([1, 2, 3], [1, 2, 3]);
+  assert(r.thrown === false, "reselect-unchanged-no-throw", r.message);
+}
+{
+  // 6b. operator resolved one flag (id 2 disappears) → throws
+  const r = checkSetUnchanged([1, 2, 3], [1, 3]);
+  assert(r.thrown === true, "reselect-removed-throws", `got ${r.thrown}`);
+  assert(
+    r.message.includes("removed") && r.message.includes("aborting"),
+    "reselect-removed-message",
+    `got "${r.message}"`,
+  );
+}
+{
+  // 6c. new flag landed (id 4 appears) → also throws
+  const r = checkSetUnchanged([1, 2, 3], [1, 2, 3, 4]);
+  assert(r.thrown === true, "reselect-added-throws", `got ${r.thrown}`);
+  assert(
+    r.message.includes("added"),
+    "reselect-added-message",
+    `got "${r.message}"`,
+  );
+}
+{
+  // 6d. both changed (one removed, one added) → throws with both counts
+  const r = checkSetUnchanged([1, 2, 3], [1, 3, 4]);
+  assert(r.thrown === true, "reselect-mixed-throws", `got ${r.thrown}`);
+  assert(
+    r.message.includes("1 id(s) removed") &&
+      r.message.includes("1 id(s) added"),
+    "reselect-mixed-message",
+    `got "${r.message}"`,
+  );
+}
+{
+  // 6e. set order differs but content identical → no throw
+  const r = checkSetUnchanged([1, 2, 3], [3, 2, 1]);
+  assert(r.thrown === false, "reselect-order-irrelevant", r.message);
+}
+
+// ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 

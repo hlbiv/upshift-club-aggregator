@@ -436,6 +436,25 @@ psql "$DATABASE_URL" -c "
 
 Override the audit dir with `--audit-dir /path/to/dir` (default `/tmp`). The JSONL bundles each orphan coach with its cascade-tied `coach_career_history`, `coach_movement_events`, and `coach_effectiveness` rows so a full rebuild is possible from the artifact alone.
 
+The DELETE row-count check is **strict equality** as of PR 13: the deleted count must equal `targetIds.length` exactly. A short or long count rolls the transaction back. This catches concurrent `manually_merged` flips between the SELECT and DELETE that would have left the audit JSONL out of sync with the actual deletions. A `--relink` flag is available — see the next section.
+
+### Coach person_hash rehash cutover (one-shot, irreversible)
+
+Coach merges are NOT cheaply reversible. Once `--commit --allow-rehash`
+collapses two `coaches` rows, the original `person_hash` values are
+overwritten. Mitigation:
+
+1. `pg_dump --table=coaches "$DATABASE_URL" > /tmp/coaches-pre-rehash-$(date +%Y%m%d-%H%M).sql` and copy off Replit.
+2. `pnpm --filter @workspace/scripts run backfill-coaches -- --dry-run --allow-rehash` — review the would-merge JSONL at `/tmp/coach-rehash-cutover-*.jsonl`.
+3. `pnpm --filter @workspace/scripts run backfill-coaches -- --commit --allow-rehash`.
+4. Verify no `manually_merged = true` row was touched: `psql "$DATABASE_URL" -c "SELECT count(*) FROM coaches WHERE manually_merged = true;"` should equal pre-cutover count.
+5. `pnpm --filter @workspace/scripts run sweep-orphan-coaches -- --commit` (now strict).
+6. (Optional) `pnpm --filter @workspace/scripts run sweep-orphan-coaches -- --commit --relink` to re-attach any discoveries that lost their coach_id.
+
+Un-merge path (worst case): drop merged `coaches` rows where `manually_merged = false` AND created in the cutover window, restore from the pg_dump, re-run backfill *without* `--allow-rehash`.
+
+After the cutover lands cleanly, strip the `--allow-rehash` flag from `scripts/src/backfill-coaches-master.ts` in a follow-up PR so a future operator can't accidentally re-trigger the merge logic on a routine backfill.
+
 ### Events-route rewire (PR #8) — post-merge steps
 
 ```bash
