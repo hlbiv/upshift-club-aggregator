@@ -69,15 +69,16 @@ def test_failure_kind_values_match_db_enum():
     assert {k.value for k in FailureKind} == DB_ENUM_VALUES
 
 
-def test_run_py_failure_kind_matches_logger_and_db_enum():
+def test_run_py_failure_kind_is_logger_failure_kind():
     """
-    run.py defines its OWN FailureKind enum (historical: pre-dates the
-    scrape_run_logger module). Their values are mapped 1:1 inside
-    scrape_league() via `DbFailureKind(kind.value)`. If the two enums
-    drift, every failure in the drifted category raises ValueError at
-    map time. Lock the contract with a test.
+    run.py used to define its own FailureKind enum; values were mapped
+    via `DbFailureKind(kind.value)` at every finish_failed() call site.
+    The duplication crashed the failure-reporting path itself on enum
+    drift. After the unification, run.py re-exports the canonical enum
+    from scrape_run_logger — `from run import FailureKind` and
+    `from scrape_run_logger import FailureKind` MUST be the same object.
+    Regression to a duplicate definition fails this test.
     """
-    # Some environments don't have pandas etc. installed; skip cleanly.
     try:
         from run import FailureKind as RunFailureKind  # type: ignore
     except Exception:
@@ -85,8 +86,7 @@ def test_run_py_failure_kind_matches_logger_and_db_enum():
 
         pytest.skip("run.py imports unavailable in this environment")
         return
-    assert {k.value for k in RunFailureKind} == DB_ENUM_VALUES
-    assert {k.value for k in RunFailureKind} == {k.value for k in FailureKind}
+    assert RunFailureKind is FailureKind
 
 
 def test_logger_noops_without_database_url(monkeypatch):
