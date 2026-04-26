@@ -32,7 +32,7 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout, Error as PlaywrightError
 
-from config import PLAYWRIGHT_TIMEOUT, PLAYWRIGHT_WAIT_FOR
+from config import PLAYWRIGHT_TIMEOUT, PLAYWRIGHT_WAIT_FOR, USER_AGENT
 from utils.html_archive import archive_raw_html
 from utils.http import pick_proxy_server
 
@@ -138,11 +138,7 @@ def scrape_js(
                 headless=True,
                 args=_CHROMIUM_ARGS,
             )
-            context_kwargs: Dict = {
-                "user_agent": (
-                    "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"
-                )
-            }
+            context_kwargs: Dict = {"user_agent": USER_AGENT}
             proxy = _playwright_proxy_for(url)
             if proxy is not None:
                 context_kwargs["proxy"] = proxy
@@ -150,19 +146,27 @@ def scrape_js(
             context = browser.new_context(**context_kwargs)
             page = context.new_page()
 
+            goto_timed_out = False
             try:
                 page.goto(url, wait_until=PLAYWRIGHT_WAIT_FOR, timeout=PLAYWRIGHT_TIMEOUT)
             except PlaywrightTimeout:
                 logger.warning("Timeout on %s; extracting current DOM.", url)
+                goto_timed_out = True
             except PlaywrightError as exc:
                 if _is_network_error(exc):
                     raise  # re-raise to outer handler for static fallback
                 logger.warning("Page navigation error on %s: %s", url, exc)
 
-            try:
-                page.wait_for_load_state("domcontentloaded", timeout=5000)
-            except PlaywrightTimeout:
-                pass
+            # Only do the secondary "domcontentloaded" wait if the first
+            # wait actually finished. If page.goto() already timed out
+            # waiting for the primary load state, calling wait_for_load_state
+            # again just compounds the timeout for no benefit — the DOM is
+            # whatever it is, and we'll snapshot it as-is below.
+            if not goto_timed_out:
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=5000)
+                except PlaywrightTimeout:
+                    pass
 
             html = page.content()
             final_url = page.url or url
@@ -194,13 +198,51 @@ def scrape_js(
                 "Falling back to static scraper — JS-rendered content may be incomplete.",
                 url, type(exc).__name__,
             )
-            return _static_fallback(url, league_name, scrape_run_log_id)
+            return _static_fallback_preserving(
+                url, league_name, exc, scrape_run_log_id
+            )
         logger.error("Playwright error on %s: %s", url, exc)
         return []
 
     except Exception as exc:
         logger.error("Unexpected error in JS scraper for %s: %s", url, exc)
+        return _static_fallback_preserving(
+            url, league_name, exc, scrape_run_log_id
+        )
+
+
+def _static_fallback_preserving(
+    url: str,
+    league_name: str,
+    original_exc: BaseException,
+    scrape_run_log_id: Optional[int] = None,
+) -> List[Dict]:
+    """
+    Run the static fallback for ``url`` while preserving the original
+    Playwright exception in any chained traceback.
+
+    On the happy path this is a thin wrapper around
+    :func:`_static_fallback`. If the static fallback ALSO raises, we
+    re-raise an exception of the fallback's type whose message embeds
+    both errors and whose ``__cause__`` chain points to the fallback
+    failure. The original Playwright exception's repr is included in
+    the message text so an operator reading a single log line sees
+    BOTH causes — the JS error that triggered the fallback and the
+    static error that ended the scrape.
+
+    Without this wrapper a bare ``except`` in the caller would lose
+    the JS-side exception entirely and we'd only see the static-side
+    failure, which has historically been the source of "static
+    scraper failed" tickets where the real culprit was a Playwright
+    timeout three layers up.
+    """
+    try:
         return _static_fallback(url, league_name, scrape_run_log_id)
+    except Exception as fallback_exc:
+        raise type(fallback_exc)(
+            f"static fallback failed: {fallback_exc} "
+            f"(original JS error: {type(original_exc).__name__}: {original_exc})"
+        ) from fallback_exc
 
 
 def _static_fallback(
