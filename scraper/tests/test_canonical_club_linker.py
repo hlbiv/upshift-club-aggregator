@@ -114,16 +114,60 @@ def test_resolve_pass3_subset_guard_difflib_fallback():
     assert res.pass_number == 4
 
 
-def test_resolve_pass3_two_token_subset_still_matches():
-    """Subset guard does NOT block multi-token canonicals like
-    "Dallas Texans" being matched by "Dallas Texans 17B Boys"."""
+def test_resolve_pass3_two_token_subset_still_matches_three_token_query():
+    """Subset guard does NOT block a 2-token canonical from matching a
+    3-token query — the boundary is `len(q_tokens) >= 2 * len(m_tokens)`
+    and `3 >= 4` is False, so the match is allowed.
+
+    Uses "Dallas Texans 17B Boys" → strip drops "17B" (team-tag) and
+    "Boys" (stopword) → "Dallas Texans" remains. Matched canonical
+    "Dallas Texans" then equals the query exactly and hits the
+    `m_tokens == q_tokens` early-return inside `_is_unsafe_subset_match`.
+    """
+    idx = ClubIndex()
+    idx.canonical_exact = {"dallas texans": 1001}
+    idx.fuzzy_choices = ["dallas texans"]
+    idx.fuzzy_club_ids = [1001]
+    res = resolve_raw_team_name("Dallas Texans 17B Boys", idx)
+    assert res.club_id == 1001
+    assert res.pass_number in (2, 3)
+
+
+def test_resolve_pass3_two_token_canonical_rejected_against_four_token_query():
+    """Tightened subset guard: a 2-token canonical must NOT match a
+    4-token query. With the new `>=` boundary, `4 >= 2*2 = 4 >= 4 = True`
+    triggers rejection. Previously (`>`), `4 > 4` was False and the
+    match leaked through.
+
+    "Dallas Texans Coach Adams" stays 4 tokens after stripping (none of
+    "Coach"/"Adams" are stopwords), matched against canonical
+    "Dallas Texans" (2 tokens). The subset guard should now fire.
+    """
     idx = ClubIndex()
     idx.canonical_exact = {"dallas texans": 1001}
     idx.fuzzy_choices = ["dallas texans"]
     idx.fuzzy_club_ids = [1001]
     res = resolve_raw_team_name("Dallas Texans Coach Adams", idx)
-    # 2 matched tokens + 3-token query → 3 <= 2*2, NOT rejected.
-    assert res.club_id == 1001
+    assert res.club_id is None
+    assert res.pass_number == 4
+
+
+def test_resolve_pass3_three_token_canonical_still_matches_four_token_query():
+    """Regression guard against over-tightening: a 3-token canonical
+    must STILL match a 4-token query. `4 >= 2*3 = 4 >= 6 = False`, so
+    the subset guard is not triggered and pass-3 fuzzy match wins.
+
+    Uses tokens chosen to avoid the `_STOPWORDS` set (no boys/girls/
+    elite/etc.) so the stripper leaves the query at a clean 4 tokens.
+    """
+    idx = ClubIndex()
+    idx.canonical_exact = {"fc dallas phoenix": 1002}
+    idx.fuzzy_choices = ["fc dallas phoenix"]
+    idx.fuzzy_club_ids = [1002]
+    # 4-token query "FC Dallas Phoenix Coach" survives stripping intact.
+    # Matched canonical is 3 tokens → `4 >= 6` is False → allowed.
+    res = resolve_raw_team_name("FC Dallas Phoenix Coach", idx)
+    assert res.club_id == 1002
     assert res.pass_number in (2, 3)
 
 
