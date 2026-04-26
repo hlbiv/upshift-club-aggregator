@@ -141,7 +141,7 @@ WHERE platform_match_id IS NULL
   AND home_team_name = %(home_team_name)s
   AND away_team_name = %(away_team_name)s
   AND COALESCE(match_date, 'epoch'::timestamp)
-      = COALESCE(%(match_date)s::timestamp, 'epoch'::timestamp)
+      = COALESCE(%(match_date)s, 'epoch'::timestamp)
   AND COALESCE(age_group, '') = COALESCE(%(age_group)s, '')
   AND COALESCE(gender, '')    = COALESCE(%(gender)s, '')
 """
@@ -157,7 +157,20 @@ def _get_connection():
 
 
 def _normalize_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Fill in DB-expected keys with None for optional ones."""
+    """Fill in DB-expected keys with None for optional ones.
+
+    Empty-string ``age_group`` / ``gender`` are coerced to ``None`` so the
+    pre-sweep UPDATE and the natural-key partial unique index see the same
+    sentinel on both sides of ``COALESCE(col, '')``. Without this, a dirty
+    input with ``age_group = ""`` and an existing DB row with
+    ``age_group = NULL`` produces inconsistent behavior across the
+    pre-sweep and INSERT paths and lets duplicates slip through.
+    ``match_date`` is left alone — it's a date/datetime, not a string.
+    """
+    ag = row.get("age_group")
+    age_group = ag if ag not in (None, "") else None
+    gd = row.get("gender")
+    gender = gd if gd not in (None, "") else None
     return {
         "event_id": row.get("event_fk_id") or row.get("event_db_id"),  # FK into events.id, NOT GotSport platform id
         "home_club_id": row.get("home_club_id"),
@@ -167,8 +180,8 @@ def _normalize_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "home_score": row.get("home_score"),
         "away_score": row.get("away_score"),
         "match_date": row.get("match_date"),
-        "age_group": row.get("age_group"),
-        "gender": row.get("gender"),
+        "age_group": age_group,
+        "gender": gender,
         "division": row.get("division"),
         "season": row.get("season"),
         "league": row.get("league"),
