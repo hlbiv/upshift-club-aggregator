@@ -154,6 +154,12 @@ def scrape_league(
             league_name=name,
         )
 
+    # FK to the owning scrape_run_logs row, threaded into scrape_static /
+    # scrape_js so the raw-HTML archive row is tied back to this run for
+    # post-mortem replay. None when we're in dry-run / no-DB mode.
+    # Custom-extractor path doesn't yet thread run_id; follow-up if needed.
+    run_log_id = run_log.run_id if run_log is not None else None
+
     # Check for a custom extractor first
     custom = _extractor_registry.get_extractor(url)
     if custom:
@@ -172,7 +178,7 @@ def scrape_league(
     elif league.get("js_required"):
         extractor_name = "scraper_js"
         try:
-            raw = scrape_js(url, name)
+            raw = scrape_js(url, name, scrape_run_log_id=run_log_id)
         except Exception as exc:
             kind = _classify_exception(exc)
             failure = LeagueFailure(name, url, kind, str(exc))
@@ -184,7 +190,7 @@ def scrape_league(
     else:
         extractor_name = "scraper_static"
         try:
-            raw = scrape_static(url, name)
+            raw = scrape_static(url, name, scrape_run_log_id=run_log_id)
         except Exception as exc:
             kind = _classify_exception(exc)
             failure = LeagueFailure(name, url, kind, str(exc))

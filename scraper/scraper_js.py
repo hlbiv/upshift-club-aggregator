@@ -111,13 +111,22 @@ def _parse_rendered_html(html: str, url: str, league_name: str) -> List[Dict]:
     return _extract_clubs_from_links(soup, url, league_name)
 
 
-def scrape_js(url: str, league_name: str) -> List[Dict]:
+def scrape_js(
+    url: str,
+    league_name: str,
+    scrape_run_log_id: Optional[int] = None,
+) -> List[Dict]:
     """
     Launch a headless browser, wait for JS to settle, extract clubs from the DOM.
 
     Automatically falls back to the static (requests + BeautifulSoup) scraper if:
       - The browser can't resolve DNS (sandboxed environment like Replit)
       - Any unrecoverable browser/network error occurs
+
+    ``scrape_run_log_id`` is the FK to ``scrape_run_logs.id`` for the owning
+    scrape run; threaded down so the post-render raw-HTML archive row can be
+    tied back to the run for post-mortem replay. Pass ``None`` from ad-hoc
+    / test callers. The static-fallback path also receives the id.
 
     Returns a list of raw club dicts (pre-normalization).
     """
@@ -163,8 +172,14 @@ def scrape_js(url: str, league_name: str) -> List[Dict]:
         # extraction later raises, we still have the snapshot on disk
         # for a re-parse. The archive path is strictly defensive —
         # any failure is logged and swallowed so scraping proceeds.
+        # ``scrape_run_log_id`` is threaded down from run.py's
+        # scrape_league() so the archive row is FK'd to the owning run.
         try:
-            archive_raw_html(final_url, html, scrape_run_log_id=None)
+            archive_raw_html(
+                final_url,
+                html,
+                scrape_run_log_id=scrape_run_log_id,
+            )
         except Exception as exc:  # pragma: no cover — strictly defensive
             logger.warning("raw-html archival skipped (%s): %s", final_url, exc)
 
@@ -179,17 +194,21 @@ def scrape_js(url: str, league_name: str) -> List[Dict]:
                 "Falling back to static scraper — JS-rendered content may be incomplete.",
                 url, type(exc).__name__,
             )
-            return _static_fallback(url, league_name)
+            return _static_fallback(url, league_name, scrape_run_log_id)
         logger.error("Playwright error on %s: %s", url, exc)
         return []
 
     except Exception as exc:
         logger.error("Unexpected error in JS scraper for %s: %s", url, exc)
-        return _static_fallback(url, league_name)
+        return _static_fallback(url, league_name, scrape_run_log_id)
 
 
-def _static_fallback(url: str, league_name: str) -> List[Dict]:
+def _static_fallback(
+    url: str,
+    league_name: str,
+    scrape_run_log_id: Optional[int] = None,
+) -> List[Dict]:
     """Attempt a plain requests + BeautifulSoup scrape as a fallback."""
     from scraper_static import scrape_static
     logger.info("Static fallback scrape: %s", url)
-    return scrape_static(url, league_name)
+    return scrape_static(url, league_name, scrape_run_log_id=scrape_run_log_id)
