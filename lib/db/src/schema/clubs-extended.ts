@@ -19,6 +19,7 @@ import {
   timestamp,
   jsonb,
   unique,
+  uniqueIndex,
   check,
   index,
 } from "drizzle-orm/pg-core";
@@ -75,14 +76,25 @@ export const clubRosterSnapshots = pgTable(
     }),
   },
   (t) => [
-    // Named natural-key constraint keyed on the RAW club name so scrapers
-    // can upsert before the linker runs. Named (not predicate-based) to
-    // survive Drizzle expression-text drift — see PR #10 matches.ts.
-    unique("club_roster_snapshots_name_season_age_gender_player_uq").on(
+    // Named natural-key unique index keyed on the RAW club name so
+    // scrapers can upsert before the linker runs. Named (not predicate-
+    // based) to survive Drizzle expression-text drift — see PR #10
+    // matches.ts. The nullable-by-design columns (season / age_group /
+    // gender are notNull at the schema layer today, but the writer's
+    // _SELECT_PRIOR_SNAPSHOT_SQL and _INSERT_SNAPSHOT_SQL WHERE clauses
+    // both wrap them in COALESCE(..., '') — the index expression has to
+    // match byte-for-byte so the writer's lookups can use it and so two
+    // rows the writer treats as conflicting can't slip past Postgres'
+    // NULL-distinct semantics. See migration
+    // 0006_roster_snapshot_coalesce.sql + PR 2 of the scraping-
+    // infrastructure-fix plan.
+    uniqueIndex(
+      "club_roster_snapshots_name_season_age_gender_player_uq",
+    ).on(
       t.clubNameRaw,
-      t.season,
-      t.ageGroup,
-      t.gender,
+      sql`COALESCE(${t.season}, '')`,
+      sql`COALESCE(${t.ageGroup}, '')`,
+      sql`COALESCE(${t.gender}, '')`,
       t.playerName,
     ),
     index("club_roster_snapshots_club_season_idx").on(t.clubId, t.season),
