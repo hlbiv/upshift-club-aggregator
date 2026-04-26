@@ -255,14 +255,21 @@ def _resolve_header_indexes(header_cells: List[str]) -> Tuple[Optional[int], Opt
     return name_idx, jersey_idx
 
 
-def parse_roster_html(html: str) -> List[Tuple[str, Optional[str]]]:
+def parse_roster_html(html: str, teamid: Optional[str] = None) -> List[Tuple[str, Optional[str]]]:
     """Extract ``(player_name, jersey_number)`` tuples from a TTRoster page.
 
     Pure function — no HTTP. Empty rosters return ``[]``.
+
+    Dedup is keyed by ``(teamid, player_name)`` rather than ``player_name``
+    alone so a player legitimately rostered on two different teams within
+    the same scrape (e.g. a U-15 guesting on a U-17) is preserved as two
+    rows. ``teamid`` is optional so the function stays callable with just
+    HTML in ad-hoc / fixture contexts; when omitted, dedup falls back to
+    the per-call name set (single-team semantics).
     """
     soup = BeautifulSoup(html, "lxml")
     results: List[Tuple[str, Optional[str]]] = []
-    seen_names: set = set()
+    seen_keys: set = set()
 
     for table in soup.find_all("table"):
         header_row = table.find("tr")
@@ -289,9 +296,10 @@ def parse_roster_html(html: str) -> List[Tuple[str, Optional[str]]]:
                 j = cells[jersey_idx].get_text(strip=True)
                 jersey = j or None
 
-            if player_name in seen_names:
+            key = (teamid, player_name)
+            if key in seen_keys:
                 continue
-            seen_names.add(player_name)
+            seen_keys.add(key)
             results.append((player_name, jersey))
 
         if results:
@@ -299,6 +307,26 @@ def parse_roster_html(html: str) -> List[Tuple[str, Optional[str]]]:
             break
 
     return results
+
+
+def _compute_grad_year(
+    birth_year: Optional[int],
+    birth_month: Optional[int] = None,
+) -> Optional[int]:
+    """Project a player's high-school graduation year from their birth date.
+
+    Base case: ``grad_year = birth_year + 18``. Players born September
+    through December turn the relevant age in the academic year that
+    STARTS a year later than Jan–Aug-born peers, so their graduation
+    rolls forward by one. When ``birth_month`` is unknown (the SincSports
+    case today — division headers expose only the birth year), we fall
+    back to the simple ``+18`` formula rather than guess. Returns ``None``
+    when ``birth_year`` itself is unknown.
+    """
+    if birth_year is None:
+        return None
+    rollover = 1 if (birth_month is not None and birth_month > 8) else 0
+    return birth_year + 18 + rollover
 
 
 def _fetch(url: str, timeout: int = 25) -> str:
@@ -390,7 +418,7 @@ def scrape_sincsports_rosters(
                 td.tid, td.teamid, exc,
             )
             continue
-        players = parse_roster_html(roster_html)
+        players = parse_roster_html(roster_html, teamid=td.teamid)
         if not players:
             logger.info(
                 "[sincsports-rosters] empty roster tid=%s teamid=%s team=%s",
@@ -398,8 +426,19 @@ def scrape_sincsports_rosters(
             )
             continue
         for player_name, jersey in players:
-            # Compute grad_year from birth_year if available
-            grad_year = (td.birth_year + 18) if td.birth_year else None
+            # Compute grad_year from birth_year if available.
+            # Soccer eligibility seasons roll over in late summer: a player
+            # born Sep–Dec turns the relevant age in the school year that
+            # starts a year LATER than a Jan–Aug-born peer, so their
+            # graduation year shifts +1. SincSports headers expose only
+            # the birth YEAR, never the month — see _parse_division in
+            # sincsports_events.py — so the rollover correction never
+            # triggers in practice today. The ``birth_month`` plumbing is
+            # kept here so the formula is correct if a future source
+            # extends ``TeamDescriptor`` with a month, and to document
+            # that the simple ``+18`` is a deliberate fallback, not a bug.
+            birth_month = getattr(td, "birth_month", None)
+            grad_year = _compute_grad_year(td.birth_year, birth_month)
             rows.append({
                 "club_name_raw": td.club_name,
                 "source_url": url,
