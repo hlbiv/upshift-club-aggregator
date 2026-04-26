@@ -44,6 +44,7 @@ function mkRow(overrides: Partial<Row>): Row {
     ageGroup: null,
     gender: null,
     division: null,
+    season: null,
     tryoutDate: null,
     registrationDeadline: null,
     locationName: null,

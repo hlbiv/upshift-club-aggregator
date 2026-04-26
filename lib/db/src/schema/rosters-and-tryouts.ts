@@ -90,6 +90,10 @@ export const tryouts = pgTable(
     ageGroup: text("age_group"),
     gender: text("gender"),
     division: text("division"),
+    // Season label (e.g. "2025-26"). Optional but participates in the
+    // natural-key unique index so same-club / same-date / same-age-group
+    // tryouts in different seasons (U-14 in 2025 vs 2026) don't collide.
+    season: text("season"),
     tryoutDate: timestamp("tryout_date"),
     registrationDeadline: timestamp("registration_deadline"),
     locationName: text("location_name"),
@@ -121,12 +125,15 @@ export const tryouts = pgTable(
     // Named natural-key unique keyed on the RAW club name (not clubId),
     // so scrapers can upsert before the linker resolves the FK. COALESCE
     // nullable columns to sentinels — Postgres treats NULL as distinct
-    // in unique indexes otherwise.
+    // in unique indexes otherwise. `season` participates so a club's
+    // U-14 tryouts in 2025 and 2026 don't collide on the same calendar
+    // date / age-group / gender tuple.
     uniqueIndex("tryouts_name_date_bracket_uq").on(
       t.clubNameRaw,
       sql`COALESCE(${t.tryoutDate}, 'epoch'::timestamp)`,
       sql`COALESCE(${t.ageGroup}, '')`,
       sql`COALESCE(${t.gender}, '')`,
+      sql`COALESCE(${t.season}, '')`,
     ),
     index("tryouts_club_expires_idx").on(t.clubId, t.expiresAt),
   ],
