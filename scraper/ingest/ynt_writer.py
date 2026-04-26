@@ -135,7 +135,7 @@ def insert_ynt_call_ups(
                         exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     continue

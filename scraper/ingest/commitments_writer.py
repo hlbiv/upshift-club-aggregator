@@ -153,7 +153,7 @@ def insert_commitments(
                         row.get("player_name"), row.get("college_name_raw"), exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     continue

@@ -162,7 +162,7 @@ def update_club_enrichment(
                         row.get("club_id"), exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is not None:
                     counts["updated"] += 1

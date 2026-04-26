@@ -150,7 +150,7 @@ def insert_hs_state_rankings(
                         exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     continue

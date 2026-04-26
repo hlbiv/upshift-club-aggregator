@@ -170,7 +170,7 @@ def insert_player_id_selections(
                         exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     # WHERE predicate short-circuited — no change.
