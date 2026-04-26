@@ -21,7 +21,6 @@ import sys
 import os
 from collections import defaultdict
 from dataclasses import dataclass
-from enum import Enum
 from typing import Callable, List, Optional
 
 import pandas as pd
@@ -34,11 +33,7 @@ from scraper_js import scrape_js
 from normalizer import normalize, deduplicate
 from storage import save_league_csv, append_to_master
 import extractors.registry as _extractor_registry
-from scrape_run_logger import (
-    ScrapeRunLogger,
-    FailureKind as DbFailureKind,
-    classify_exception as _db_classify_exception,
-)
+from scrape_run_logger import ScrapeRunLogger, FailureKind
 from alerts import alert_scraper_failure
 
 logging.basicConfig(
@@ -52,13 +47,9 @@ logger = logging.getLogger("run")
 # ---------------------------------------------------------------------------
 # Failure classification
 # ---------------------------------------------------------------------------
-
-class FailureKind(str, Enum):
-    TIMEOUT = "timeout"
-    NETWORK = "network"
-    PARSE_ERROR = "parse_error"
-    ZERO_RESULTS = "zero_results"
-    UNKNOWN = "unknown"
+# `FailureKind` is imported from scrape_run_logger (single source of truth).
+# The DB CHECK constraint on scrape_run_logs.failure_kind is locked to its
+# values; see lib/db/src/schema/scrape-health.ts.
 
 
 @dataclass
@@ -152,7 +143,7 @@ def scrape_league(
     def _fail(kind: FailureKind, exc_or_msg) -> None:
         if run_log is not None:
             run_log.finish_failed(
-                DbFailureKind(kind.value),
+                kind,
                 error_message=str(exc_or_msg),
             )
         alert_scraper_failure(
@@ -259,14 +250,20 @@ def scrape_league(
     # "record" — the number of clubs written is reported as
     # records_created. When the scraper gets a DB-resident upsert path
     # (separate PR), this should split into created vs updated.
+    if club_count == 0:
+        # Post-dedup zero-results is the same failure as pre-dedup
+        # zero-results — the source returned data but normalize/dedup
+        # collapsed it to nothing. Route through `_fail` so the run
+        # lands in `scrape_run_logs.status = 'failed'` with
+        # `failure_kind = 'zero_results'` (was previously logged as
+        # PARTIAL, which masked the data-quality issue).
+        msg = "scraped records collapsed to 0 after normalize/dedup"
+        failure = LeagueFailure(name, url, FailureKind.ZERO_RESULTS, msg)
+        _fail(FailureKind.ZERO_RESULTS, msg)
+        return df, extractor_name, failure
+
     if run_log is not None:
-        if club_count == 0:
-            run_log.finish_partial(
-                records_failed=0,
-                error_message="scraped records collapsed to 0 after normalize/dedup",
-            )
-        else:
-            run_log.finish_ok(records_created=club_count)
+        run_log.finish_ok(records_created=club_count)
 
     return df, extractor_name, None
 
@@ -1007,7 +1004,7 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
         kind = _classify_exception(exc)
         logger.error("[ncaa-rosters] scrape failed for %s: %s", school_url, exc)
         if run_log is not None:
-            run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+            run_log.finish_failed(kind, error_message=str(exc))
         alert_scraper_failure(
             scraper_key=scraper_key,
             failure_kind=kind.value,
@@ -1043,7 +1040,7 @@ def _handle_ncaa_rosters(args: argparse.Namespace) -> None:
         logger.error("[ncaa-rosters] college upsert returned no id; aborting write")
         if run_log is not None:
             run_log.finish_failed(
-                DbFailureKind.UNKNOWN,
+                FailureKind.UNKNOWN,
                 error_message="college upsert returned no id",
             )
         sys.exit(1)
@@ -1409,7 +1406,7 @@ def _handle_ncaa_resolve_urls_wikipedia(args: argparse.Namespace) -> None:
                             division, gender, exc,
                         )
                         if run_log is not None:
-                            run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                            run_log.finish_failed(kind, error_message=str(exc))
                         grand["errors"] += 1
                         continue
 
@@ -2652,7 +2649,7 @@ def _handle_ncaa_seed_d1(args: argparse.Namespace) -> None:
             kind = _classify_exception(exc)
             logger.error("[ncaa-seed-d1] fetch failed for %s: %s", gender, exc)
             if run_log is not None:
-                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                run_log.finish_failed(kind, error_message=str(exc))
             alert_scraper_failure(
                 scraper_key=f"ncaa-seed-d1-{gender}",
                 failure_kind=kind.value,
@@ -2774,7 +2771,7 @@ def _handle_ncaa_seed_d2_d3(args: argparse.Namespace) -> None:
                     division, gender, exc,
                 )
                 if run_log is not None:
-                    run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                    run_log.finish_failed(kind, error_message=str(exc))
                 grand["errors"] += 1
                 continue
 
@@ -2891,7 +2888,7 @@ def _handle_ncaa_seed_wikipedia(args: argparse.Namespace) -> None:
                 division, gender, exc,
             )
             if run_log is not None:
-                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                run_log.finish_failed(kind, error_message=str(exc))
             alert_scraper_failure(
                 scraper_key=scraper_key,
                 failure_kind=kind.value,
@@ -3014,7 +3011,7 @@ def _handle_ncaa_seed_wikipedia_category(args: argparse.Namespace) -> None:
                 division, gender, exc,
             )
             if run_log is not None:
-                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                run_log.finish_failed(kind, error_message=str(exc))
             alert_scraper_failure(
                 scraper_key=scraper_key,
                 failure_kind=kind.value,
@@ -3122,7 +3119,7 @@ def _handle_naia_seed_official(args: argparse.Namespace) -> None:
                 "[naia-seed-official] %s fetch failed: %s", gender, exc,
             )
             if run_log is not None:
-                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                run_log.finish_failed(kind, error_message=str(exc))
             alert_scraper_failure(
                 scraper_key=scraper_key,
                 failure_kind=kind.value,
@@ -3995,7 +3992,7 @@ def _run_gotsport_matches(
         kind = _classify_exception(exc)
         logger.error("[gotsport-matches] failed: %s", exc)
         if run_log is not None:
-            run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+            run_log.finish_failed(kind, error_message=str(exc))
         alert_scraper_failure(
             scraper_key=scraper_key,
             failure_kind=kind.value,
@@ -4069,7 +4066,7 @@ def _run_rollup(args) -> None:
             kind = _classify_exception(exc)
             logger.error("[rollup:club-results] failed: %s", exc)
             if run_log is not None:
-                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                run_log.finish_failed(kind, error_message=str(exc))
             alert_scraper_failure(
                 scraper_key=scraper_key,
                 failure_kind=kind.value,
@@ -4109,7 +4106,7 @@ def _run_rollup(args) -> None:
             kind = _classify_exception(exc)
             logger.error("[rollup:scrape-health] failed: %s", exc)
             if run_log is not None:
-                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                run_log.finish_failed(kind, error_message=str(exc))
             alert_scraper_failure(
                 scraper_key=scraper_key,
                 failure_kind=kind.value,
@@ -4149,7 +4146,7 @@ def _run_rollup(args) -> None:
             kind = _classify_exception(exc)
             logger.error("[rollup:retention-prune] failed: %s", exc)
             if run_log is not None:
-                run_log.finish_failed(DbFailureKind(kind.value), error_message=str(exc))
+                run_log.finish_failed(kind, error_message=str(exc))
             alert_scraper_failure(
                 scraper_key=scraper_key,
                 failure_kind=kind.value,
