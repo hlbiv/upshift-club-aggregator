@@ -22,6 +22,7 @@ from unittest import mock  # noqa: E402
 
 from extractors.sincsports_rosters import (  # noqa: E402
     SincSportsPageShapeChanged,
+    _compute_grad_year,
     current_season_tag,
     parse_roster_html,
     parse_team_descriptors,
@@ -395,3 +396,113 @@ def test_writer_sends_null_club_id_on_every_insert():
     assert "club_id" in _INSERT_SNAPSHOT_SQL
     # Must be NULL literal, never a parameter placeholder.
     assert "%(club_id)s" not in _INSERT_SNAPSHOT_SQL
+
+
+# --------------------------------------------------------------------------- dedup scope: same player, two teams
+
+
+_SAME_PLAYER_ROSTER_HTML = """
+<html><body>
+  <table>
+    <tr><th>Name</th><th>Jersey</th></tr>
+    <tr><td>Alex Smith</td><td>7</td></tr>
+    <tr><td>Other Kid</td><td>8</td></tr>
+  </table>
+</body></html>
+"""
+
+
+def test_parse_roster_dedups_within_a_single_team_call():
+    """Two rows for the same player on the SAME teamid still collapse —
+    that's a parsing artifact, not a legitimate roster entry."""
+    html = """
+    <html><body>
+      <table>
+        <tr><th>Name</th><th>Jersey</th></tr>
+        <tr><td>Alex Smith</td><td>7</td></tr>
+        <tr><td>Alex Smith</td><td>7</td></tr>
+        <tr><td>Other Kid</td><td>8</td></tr>
+      </table>
+    </body></html>
+    """
+    rows = parse_roster_html(html, teamid="1001")
+    # Same player on the same team → one row only.
+    names = [n for n, _ in rows]
+    assert names == ["Alex Smith", "Other Kid"]
+
+
+def test_scrape_sincsports_rosters_keeps_same_player_on_two_teams():
+    """A U-15 player legitimately rostered as a guest on a U-17 team must
+    show up TWICE — once per teamid — in the scrape output. The dedup
+    key in parse_roster_html is (teamid, player_name), so two distinct
+    teamid fetches yield two distinct rows for the same player name."""
+    # Build a TTTeamList HTML with two team rows pointing to teamid 1001
+    # and teamid 1002 under the same age-group header. Each team's
+    # TTRoster page contains "Alex Smith".
+    team_list_html = """
+    <html><body>
+      <h2>2014 (U12) Boys Silver</h2>
+      <table>
+        <tr><th>Team</th><th>Club</th><th>State</th></tr>
+        <tr>
+          <td><a href="/TTRoster.aspx?tid=ROSTR&amp;teamid=1001">Foley FC 14B</a></td>
+          <td>Foley FC</td>
+          <td>AL</td>
+        </tr>
+        <tr>
+          <td><a href="/TTRoster.aspx?tid=ROSTR&amp;teamid=1002">Foley FC 14B Red</a></td>
+          <td>Foley FC</td>
+          <td>AL</td>
+        </tr>
+      </table>
+    </body></html>
+    """
+    # Each per-team roster fetch returns the same page with "Alex Smith"
+    # on it. The (teamid, player_name) dedup keeps both.
+    responses = [team_list_html, _SAME_PLAYER_ROSTER_HTML, _SAME_PLAYER_ROSTER_HTML]
+    with mock.patch(
+        "extractors.sincsports_rosters._fetch",
+        side_effect=responses,
+    ):
+        rows = scrape_sincsports_rosters("ROSTR")
+    alex_rows = [r for r in rows if r["player_name"] == "Alex Smith"]
+    # Two teams, same player → two rows survive dedup.
+    assert len(alex_rows) == 2
+    source_urls = sorted(r["source_url"] for r in alex_rows)
+    assert "teamid=1001" in source_urls[0]
+    assert "teamid=1002" in source_urls[1]
+
+
+# --------------------------------------------------------------------------- grad_year computation
+
+
+def test_compute_grad_year_october_birth_rolls_forward_one_year():
+    """A player born in October (month=10) of 2008 turns 18 in the school
+    year that starts in fall 2027 → grad_year=2027, NOT 2026."""
+    assert _compute_grad_year(2008, 10) == 2027
+
+
+def test_compute_grad_year_march_birth_does_not_roll():
+    """A player born in March (month=3) of 2008 graduates spring 2026
+    on the simple +18 formula — no rollover."""
+    assert _compute_grad_year(2008, 3) == 2026
+
+
+def test_compute_grad_year_unknown_month_falls_back_to_simple_plus_18():
+    """When birth_month is None (the SincSports case — only birth_year is
+    parsed today) the helper does NOT guess a rollover. It returns the
+    base +18 formula."""
+    assert _compute_grad_year(2008, None) == 2026
+
+
+def test_compute_grad_year_handles_missing_birth_year():
+    assert _compute_grad_year(None, None) is None
+    assert _compute_grad_year(None, 10) is None
+
+
+def test_compute_grad_year_august_boundary_no_rollover():
+    """August (month=8) sits on the boundary — the original spec says
+    rollover only for month > 8 (i.e. Sep–Dec), so August stays put."""
+    assert _compute_grad_year(2008, 8) == 2026
+    # September is the first rollover month.
+    assert _compute_grad_year(2008, 9) == 2027
