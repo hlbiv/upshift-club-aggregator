@@ -15,6 +15,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import logging  # noqa: E402
+
 from extractors.gotsport_matches import (  # noqa: E402
     _extract_matches_from_html,
     _parse_age_gender,
@@ -391,3 +393,106 @@ def test_rollup_idempotent():
     a = _python_rollup(matches)
     b = _python_rollup(matches)
     assert dict(a) == dict(b)
+
+
+# ---------------------------------------------------------------------------
+# Non-canonicalizable team-name guard (PR 8)
+# ---------------------------------------------------------------------------
+
+# Single-row inline fixtures isolate the guard logic without depending on
+# the larger schedules fixtures (which would need to be re-shaped to add a
+# garbage-name row). The structure mirrors `schedules_score_variants.html`.
+
+_GOOD_ROW_HTML = """
+<!doctype html>
+<html><body>
+<table>
+  <thead><tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th></tr></thead>
+  <tbody>
+    <tr class="match" data-match-id="OK-1">
+      <td class="match-date">2026-03-14 10:00</td>
+      <td class="home">Concorde Fire SC</td>
+      <td>3-1</td>
+      <td class="away">NTH Tophat</td>
+    </tr>
+  </tbody>
+</table>
+</body></html>
+"""
+
+# An away cell containing only a parenthetical suffix. _canonical strips
+# parens first, leaving "" — exactly the failure mode the guard targets.
+_GARBAGE_AWAY_ROW_HTML = """
+<!doctype html>
+<html><body>
+<table>
+  <thead><tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th></tr></thead>
+  <tbody>
+    <tr class="match" data-match-id="OK-1">
+      <td class="match-date">2026-03-14 10:00</td>
+      <td class="home">Concorde Fire SC</td>
+      <td>3-1</td>
+      <td class="away">NTH Tophat</td>
+    </tr>
+    <tr class="match" data-match-id="BAD-1">
+      <td class="match-date">2026-03-14 12:00</td>
+      <td class="home">Real Team FC</td>
+      <td>2-0</td>
+      <td class="away">(U-12)</td>
+    </tr>
+  </tbody>
+</table>
+</body></html>
+"""
+
+
+def test_canonicalizable_row_is_emitted_normally():
+    """Both team names canonicalize → row emitted, stats counter stays at 0."""
+    stats = {"dropped_non_canonicalizable": 0}
+    rows = _extract_matches_from_html(
+        _GOOD_ROW_HTML,
+        event_id=12345,
+        source_url="https://example.test",
+        stats=stats,
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["home_team_name"] == "Concorde Fire SC"
+    assert row["away_team_name"] == "NTH Tophat"
+    assert row["home_club_canonical"]  # non-empty
+    assert row["away_club_canonical"]
+    assert stats["dropped_non_canonicalizable"] == 0
+
+
+def test_non_canonicalizable_row_is_dropped_counted_and_logged(caplog):
+    """One team name returns "" from _canonical → row dropped, counter
+    incremented, warning logged. The other (good) row in the fixture
+    is still emitted.
+    """
+    stats = {"dropped_non_canonicalizable": 0}
+    with caplog.at_level(logging.WARNING, logger="extractors.gotsport_matches"):
+        rows = _extract_matches_from_html(
+            _GARBAGE_AWAY_ROW_HTML,
+            event_id=12345,
+            source_url="https://example.test",
+            stats=stats,
+        )
+
+    # Only the well-formed row survived.
+    assert len(rows) == 1
+    assert rows[0]["home_team_name"] == "Concorde Fire SC"
+    assert rows[0]["away_team_name"] == "NTH Tophat"
+
+    # The garbage-away row was counted as dropped.
+    assert stats["dropped_non_canonicalizable"] == 1
+
+    # And a warning was logged with both raw names + canonicals.
+    drop_warnings = [
+        r for r in caplog.records
+        if r.levelno == logging.WARNING
+        and "non-canonicalizable" in r.getMessage()
+    ]
+    assert len(drop_warnings) == 1
+    msg = drop_warnings[0].getMessage()
+    assert "Real Team FC" in msg
+    assert "(U-12)" in msg

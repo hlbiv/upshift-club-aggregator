@@ -259,6 +259,7 @@ def _extract_matches_from_html(
     default_division: Optional[str] = None,
     default_season: Optional[str] = None,
     default_league: Optional[str] = None,
+    stats: Optional[Dict[str, int]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Parse matches out of a GotSport schedule page's HTML.
@@ -274,6 +275,15 @@ def _extract_matches_from_html(
 
     3. We resolve date/score/status from sibling cells and fall back
        to caller-supplied defaults for age/gender/division.
+
+    ``stats``, if supplied, is mutated in place. The currently-tracked
+    counters are:
+
+      - ``dropped_non_canonicalizable``: rows whose home or away team
+        name normalised to an empty string via ``_canonical()`` and were
+        therefore dropped instead of emitted with a raw fallback. Such
+        names would otherwise pollute the canonical-club linker's
+        training set downstream.
     """
     soup = BeautifulSoup(html, "lxml")
     matches: List[Dict[str, Any]] = []
@@ -290,6 +300,7 @@ def _extract_matches_from_html(
             default_division=default_division,
             default_season=default_season,
             default_league=default_league,
+            stats=stats,
         )
         if row is not None:
             matches.append(row)
@@ -317,6 +328,7 @@ def _extract_matches_from_html(
                 default_division=default_division,
                 default_season=default_season,
                 default_league=default_league,
+                stats=stats,
             )
             if row is not None:
                 matches.append(row)
@@ -334,6 +346,7 @@ def _extract_match_from_tr(
     default_division: Optional[str],
     default_season: Optional[str],
     default_league: Optional[str],
+    stats: Optional[Dict[str, int]] = None,
 ) -> Optional[Dict[str, Any]]:
     # First try stable class selectors.
     home_el = tr.select_one(".home, .home-team, [data-side='home']")
@@ -459,11 +472,32 @@ def _extract_match_from_tr(
             home_name, away_name,
         )
 
+    # Drop rows whose team names cannot be canonicalised. A raw fallback
+    # ("home_club_canonical": _canonical(name) or name) used to live here,
+    # but emitting non-canonicalisable names corrupts the canonical-club
+    # linker's training set downstream — the linker fuzzy-matches these
+    # garbage strings against canonical_clubs and either spawns spurious
+    # aliases or pollutes its match-rate stats. Better to drop the row,
+    # count it, and log it so an operator can investigate the source HTML.
+    home_canonical = _canonical(home_name)
+    away_canonical = _canonical(away_name)
+    if not home_canonical or not away_canonical:
+        if stats is not None:
+            stats["dropped_non_canonicalizable"] = (
+                stats.get("dropped_non_canonicalizable", 0) + 1
+            )
+        logger.warning(
+            "[gotsport-matches] dropping row with non-canonicalizable team "
+            "name(s): home=%r away=%r (canonicals: %r, %r)",
+            home_name, away_name, home_canonical, away_canonical,
+        )
+        return None
+
     return {
         "home_team_name": home_name,
         "away_team_name": away_name,
-        "home_club_canonical": _canonical(home_name) or home_name,
-        "away_club_canonical": _canonical(away_name) or away_name,
+        "home_club_canonical": home_canonical,
+        "away_club_canonical": away_canonical,
         "home_score": home_score,
         "away_score": away_score,
         "match_date": match_date,
@@ -529,6 +563,7 @@ def scrape_gotsport_matches(
     except (TransientError, requests.RequestException) as exc:
         logger.error("[gotsport-matches] fetch failed for event %s: %s", event_id, exc)
         return []
+    stats: Dict[str, int] = {"dropped_non_canonicalizable": 0}
     matches = _extract_matches_from_html(
         r.text,
         event_id=event_id,
@@ -538,6 +573,11 @@ def scrape_gotsport_matches(
         default_division=default_division,
         default_season=default_season,
         default_league=default_league,
+        stats=stats,
     )
-    logger.info("[gotsport-matches] event %s → %d matches", event_id, len(matches))
+    logger.info(
+        "[gotsport-matches] event %s → %d matches "
+        "(dropped %d non-canonicalizable rows)",
+        event_id, len(matches), stats["dropped_non_canonicalizable"],
+    )
     return matches
