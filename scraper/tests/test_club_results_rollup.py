@@ -91,21 +91,238 @@ class TestScopeClause:
 
         assert _format_scope("2025-26", "ECNL") == "season=2025-26 league=ECNL"
 
-    def test_unscoped_delete_sql_is_blanket(self):
-        """Backwards-compat: with no flags, DELETE has no WHERE clause."""
-        from rollups.club_results import _delete_sql
 
-        sql, params = _delete_sql(None, None)
-        assert sql.strip().upper() == "DELETE FROM CLUB_RESULTS"
-        assert params == []
+class TestLinkerPrecheckSql:
+    """Regression: precheck must require BOTH FKs (AND), not either (OR).
 
-    def test_scoped_delete_sql_has_where(self):
-        from rollups.club_results import _delete_sql
+    The earlier predicate was ``home_club_id IS NOT NULL OR
+    away_club_id IS NOT NULL``, which let a half-linked match pass the
+    guard. The INSERT then silently dropped that row, yielding the
+    confusing "precheck pass + zero rows_written" failure mode this PR
+    is fixing.
+    """
 
-        sql, params = _delete_sql("2025-26", None)
-        assert "WHERE" in sql
-        assert "season = %s" in sql
-        assert params == ["2025-26"]
+    def test_precheck_uses_and_not_or(self):
+        from rollups.club_results import _linker_precheck_sql
+
+        sql = _linker_precheck_sql("")
+        flat = " ".join(sql.split())
+        assert "home_club_id IS NOT NULL" in flat
+        assert "away_club_id IS NOT NULL" in flat
+        assert "AND away_club_id IS NOT NULL" in flat, (
+            f"FK predicates must be AND-joined, got: {flat!r}"
+        )
+        # Belt-and-suspenders: no OR between the two FK predicates.
+        assert "IS NOT NULL OR" not in flat, (
+            f"precheck must require BOTH FKs via AND, found OR in: {flat!r}"
+        )
+
+
+class TestInsertSqlUpsert:
+    """Regression: rollup must UPSERT, not DELETE+INSERT.
+
+    The DO UPDATE clause must mirror every aggregate column AND
+    bump ``last_calculated_at = NOW()`` so re-runs only touch rows
+    they actually compute.
+    """
+
+    def test_insert_sql_has_on_conflict_do_update(self):
+        from rollups.club_results import _insert_sql
+
+        sql = _insert_sql("")
+        flat = " ".join(sql.split())
+        assert "ON CONFLICT (club_id, season, league, division, age_group, gender)" in flat, (
+            f"missing expected ON CONFLICT target in: {flat!r}"
+        )
+        assert "DO UPDATE SET" in flat
+
+    def test_do_update_refreshes_all_aggregate_columns(self):
+        from rollups.club_results import _insert_sql
+
+        sql = _insert_sql("")
+        flat = " ".join(sql.split())
+        # Every aggregate column the SELECT computes must also be
+        # refreshed in the DO UPDATE — otherwise a re-run wouldn't
+        # actually pick up new score data.
+        for col in ("wins", "losses", "draws", "goals_for",
+                    "goals_against", "matches_played"):
+            assert f"{col} = EXCLUDED.{col}" in flat, (
+                f"DO UPDATE missing refresh of {col!r} in: {flat!r}"
+            )
+        # last_calculated_at must use NOW(), not EXCLUDED — EXCLUDED
+        # would freeze the timestamp at the row's first INSERT time.
+        assert "last_calculated_at = NOW()" in flat
+
+    def test_delete_sql_helper_removed(self):
+        """``_delete_sql`` is gone — the rollup is UPSERT-only now.
+
+        Guards against accidental reintroduction of a DELETE step
+        that would re-introduce the original last_calculated_at-
+        wipe bug.
+        """
+        from rollups import club_results
+
+        assert not hasattr(club_results, "_delete_sql"), (
+            "_delete_sql helper must not exist — the rollup is UPSERT-only"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Stubbed-DB tests — verify the rollup body issues the right shape of SQL.
+# These don't need a live Postgres; they pin the wire-level contract
+# that the linker-resolves-FKs-between-runs scenario relies on.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingCursor:
+    """Cursor stub that records every executed SQL + params for assertion.
+
+    Returns a single-row stubbed answer for the precheck / counters
+    so the rollup body runs end-to-end without a real DB.
+    """
+
+    def __init__(self, state):
+        self.state = state
+        self._next = (0,)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, sql, params=None):
+        self.state["queries"].append((sql, list(params or [])))
+        flat = " ".join(sql.split()).upper()
+        if flat.startswith("INSERT INTO CLUB_RESULTS"):
+            self.state["insert_executed"] = True
+            self._next = (0,)
+        elif flat.startswith("SELECT COUNT(*)::INT FROM CLUB_RESULTS"):
+            self._next = (self.state.get("inserted_count", 0),)
+        elif "FROM MATCHES" in flat and "HOME_CLUB_ID IS NULL" in flat:
+            # Skipped-count probe.
+            self._next = (self.state.get("skipped_count", 0),)
+        elif "FROM MATCHES" in flat:
+            # Linker precheck probe.
+            self._next = (self.state.get("linked_count", 0),)
+        else:
+            self._next = (0,)
+
+    def fetchone(self):
+        return self._next
+
+
+class _RecordingConn:
+    def __init__(self, state):
+        self.state = state
+        self.committed = False
+        self.rolled_back = False
+
+    def cursor(self):
+        return _RecordingCursor(self.state)
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+    def close(self):
+        self.state["closed"] = True
+
+
+class TestLinkerResolvesBetweenRuns:
+    """Verify the rollup body is idempotent across linker-pass runs.
+
+    Scenario: first run sees 5 matches with both FKs resolved →
+    UPSERTs 5 rows. Linker pass resolves FKs on more matches.
+    Second run sees 12 matches → UPSERTs 12 rows.
+
+    The key contract: BOTH runs use INSERT ... ON CONFLICT DO UPDATE
+    (no DELETE step). This protects ``last_calculated_at`` on rows
+    in scopes the second run didn't touch.
+    """
+
+    def test_run_uses_upsert_without_delete(self):
+        from rollups.club_results import recompute_club_results
+
+        # First run: 5 matches both-side-resolved.
+        state = {
+            "queries": [],
+            "linked_count": 5,
+            "skipped_count": 1,
+            "inserted_count": 5,
+        }
+        conn = _RecordingConn(state)
+        result = recompute_club_results(conn=conn, dry_run=False)
+        assert result == {"rows_written": 5, "skipped_linker_pending": 1}
+        assert state.get("insert_executed") is True
+        # CRITICAL: no DELETE in the issued SQL — the bug we are fixing.
+        for sql, _ in state["queries"]:
+            flat = " ".join(sql.split()).upper()
+            assert not flat.startswith("DELETE"), (
+                f"rollup must NOT issue a DELETE — found: {sql!r}"
+            )
+
+        # Second run after a hypothetical linker pass: 12 matches.
+        state2 = {
+            "queries": [],
+            "linked_count": 12,
+            "skipped_count": 0,
+            "inserted_count": 12,
+        }
+        conn2 = _RecordingConn(state2)
+        result2 = recompute_club_results(conn=conn2, dry_run=False)
+        assert result2 == {"rows_written": 12, "skipped_linker_pending": 0}
+        # Same contract on the second run.
+        for sql, _ in state2["queries"]:
+            flat = " ".join(sql.split()).upper()
+            assert not flat.startswith("DELETE"), (
+                f"second run must also be DELETE-free — found: {sql!r}"
+            )
+        # The INSERT executed on the second run carries ON CONFLICT.
+        insert_sqls = [
+            sql for sql, _ in state2["queries"]
+            if " ".join(sql.split()).upper().startswith("INSERT INTO CLUB_RESULTS")
+        ]
+        assert len(insert_sqls) == 1
+        flat_insert = " ".join(insert_sqls[0].split()).upper()
+        assert "ON CONFLICT" in flat_insert
+        assert "DO UPDATE SET" in flat_insert
+
+    def test_scoped_run_passes_scope_params_twice_to_insert(self):
+        """The two UNION ALL SELECTs each consume the scope params.
+
+        Regression for the ``params * 2`` accounting in
+        ``recompute_club_results``: the ON CONFLICT clause adds no
+        new placeholders, so the param count must match the count
+        of ``%s`` in the INSERT body.
+        """
+        from rollups.club_results import recompute_club_results
+
+        state = {
+            "queries": [],
+            "linked_count": 3,
+            "skipped_count": 0,
+            "inserted_count": 3,
+        }
+        conn = _RecordingConn(state)
+        recompute_club_results(
+            conn=conn, dry_run=False,
+            season="2025-26", league="ECNL",
+        )
+
+        insert_call = next(
+            (sql, params) for sql, params in state["queries"]
+            if " ".join(sql.split()).upper().startswith("INSERT INTO CLUB_RESULTS")
+        )
+        sql, params = insert_call
+        # Each scope param appears twice — once per inner SELECT.
+        assert params == ["2025-26", "ECNL", "2025-26", "ECNL"], (
+            f"expected scope params * 2, got {params!r}"
+        )
+        # Placeholder count in the SQL body matches param count.
+        assert sql.count("%s") == len(params)
 
 
 # ---------------------------------------------------------------------------
