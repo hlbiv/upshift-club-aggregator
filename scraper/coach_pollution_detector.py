@@ -212,7 +212,17 @@ def _upsert_flag(
     """Insert a `coach_quality_flags` row for `discovery_id` with type
     `looks_like_name_reject`. Returns True on fresh insert, False when
     the (discovery_id, flag_type) pair already exists and the ON
-    CONFLICT DO NOTHING branch fired.
+    CONFLICT DO NOTHING branch fired (i.e. a no-op skip).
+
+    Uses `RETURNING (xmax = 0) AS inserted` for parity with
+    `nav_leaked_names_detector._upsert_flag` so the caller can honestly
+    distinguish a fresh insert from an ON-CONFLICT skip. With plain
+    `RETURNING id` both branches would return a row-shaped result
+    (`(id,)` for the insert, `None` for the skip) — the legacy contract
+    relied on that None-vs-row distinction. The xmax pattern is more
+    explicit: xmax == 0 iff the row was just inserted by this txn;
+    when ON CONFLICT DO NOTHING fires no row is returned at all
+    (psycopg2 yields `None`), which we map to False.
 
     Metadata shape is the contract documented in
     `lib/db/src/schema/coach-quality-flags.ts`, extended with `raw_email`
@@ -232,12 +242,15 @@ def _upsert_flag(
         VALUES (%s, 'looks_like_name_reject', %s::jsonb, NOW())
         ON CONFLICT ON CONSTRAINT coach_quality_flags_discovery_type_uq
         DO NOTHING
-        RETURNING id
+        RETURNING (xmax = 0) AS inserted
         """,
         (discovery_id, Json(metadata) if Json is not None else metadata),
     )
     row = cur.fetchone()
-    return row is not None
+    if row is None:
+        # ON CONFLICT DO NOTHING fired — no row returned at all.
+        return False
+    return bool(row[0])
 
 
 # ---------------------------------------------------------------------------
@@ -268,17 +281,22 @@ def detect_all(
     stats = DetectorStats()
 
     with conn.cursor() as read_cur:
-        # No-op on missing table. This lets the PR merge before Replit
-        # runs `pnpm --filter @workspace/db run push` to apply PR #188's
-        # schema; the detector simply reports "table missing" and exits
-        # cleanly so a scheduled invocation doesn't error-page.
-        if not _table_exists(read_cur, "coach_quality_flags"):
-            log.warning(
-                "coach_quality_flags table does not exist — "
-                "run `pnpm --filter @workspace/db run push` on Replit. "
-                "Skipping detector."
-            )
-            return stats
+        # Fail loud if either table is missing. The detector previously
+        # no-op'd on a missing `coach_quality_flags` so this PR could
+        # merge before Replit ran `pnpm --filter @workspace/db run push`
+        # — but that schema has long since landed, and the silent-no-op
+        # masked a real failure mode: if `coach_discoveries` was missing
+        # (fresh schema rebuild, misconfigured DB, search_path drift)
+        # the scan returned 0 rows and exited "successful", leaving no
+        # signal that the scheduled job was actually broken. Surface
+        # the misconfiguration as a hard error instead.
+        for required_table in ("coach_quality_flags", "coach_discoveries"):
+            if not _table_exists(read_cur, required_table):
+                raise RuntimeError(
+                    f"required table {required_table!r} does not exist — "
+                    "run `pnpm --filter @workspace/db run push` on Replit "
+                    "and verify search_path before re-running the detector."
+                )
 
         # IMPORTANT: the SELECT in `_iter_discoveries` pages with
         # `fetchmany(PAGE_SIZE)`. Running an `execute()` on the same
