@@ -21,11 +21,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from unittest import mock  # noqa: E402
 
 from extractors.sincsports_rosters import (  # noqa: E402
+    SincSportsPageShapeChanged,
     current_season_tag,
     parse_roster_html,
     parse_team_descriptors,
     scrape_sincsports_rosters,
 )
+from scrape_run_logger import FailureKind, classify_exception  # noqa: E402
 from ingest.roster_snapshot_writer import (  # noqa: E402
     _compute_diff_rows,
     insert_roster_snapshots,
@@ -69,17 +71,66 @@ def test_team_descriptors_real_world_no_teamid_returns_empty():
 
 def test_scrape_sincsports_rosters_detects_no_teamid_pages_and_bails():
     """Runtime guard: when the real TTTeamList HTML has zero teamid= hits,
-    scrape_sincsports_rosters must log a loud warning and return [] without
-    attempting per-team fetches. This is the fix for the 0 teams discovered
-    regression seen against every real SincSports seed tid."""
+    scrape_sincsports_rosters must raise SincSportsPageShapeChanged (with
+    the offending tid in the message) without attempting per-team fetches.
+    The runner catches this and logs failure_kind='parse_error' rather than
+    misclassifying as 'zero_results'. This is the fix for the regression
+    seen against every real SincSports seed tid in production."""
     html = _read("teamlist_REAL_no_teamid.html")
     with mock.patch(
         "extractors.sincsports_rosters._fetch", return_value=html
     ) as fetch_mock:
-        rows = scrape_sincsports_rosters("GULFC")
+        with pytest.raises(SincSportsPageShapeChanged) as excinfo:
+            scrape_sincsports_rosters("GULFC")
+    # tid must appear in the exception message so operators can identify
+    # which tournament tripped the guard.
+    assert "GULFC" in str(excinfo.value)
     # Only the team-list fetch should have fired — no per-team roster fetches.
     assert fetch_mock.call_count == 1
-    assert rows == []
+
+
+def test_sincsports_page_shape_changed_classifies_as_parse_error():
+    """The exception must route through scrape_run_logger.classify_exception
+    to FailureKind.PARSE_ERROR (not UNKNOWN). The runner relies on this so
+    'page shape changed' surfaces distinctly from 'tournament had 0 teams'
+    in scrape_run_logs."""
+    exc = SincSportsPageShapeChanged("tid=GULFC anchors=0")
+    assert classify_exception(exc) is FailureKind.PARSE_ERROR
+
+
+def test_warning_fires_per_call_not_once_per_process(caplog):
+    """Two separate invocations against two different anchor-missing
+    tournaments must each emit a warning — there is no per-process latch
+    that silences subsequent misses. Operators scanning logs need to see
+    every offending tid, not just the first."""
+    fixture_a = _read("teamlist_REAL_no_teamid.html")
+    fixture_b = _read("teamlist_GULFC.html")
+    caplog.set_level("WARNING", logger="extractors.sincsports_rosters")
+
+    with mock.patch(
+        "extractors.sincsports_rosters._fetch", return_value=fixture_a
+    ):
+        with pytest.raises(SincSportsPageShapeChanged):
+            scrape_sincsports_rosters("TIDONE")
+    with mock.patch(
+        "extractors.sincsports_rosters._fetch", return_value=fixture_b
+    ):
+        with pytest.raises(SincSportsPageShapeChanged):
+            scrape_sincsports_rosters("TIDTWO")
+
+    no_teamid_warnings = [
+        rec for rec in caplog.records
+        if rec.levelname == "WARNING"
+        and "exposes no teamid" in rec.getMessage()
+    ]
+    assert len(no_teamid_warnings) == 2, (
+        f"expected one warning per call, got {len(no_teamid_warnings)}: "
+        f"{[r.getMessage() for r in no_teamid_warnings]}"
+    )
+    # Both tids must be present so log scans can identify each offender.
+    messages = " ".join(r.getMessage() for r in no_teamid_warnings)
+    assert "TIDONE" in messages
+    assert "TIDTWO" in messages
 
 
 def test_scrape_sincsports_rosters_still_works_on_pages_that_expose_teamid():
