@@ -438,22 +438,37 @@ Override the audit dir with `--audit-dir /path/to/dir` (default `/tmp`). The JSO
 
 The DELETE row-count check is **strict equality** as of PR 13: the deleted count must equal `targetIds.length` exactly. A short or long count rolls the transaction back. This catches concurrent `manually_merged` flips between the SELECT and DELETE that would have left the audit JSONL out of sync with the actual deletions. A `--relink` flag is available — see the next section.
 
-### Coach person_hash rehash cutover (one-shot, irreversible)
+### Coach person_hash rehash — RESEARCH DRY-RUN ONLY (cutover deferred)
 
-Coach merges are NOT cheaply reversible. Once `--commit --allow-rehash`
-collapses two `coaches` rows, the original `person_hash` values are
-overwritten. Mitigation:
+**Auto-merge is locked.** PR 13 originally proposed dropping `clubId` from
+the email-less `person_hash` to auto-merge same-name coaches across clubs.
+That fix shifts the bug rather than removing it: in youth soccer, common
+names are common and email capture is spotty, so a name-only hash
+collapses real strangers (two different "John Smith" coaches at two
+different clubs) into one row. The proper fix is a candidate-pair review
+queue — see `docs/coach-merge-candidate-queue.md`.
 
-1. `pg_dump --table=coaches "$DATABASE_URL" > /tmp/coaches-pre-rehash-$(date +%Y%m%d-%H%M).sql` and copy off Replit.
-2. `pnpm --filter @workspace/scripts run backfill-coaches -- --dry-run --allow-rehash` — review the would-merge JSONL at `/tmp/coach-rehash-cutover-*.jsonl`.
-3. `pnpm --filter @workspace/scripts run backfill-coaches -- --commit --allow-rehash`.
-4. Verify no `manually_merged = true` row was touched: `psql "$DATABASE_URL" -c "SELECT count(*) FROM coaches WHERE manually_merged = true;"` should equal pre-cutover count.
-5. `pnpm --filter @workspace/scripts run sweep-orphan-coaches -- --commit` (now strict).
-6. (Optional) `pnpm --filter @workspace/scripts run sweep-orphan-coaches -- --commit --relink` to re-attach any discoveries that lost their coach_id.
+`--commit --allow-rehash` now hard-exits with an error. The dry-run path
+remains available for cardinality analysis only.
 
-Un-merge path (worst case): drop merged `coaches` rows where `manually_merged = false` AND created in the cutover window, restore from the pg_dump, re-run backfill *without* `--allow-rehash`.
+**Dry-run procedure (research only):**
 
-After the cutover lands cleanly, strip the `--allow-rehash` flag from `scripts/src/backfill-coaches-master.ts` in a follow-up PR so a future operator can't accidentally re-trigger the merge logic on a routine backfill.
+```bash
+pnpm --filter @workspace/scripts run backfill-coaches-master -- \
+    --dry-run --allow-rehash
+# Audit at /tmp/coach-rehash-cutover-<ts>.jsonl lists every pair the
+# (unsafe) auto-merge would have collapsed. Use this to decide how
+# urgent the candidate-queue work is — e.g. how many real cross-club
+# matches vs. how many same-name strangers.
+```
+
+**Do NOT:**
+- Run with `--commit --allow-rehash` (locked at the script entry).
+- Strip the lock without first shipping the candidate-queue infrastructure.
+
+When the candidate-queue infrastructure lands, the rehash flag can be
+repurposed to write candidate rows instead of merging. The lock comes
+out as part of that PR.
 
 ### Events-route rewire (PR #8) — post-merge steps
 

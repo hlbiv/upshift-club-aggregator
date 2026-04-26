@@ -548,8 +548,22 @@ async function main() {
         "--allow-rehash requires either --dry-run or --commit",
       );
     }
+    if (COMMIT) {
+      // Auto-merge cutover is deliberately disabled. The name-only
+      // hash collapses same-name strangers (e.g. two different "John
+      // Smith" coaches at two different clubs), which is unsafe in
+      // youth soccer where common names are common and email capture
+      // is spotty. The proper fix is a candidate-pair review queue —
+      // see docs/coach-merge-candidate-queue.md. Use --dry-run only
+      // to generate the audit JSONL for cardinality analysis.
+      throw new Error(
+        "--commit --allow-rehash is locked. Auto-merge is unsafe; " +
+          "see docs/coach-merge-candidate-queue.md. Use --dry-run " +
+          "--allow-rehash to generate audit JSONL only.",
+      );
+    }
     console.log(
-      "Step 0 — coach person_hash rehash cutover (--allow-rehash)",
+      "Step 0 — coach person_hash rehash cutover (--allow-rehash, dry-run only)",
     );
     const r = await rehashCutover();
     console.log(`  rehash scanned:           ${r.scanned}`);
