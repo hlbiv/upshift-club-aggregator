@@ -315,26 +315,33 @@ def insert_roster_snapshots(
 
             for gk, group_rows in groups.items():
                 # Fetch prior snapshot BEFORE inserting the new batch.
+                # FAIL-LOUD: previously this was wrapped in try/except
+                # that on failure logged a warning, called conn.rollback,
+                # and set prior=[]. That collapsed two distinct outcomes
+                # — "no prior snapshot exists" (legitimate first scrape)
+                # and "prior-lookup query errored" (transient DB blip)
+                # — into the same code path: no diffs emitted. The
+                # group then looked like a fresh first scrape forever
+                # after, silently corrupting `roster_diffs` history.
+                # Now: any exception propagates, the outer txn rolls
+                # back on close, and the caller sees the real error.
                 sample = group_rows[0]
-                try:
-                    cur.execute(_SELECT_PRIOR_SNAPSHOT_SQL, {
-                        "club_name_raw": sample["club_name_raw"],
-                        "season": sample.get("season"),
-                        "age_group": sample.get("age_group"),
-                        "gender": sample.get("gender"),
-                        "snapshot_date": sample["snapshot_date"],
-                    })
-                    prior = [(r[0], r[1], r[2]) for r in cur.fetchall()]
-                except Exception as exc:
-                    log.warning(
-                        "[roster-snapshot-writer] prior-snapshot lookup failed for %s: %s",
-                        gk, exc,
-                    )
-                    conn.rollback()
-                    prior = []
+                cur.execute(_SELECT_PRIOR_SNAPSHOT_SQL, {
+                    "club_name_raw": sample["club_name_raw"],
+                    "season": sample.get("season"),
+                    "age_group": sample.get("age_group"),
+                    "gender": sample.get("gender"),
+                    "snapshot_date": sample["snapshot_date"],
+                })
+                prior = [(r[0], r[1], r[2]) for r in cur.fetchall()]
 
-                # Insert/upsert every player row in the group.
+                # Insert/upsert every player row in the group. Per-row
+                # SAVEPOINT isolates a bad row from the batch — a single
+                # FK violation no longer rolls back the whole txn (which
+                # would lose every prior successful insert in this group
+                # AND every prior group's work).
                 for row in group_rows:
+                    cur.execute("SAVEPOINT snapshot_row")
                     try:
                         cur.execute(_INSERT_SNAPSHOT_SQL, row)
                         result = cur.fetchone()
@@ -344,8 +351,9 @@ def insert_roster_snapshots(
                             row.get("club_name_raw"), row.get("player_name"), exc,
                         )
                         counts["skipped"] += 1
-                        conn.rollback()
+                        cur.execute("ROLLBACK TO SAVEPOINT snapshot_row")
                         continue
+                    cur.execute("RELEASE SAVEPOINT snapshot_row")
                     if result is None:
                         # WHERE predicate short-circuited on re-scrape (no
                         # change). Count as neither insert nor update.
@@ -362,6 +370,7 @@ def insert_roster_snapshots(
                     continue
                 diff_rows = _compute_diff_rows(gk, group_rows, prior)
                 for d in diff_rows:
+                    cur.execute("SAVEPOINT diff_row")
                     try:
                         cur.execute(_INSERT_DIFF_SQL, d)
                         written = cur.fetchone()
@@ -370,8 +379,9 @@ def insert_roster_snapshots(
                             "[roster-snapshot-writer] diff insert failed for %s / %s: %s",
                             d.get("club_name_raw"), d.get("player_name"), exc,
                         )
-                        conn.rollback()
+                        cur.execute("ROLLBACK TO SAVEPOINT diff_row")
                         continue
+                    cur.execute("RELEASE SAVEPOINT diff_row")
                     if written is not None:
                         counts["diffs_written"] += 1
 
