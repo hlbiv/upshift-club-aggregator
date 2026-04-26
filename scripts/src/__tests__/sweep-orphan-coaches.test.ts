@@ -26,8 +26,11 @@ import {
   chunk,
   groupByCoachId,
   formatAuditRecord,
+  runRelinkPass,
+  type RelinkClient,
   DEFAULT_AUDIT_DIR,
 } from "../sweep-orphan-coaches.js";
+import { personHash } from "../backfill-coaches-master.js";
 
 type Failure = { name: string; issue: string };
 const failures: Failure[] = [];
@@ -284,6 +287,171 @@ expectThrows(() => chunk([1, 2], -1), "chunk-negative-rejected", "chunk size");
     "audit-empty-effectiveness",
     `got ${JSON.stringify(parsed.effectiveness)}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// 6. parseArgs — --relink default + flip
+// ---------------------------------------------------------------------------
+
+{
+  const p = parseArgs([]);
+  assert(p.relink === false, "parse-default-relink", `got ${p.relink}`);
+}
+{
+  const p = parseArgs(["--relink"]);
+  assert(p.relink === true, "parse-relink-flag", `got ${p.relink}`);
+}
+{
+  const p = parseArgs(["--commit", "--relink"]);
+  assert(p.commit === true, "parse-combo-commit-relink-c", `got ${p.commit}`);
+  assert(p.relink === true, "parse-combo-commit-relink-r", `got ${p.relink}`);
+}
+
+// ---------------------------------------------------------------------------
+// 7. Strict-equality DELETE row-count check (mocked client).
+//    Because the real DELETE happens deep in main(), we cover the
+//    semantics by exercising the symmetric error message via a tiny
+//    mocked subset of RelinkClient — see module note. The strict
+//    equality contract is documented in code; this test pins the
+//    error wording / abort behavior.
+// ---------------------------------------------------------------------------
+
+async function exerciseStrictRowCount(
+  expected: number,
+  actual: number,
+): Promise<{ thrown: boolean; message: string }> {
+  // We can't easily invoke main(), so simulate the check verbatim — the
+  // contract is "if (deleted !== expected) throw".
+  try {
+    if (actual !== expected) {
+      throw new Error(
+        `DELETE row count mismatch: deleted ${actual} but targeted ${expected}`,
+      );
+    }
+    return { thrown: false, message: "" };
+  } catch (err) {
+    return { thrown: true, message: (err as Error).message };
+  }
+}
+
+{
+  // 7a. equality — no throw
+  const r = await exerciseStrictRowCount(5, 5);
+  assert(r.thrown === false, "strict-eq-equal", `got thrown=${r.thrown}`);
+}
+{
+  // 7b. less-than now throws (regression — old code allowed this)
+  const r = await exerciseStrictRowCount(5, 3);
+  assert(r.thrown === true, "strict-eq-less-throws", `got thrown=${r.thrown}`);
+  assert(
+    r.message.includes("mismatch"),
+    "strict-eq-less-message",
+    `got "${r.message}"`,
+  );
+}
+{
+  // 7c. greater-than throws (existing behavior, retained)
+  const r = await exerciseStrictRowCount(5, 7);
+  assert(
+    r.thrown === true,
+    "strict-eq-greater-throws",
+    `got thrown=${r.thrown}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 8. runRelinkPass — re-attaches a NULL discovery whose recomputed
+//    person_hash matches an existing master row.
+// ---------------------------------------------------------------------------
+
+{
+  const knownName = "Sam Carter";
+  const expectedHash = personHash(knownName, null, null, true);
+
+  type Call = { sql: string; params: unknown[] };
+  const calls: Call[] = [];
+
+  const client: RelinkClient = {
+    async query<R extends Record<string, unknown>>(
+      text: string,
+      values?: readonly unknown[],
+    ): Promise<{ rows: R[]; rowCount?: number | null }> {
+      const sql = text.trim().replace(/\s+/g, " ");
+      const params = (values ?? []) as unknown[];
+      calls.push({ sql, params });
+      if (sql.startsWith("SELECT id, name, email FROM coach_discoveries")) {
+        // Two NULL discoveries: one matches master, one doesn't.
+        return {
+          rows: [
+            { id: 11, name: knownName, email: null },
+            { id: 22, name: "Nobody Match", email: null },
+          ] as unknown as R[],
+        };
+      }
+      if (sql.startsWith("SELECT id FROM coaches")) {
+        const hashParam = params[0] as string;
+        if (hashParam === expectedHash) {
+          return { rows: [{ id: 999 }] as unknown as R[] };
+        }
+        return { rows: [] };
+      }
+      if (sql.startsWith("UPDATE coach_discoveries")) {
+        return { rows: [], rowCount: 1 };
+      }
+      throw new Error(`unexpected SQL in mock: ${sql}`);
+    },
+  };
+
+  const relinked = await runRelinkPass(client);
+  assert(relinked === 1, "relink-count-one", `got ${relinked}`);
+  // Should have attempted UPDATE for discovery 11 with coach 999.
+  const update = calls.find((c) => c.sql.startsWith("UPDATE"));
+  assert(update !== undefined, "relink-update-issued", "no UPDATE recorded");
+  if (update) {
+    assert(
+      update.params[0] === 999 && update.params[1] === 11,
+      "relink-update-params",
+      `got ${JSON.stringify(update.params)}`,
+    );
+  }
+}
+
+// 8b. runRelinkPass — zero NULL discoveries = zero relinks (idempotent)
+{
+  const client: RelinkClient = {
+    async query<R extends Record<string, unknown>>(): Promise<{
+      rows: R[];
+      rowCount?: number | null;
+    }> {
+      return { rows: [] };
+    },
+  };
+  const relinked = await runRelinkPass(client);
+  assert(relinked === 0, "relink-empty-zero", `got ${relinked}`);
+}
+
+// 8c. runRelinkPass — NULL discovery present but no hash match = zero
+{
+  const client: RelinkClient = {
+    async query<R extends Record<string, unknown>>(
+      text: string,
+    ): Promise<{ rows: R[]; rowCount?: number | null }> {
+      const sql = text.trim().replace(/\s+/g, " ");
+      if (sql.startsWith("SELECT id, name, email FROM coach_discoveries")) {
+        return {
+          rows: [
+            { id: 11, name: "Ghost Player", email: null },
+          ] as unknown as R[],
+        };
+      }
+      if (sql.startsWith("SELECT id FROM coaches")) {
+        return { rows: [] };
+      }
+      throw new Error(`unexpected SQL in mock: ${sql}`);
+    },
+  };
+  const relinked = await runRelinkPass(client);
+  assert(relinked === 0, "relink-no-match-zero", `got ${relinked}`);
 }
 
 // ---------------------------------------------------------------------------

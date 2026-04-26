@@ -51,6 +51,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pool } from "@workspace/db";
+import { personHash } from "./backfill-coaches-master.js";
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested in ./__tests__/sweep-orphan-coaches.test.ts)
@@ -59,22 +60,28 @@ import { pool } from "@workspace/db";
 export type SweepArgs = {
   commit: boolean;
   auditDir: string;
+  relink: boolean;
 };
 
 export const DEFAULT_AUDIT_DIR = "/tmp";
 export const CHUNK_SIZE = 500;
 
-/** Parse a minimal CLI — supports `--commit`, `--audit-dir <p>`, and
- * `--audit-dir=<p>`. Anything else is ignored so we stay
- * forward-compatible with wrapper scripts. */
+/** Parse a minimal CLI — supports `--commit`, `--audit-dir <p>`,
+ * `--audit-dir=<p>`, and `--relink`. Anything else is ignored so we
+ * stay forward-compatible with wrapper scripts. */
 export function parseArgs(argv: readonly string[]): SweepArgs {
   let commit = false;
   let auditDir = DEFAULT_AUDIT_DIR;
+  let relink = false;
 
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
     if (tok === "--commit") {
       commit = true;
+      continue;
+    }
+    if (tok === "--relink") {
+      relink = true;
       continue;
     }
     if (tok === "--audit-dir" && i + 1 < argv.length) {
@@ -90,7 +97,7 @@ export function parseArgs(argv: readonly string[]): SweepArgs {
   if (auditDir.length === 0) {
     throw new Error("--audit-dir must not be empty");
   }
-  return { commit, auditDir };
+  return { commit, auditDir, relink };
 }
 
 /** Build the JSONL filename for a run. The timestamp is second-precision
@@ -149,6 +156,64 @@ export function formatAuditRecord(
   );
 }
 
+/**
+ * Minimal interface satisfied by both `pg.PoolClient` and the test
+ * mock — covers the two methods runRelinkPass actually calls.
+ */
+export interface RelinkClient {
+  query<R extends Record<string, unknown> = Record<string, unknown>>(
+    text: string,
+    values?: readonly unknown[],
+  ): Promise<{ rows: R[]; rowCount?: number | null }>;
+}
+
+/**
+ * Scan `coach_discoveries` rows whose `coach_id IS NULL` and re-attach
+ * each one to a still-existing `coaches` master row whose `person_hash`
+ * matches the discovery's recomputed (post-cutover) hash.
+ *
+ * Idempotent: returns 0 if there are no NULL discoveries or no hash
+ * matches. `manually_merged = true` masters are skipped — the operator
+ * may have left a discovery unlinked on purpose to route it elsewhere.
+ *
+ * Exported for unit-testing — runs against a minimal `RelinkClient`
+ * interface so the test can stub `query`.
+ */
+export async function runRelinkPass(client: RelinkClient): Promise<number> {
+  const nullDiscoveries = await client.query<{
+    id: number;
+    name: string;
+    email: string | null;
+  }>(
+    `SELECT id, name, email
+     FROM coach_discoveries
+     WHERE coach_id IS NULL
+     ORDER BY id`,
+  );
+  let relinked = 0;
+  for (const d of nullDiscoveries.rows) {
+    // Compute the post-cutover hash. For email-having rows, the
+    // formula is the same regardless of allowRehash; for email-less
+    // rows we use the cutover (club-id-less) formula.
+    const hash = personHash(d.name, d.email, null, true);
+    const hit = await client.query<{ id: number }>(
+      `SELECT id FROM coaches
+       WHERE person_hash = $1 AND manually_merged = false
+       LIMIT 1`,
+      [hash],
+    );
+    if (hit.rows.length === 0) continue;
+    await client.query(
+      `UPDATE coach_discoveries
+       SET coach_id = $1, last_seen_at = now()
+       WHERE id = $2 AND coach_id IS NULL`,
+      [hit.rows[0].id, d.id],
+    );
+    relinked += 1;
+  }
+  return relinked;
+}
+
 // ---------------------------------------------------------------------------
 // Main (not unit-tested — verified via Replit smoke run)
 // ---------------------------------------------------------------------------
@@ -159,7 +224,8 @@ async function main(): Promise<void> {
   const auditPath = buildAuditPath(args.auditDir, now);
 
   console.log(
-    `[sweep-orphan-coaches] commit=${args.commit} audit=${auditPath}`,
+    `[sweep-orphan-coaches] commit=${args.commit} relink=${args.relink} ` +
+      `audit=${auditPath}`,
   );
 
   if (!fs.existsSync(args.auditDir)) {
@@ -206,8 +272,18 @@ async function main(): Promise<void> {
 
     if (targetIds.length === 0) {
       console.log("  nothing to sweep — no orphan coaches");
-      await client.query("COMMIT");
-      committed = true;
+      // Even with zero orphans we want --relink to attempt repointing
+      // dangling NULL discoveries against the current master set.
+      if (args.relink && args.commit) {
+        const relinked = await runRelinkPass(client);
+        console.log(`  relink: ${relinked} discovery row(s) re-attached`);
+      } else if (args.relink && !args.commit) {
+        console.log(
+          "  [dry-run] --relink skipped — pass --commit to actually relink",
+        );
+      }
+      await client.query(args.commit ? "COMMIT" : "ROLLBACK");
+      committed = args.commit;
       return;
     }
 
@@ -308,13 +384,20 @@ async function main(): Promise<void> {
     );
     console.log(`  coaches deleted: ${deleteResult.rowCount}`);
 
-    // Row-count check — fewer-than-targeted deletions are allowed (the
-    // defensive manually_merged filter could drop a late-flipped row)
-    // but MORE are not. Equality is the expected common case.
-    if ((deleteResult.rowCount ?? 0) > targetIds.length) {
+    // Row-count check — STRICT equality. Both directions are abort
+    // conditions:
+    //   - More-than-targeted deletions = a bug in our DELETE predicate
+    //     (cannot happen given `id = ANY(...)` but defensive).
+    //   - Fewer-than-targeted = something concurrently mutated the
+    //     target set between SELECT and DELETE (most likely a flip of
+    //     `manually_merged` to true). Better to abort + roll back so
+    //     the operator sees the discrepancy than to commit a partial
+    //     sweep that the audit JSONL no longer matches.
+    if ((deleteResult.rowCount ?? 0) !== targetIds.length) {
       throw new Error(
-        `DELETE row count exceeded target: deleted ${deleteResult.rowCount} but ` +
-          `only targeted ${targetIds.length}`,
+        `DELETE row count mismatch: deleted ${deleteResult.rowCount ?? 0} ` +
+          `but targeted ${targetIds.length} — concurrent mutation suspected, ` +
+          "rolling back. Re-run after investigating.",
       );
     }
 
@@ -345,10 +428,8 @@ async function main(): Promise<void> {
 
     // Extra belt-and-suspenders: ensure no manually_merged = true row
     // was somehow deleted. Re-SELECT by id with the "must survive"
-    // predicate inverted — result MUST be empty (they wouldn't still
-    // exist if deleted), but since they couldn't match the DELETE
-    // predicate they must not have been deleted in the first place.
-    // This is the sanity check that proves the safety contract held.
+    // predicate inverted — under strict-equality the row count check
+    // already aborted on any concurrent flip, so this MUST be zero.
     const safetyCheck = await client.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM coaches
        WHERE id = ANY($1::int[]) AND manually_merged = true`,
@@ -356,19 +437,32 @@ async function main(): Promise<void> {
     );
     const survivorCount = Number(safetyCheck.rows[0]?.n ?? "0");
     if (survivorCount > 0) {
-      // A row survived our DELETE because its flag was true at DELETE
-      // time. That's the correct outcome — log it so the operator can
-      // reconcile the audit JSONL.
-      console.log(
-        `  safety: ${survivorCount} manually_merged coach row(s) survived DELETE ` +
-          "(concurrent flip between SELECT and DELETE — audit file may be " +
-          "superset of actual deletions)",
+      // Should be unreachable given strict-equality above; if we get
+      // here a serializable-isolation violation occurred. Bail.
+      throw new Error(
+        `safety violation: ${survivorCount} manually_merged coach row(s) ` +
+          "remain after a DELETE that supposedly skipped them — aborting.",
       );
+    }
+
+    // Optional relink pass: scan coach_discoveries with coach_id IS
+    // NULL for rows whose recomputed person_hash matches a still-
+    // existing master `coaches` row. This catches the case where the
+    // orphan we just deleted shared a hash with a kept master — its
+    // referencing discoveries (now NULL via ON DELETE SET NULL) can be
+    // re-pointed at the survivor.
+    let relinked = 0;
+    if (args.relink) {
+      relinked = await runRelinkPass(client);
+      console.log(`  relink: ${relinked} discovery row(s) re-attached`);
     }
 
     await client.query("COMMIT");
     committed = true;
-    console.log(`[sweep-orphan-coaches] done — committed`);
+    console.log(
+      `[sweep-orphan-coaches] done — committed ` +
+        `(deleted=${deleteResult.rowCount ?? 0}, relinked=${relinked})`,
+    );
   } catch (err) {
     if (!committed) {
       try {
