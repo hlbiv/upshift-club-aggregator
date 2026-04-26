@@ -21,6 +21,7 @@
     "purge-junk-canonical-clubs": "tsx ./src/purge-junk-canonical-clubs.ts",
     "sweep-orphan-coaches": "tsx ./src/sweep-orphan-coaches.ts",
     "test:api-key": "DATABASE_URL=postgres://unused@localhost/test tsx ./src/__tests__/api-key.test.ts",
+    "test:backfill-coaches-master": "DATABASE_URL=postgres://unused@localhost/test tsx ./src/__tests__/backfill-coaches-master.test.ts",
     "test:create-admin-user": "DATABASE_URL=postgres://unused@localhost/test tsx ./src/__tests__/create-admin-user.test.ts",
     "test:seed-canonical-schools-nces": "DATABASE_URL=postgres://unused@localhost/test tsx ./src/__tests__/seed-canonical-schools-nces.test.ts",
     "test:import-manual-ncaa-data": "DATABASE_URL=postgres://unused@localhost/test tsx ./src/__tests__/import-manual-ncaa-data.test.ts",

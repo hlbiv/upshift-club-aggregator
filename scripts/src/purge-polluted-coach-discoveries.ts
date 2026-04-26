@@ -297,6 +297,38 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Re-SELECT the target ids under the same predicate IMMEDIATELY
+    // before the DELETE. Between the original SELECT and now, an
+    // operator could have triaged a flag in the admin UI (setting
+    // `resolved_at` to a non-null value), turning a previously
+    // targeted discovery into one that should NOT be purged. If the
+    // refreshed set differs from the original target set, abort with
+    // a clear message — the operator's triage wins and the JSONL
+    // audit no longer matches the would-be DELETE.
+    const recheck = await client.query<{ id: number }>(
+      `SELECT DISTINCT discovery_id AS id
+       FROM coach_quality_flags
+       WHERE flag_type = $1
+         AND resolved_at IS NULL
+       ORDER BY discovery_id`,
+      [args.flagType],
+    );
+    const recheckIds = recheck.rows.map((r) => r.id);
+    const originalSet = new Set(targetIds);
+    const recheckSet = new Set(recheckIds);
+    let added = 0;
+    let removed = 0;
+    for (const id of recheckIds) if (!originalSet.has(id)) added += 1;
+    for (const id of targetIds) if (!recheckSet.has(id)) removed += 1;
+    if (added !== 0 || removed !== 0) {
+      throw new Error(
+        `target set changed between SELECT and DELETE: ` +
+          `${removed} id(s) removed (likely operator-resolved), ` +
+          `${added} id(s) added (likely new flags landed) — ` +
+          `aborting transaction. Re-run to pick up the new target set.`,
+      );
+    }
+
     // DELETE in ONE statement — pg planner handles the ANY() list well
     // for up to low-tens-of-thousands of int4 values. The CASCADE on
     // coach_quality_flags.discovery_id drops the flag rows for us.

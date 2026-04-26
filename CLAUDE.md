@@ -436,6 +436,40 @@ psql "$DATABASE_URL" -c "
 
 Override the audit dir with `--audit-dir /path/to/dir` (default `/tmp`). The JSONL bundles each orphan coach with its cascade-tied `coach_career_history`, `coach_movement_events`, and `coach_effectiveness` rows so a full rebuild is possible from the artifact alone.
 
+The DELETE row-count check is **strict equality** as of PR 13: the deleted count must equal `targetIds.length` exactly. A short or long count rolls the transaction back. This catches concurrent `manually_merged` flips between the SELECT and DELETE that would have left the audit JSONL out of sync with the actual deletions. A `--relink` flag is available — see the next section.
+
+### Coach person_hash rehash — RESEARCH DRY-RUN ONLY (cutover deferred)
+
+**Auto-merge is locked.** PR 13 originally proposed dropping `clubId` from
+the email-less `person_hash` to auto-merge same-name coaches across clubs.
+That fix shifts the bug rather than removing it: in youth soccer, common
+names are common and email capture is spotty, so a name-only hash
+collapses real strangers (two different "John Smith" coaches at two
+different clubs) into one row. The proper fix is a candidate-pair review
+queue — see `docs/coach-merge-candidate-queue.md`.
+
+`--commit --allow-rehash` now hard-exits with an error. The dry-run path
+remains available for cardinality analysis only.
+
+**Dry-run procedure (research only):**
+
+```bash
+pnpm --filter @workspace/scripts run backfill-coaches-master -- \
+    --dry-run --allow-rehash
+# Audit at /tmp/coach-rehash-cutover-<ts>.jsonl lists every pair the
+# (unsafe) auto-merge would have collapsed. Use this to decide how
+# urgent the candidate-queue work is — e.g. how many real cross-club
+# matches vs. how many same-name strangers.
+```
+
+**Do NOT:**
+- Run with `--commit --allow-rehash` (locked at the script entry).
+- Strip the lock without first shipping the candidate-queue infrastructure.
+
+When the candidate-queue infrastructure lands, the rehash flag can be
+repurposed to write candidate rows instead of merging. The lock comes
+out as part of that PR.
+
 ### Events-route rewire (PR #8) — post-merge steps
 
 ```bash
