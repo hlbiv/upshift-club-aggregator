@@ -168,7 +168,7 @@ def insert_hs_matches(
                         exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     continue

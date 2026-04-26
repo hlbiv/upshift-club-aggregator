@@ -131,7 +131,7 @@ def insert_odp_entries(
                         exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     continue

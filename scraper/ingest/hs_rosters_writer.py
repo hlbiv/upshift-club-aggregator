@@ -142,7 +142,7 @@ def insert_hs_rosters(
                         row.get("school_name_raw"), row.get("player_name"), exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     continue

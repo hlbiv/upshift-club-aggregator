@@ -162,7 +162,7 @@ def insert_tryouts(
                         row.get("club_name_raw"), row.get("tryout_date"), exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     # WHERE predicate short-circuited — nothing to count.

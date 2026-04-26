@@ -301,7 +301,7 @@ def upsert_coaches(
                     log.warning("[ncaa-roster-writer] coach upsert failed for %s: %s",
                                 row.get("name"), exc)
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     continue
@@ -405,7 +405,7 @@ def upsert_coach_tenures(
                         row.get("name"), row.get("academic_year"), exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     continue
@@ -465,7 +465,7 @@ def upsert_roster_players(
                     log.warning("[ncaa-roster-writer] roster upsert failed for %s: %s",
                                 row.get("player_name"), exc)
                     counts["skipped"] += 1
-                    conn.rollback()
+                    conn.rollback()  # noqa: writer-rollback
                     continue
                 if result is None:
                     continue
