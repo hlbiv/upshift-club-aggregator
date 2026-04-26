@@ -11,18 +11,14 @@ from typing import List, Dict, Optional
 import requests
 from bs4 import BeautifulSoup
 
-from config import MAX_RETRIES, RETRY_BASE_DELAY_SECONDS
+from config import MAX_RETRIES, RETRY_BASE_DELAY_SECONDS, USER_AGENT
 from utils.http import get as http_get
 from utils.html_archive import archive_raw_html
 from utils.retry import retry_with_backoff, TransientError
 
 logger = logging.getLogger(__name__)
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"
-    )
-}
+HEADERS = {"User-Agent": USER_AGENT}
 
 _RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
 

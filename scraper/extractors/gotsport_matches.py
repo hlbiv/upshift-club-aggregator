@@ -61,17 +61,13 @@ from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from config import MAX_RETRIES, RETRY_BASE_DELAY_SECONDS  # noqa: E402
+from config import MAX_RETRIES, RETRY_BASE_DELAY_SECONDS, USER_AGENT  # noqa: E402
 from normalizer import _canonical  # noqa: E402
 from utils.retry import retry_with_backoff, TransientError  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"
-    )
-}
+_HEADERS = {"User-Agent": USER_AGENT}
 _BASE = "https://system.gotsport.com"
 _RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
 

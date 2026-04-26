@@ -44,6 +44,12 @@ FUZZY_THRESHOLD = 88          # RapidFuzz similarity score (0–100) to consider
 PLAYWRIGHT_TIMEOUT = 30_000   # ms to wait for JS pages to settle
 PLAYWRIGHT_WAIT_FOR = "networkidle"
 
+# Canonical User-Agent string used by every scraper (static, JS, and
+# per-extractor HTTP clients). Centralized here so we update one place
+# when we bump the bot version. See scraper_static.py / scraper_js.py /
+# extractors/gotsport_matches.py for the consumers.
+USER_AGENT = "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"
+
 # ---------------------------------------------------------------------------
 # Retry / backoff settings
 # ---------------------------------------------------------------------------
