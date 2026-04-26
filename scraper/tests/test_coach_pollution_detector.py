@@ -41,7 +41,12 @@ class FakeCursor:
       2. `SELECT id, name, email FROM coach_discoveries ... ORDER BY id`
          with optional `WHERE first_seen_at >= NOW() - (%s || ' days')::interval`
          and optional `LIMIT N` (inlined).
-      3. `INSERT INTO coach_quality_flags ... ON CONFLICT ... DO NOTHING RETURNING id`.
+      3. `INSERT INTO coach_quality_flags ... ON CONFLICT ... DO NOTHING
+         RETURNING (xmax = 0) AS inserted` — returns `(True,)` on fresh
+         insert, `None` on ON-CONFLICT-DO-NOTHING skip. Mirrors the
+         psycopg2 contract the production code reads: a None fetchone
+         result distinguishes the skip branch from the insert branch
+         (in which xmax=0 evaluates to True).
     """
 
     def __init__(self, conn: "FakeConn") -> None:
@@ -123,16 +128,19 @@ class FakeCursor:
             )
             existing = self._conn.flags_by_discovery.get(discovery_id)
             if existing is None:
-                # Fresh insert — assign an id like Postgres would.
+                # Fresh insert — assign an id like Postgres would, and
+                # return (True,) for `RETURNING (xmax = 0) AS inserted`.
                 self._conn.next_flag_id += 1
                 flag_id = self._conn.next_flag_id
                 self._conn.flags_by_discovery[discovery_id] = {
                     "id": flag_id,
                     "metadata": metadata,
                 }
-                self._last_singleton = (flag_id,)  # RETURNING id
+                self._last_singleton = (True,)  # xmax = 0 → inserted
             else:
-                # ON CONFLICT DO NOTHING — no row returned.
+                # ON CONFLICT DO NOTHING — Postgres returns no row at
+                # all (psycopg2's fetchone() yields None). The detector
+                # maps None → False (skipped).
                 self._last_singleton = None
             return
 
@@ -369,27 +377,50 @@ def test_commit_mode_is_idempotent() -> None:
 
 
 # ---------------------------------------------------------------------------
-# detect_all — missing-table no-op
+# detect_all — missing-table fail-loud
 # ---------------------------------------------------------------------------
 
-def test_missing_coach_quality_flags_table_is_noop() -> None:
-    """When the table isn't there (schema push hasn't happened yet on
-    Replit), detect_all returns cleanly with zero counters and writes
-    nothing. No exception."""
+def test_missing_coach_quality_flags_table_raises() -> None:
+    """When `coach_quality_flags` is missing the detector must raise,
+    not silently no-op. The table has long since landed on Replit; a
+    missing table now indicates a real misconfiguration (search_path
+    drift, fresh schema rebuild that skipped the push, etc.) and
+    swallowing it would leave a scheduled job reporting "success" with
+    0 rows scanned."""
+    import pytest
+
     discoveries = [
         _disc(30, "Head Coach", "hc@club.com"),
     ]
     conn = FakeConn(discoveries, existing_tables=["coach_discoveries"])
 
-    stats = detector.detect_all(conn, commit=True)
+    with pytest.raises(RuntimeError, match="coach_quality_flags"):
+        detector.detect_all(conn, commit=True)
 
-    assert stats.discoveries_scanned == 0
-    assert stats.discoveries_flagged == 0
-    assert stats.flags_inserted == 0
+    # No writes happened.
     assert conn.flags_by_discovery == {}
-    # Neither commit nor rollback — we bailed before the scan loop.
     assert conn.commits == 0
-    assert conn.rollbacks == 0
+
+
+def test_missing_coach_discoveries_table_raises() -> None:
+    """When `coach_discoveries` is missing the detector must raise.
+    Previously the detector only probed `coach_quality_flags` — a
+    missing discoveries table meant the scan returned zero rows and
+    the job exited "successful", masking the real failure. Both tables
+    are now required."""
+    import pytest
+
+    discoveries = [
+        _disc(31, "Head Coach", "hc@club.com"),
+    ]
+    # Only `coach_quality_flags` exists; `coach_discoveries` is gone.
+    conn = FakeConn(discoveries, existing_tables=["coach_quality_flags"])
+
+    with pytest.raises(RuntimeError, match="coach_discoveries"):
+        detector.detect_all(conn, commit=True)
+
+    assert conn.flags_by_discovery == {}
+    assert conn.commits == 0
 
 
 # ---------------------------------------------------------------------------
