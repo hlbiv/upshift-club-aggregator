@@ -230,9 +230,10 @@ def test_leaked_group_writes_one_flag_with_expected_metadata() -> None:
     assert stats.flags_inserted == 1
     assert stats.flags_updated == 0
 
-    # Representative snapshot_id is the smallest in the leaked group.
-    assert 10 in conn.flags_by_snapshot
-    flag = conn.flags_by_snapshot[10]
+    # Representative snapshot_id is the LARGEST in the group — the flag
+    # attaches to the newest snapshot so operators see recent leaks.
+    assert 12 in conn.flags_by_snapshot
+    flag = conn.flags_by_snapshot[12]
     md = flag["metadata"]
     assert sorted(md["leaked_strings"]) == ["Contact", "Home"]
     assert md["snapshot_roster_size"] == 3
@@ -261,14 +262,15 @@ def test_idempotent_second_run_no_duplicate_no_update() -> None:
     conn = FakeConn(snapshots)
 
     detector.detect_all(conn, dry_run=False)
-    snapshot_after_first = dict(conn.flags_by_snapshot[30])
+    # Flag attaches to max snapshot id (32) in the group {30,31,32}.
+    snapshot_after_first = dict(conn.flags_by_snapshot[32])
 
     stats2 = detector.detect_all(conn, dry_run=False)
 
     # No new insert, no update (metadata unchanged).
     assert stats2.flags_inserted == 0
     assert stats2.flags_updated == 0
-    assert conn.flags_by_snapshot[30]["metadata"] == snapshot_after_first["metadata"]
+    assert conn.flags_by_snapshot[32]["metadata"] == snapshot_after_first["metadata"]
 
 
 def test_incremental_window_skips_old_snapshots() -> None:
@@ -291,10 +293,12 @@ def test_incremental_window_skips_old_snapshots() -> None:
     # out by the scraped_at window.
     assert stats.rows_scanned == 2
     # Only the recent leaked group gets flagged. The flag points at the
-    # smallest snapshot_id in the group (100) — see detect_all's
-    # representative_snapshot_id = min(...).
+    # LARGEST snapshot_id in the group (101) — see detect_all's
+    # representative_snapshot_id = max(...). The newest snapshot wins so
+    # operators see recent leaks instead of old ones.
     assert stats.snapshot_groups_flagged == 1
-    assert 100 in conn.flags_by_snapshot
+    assert 101 in conn.flags_by_snapshot
+    assert 100 not in conn.flags_by_snapshot
     assert 200 not in conn.flags_by_snapshot
 
 
@@ -316,10 +320,12 @@ def test_full_scan_flag_ignores_window() -> None:
     # Every row is scanned, including the ancient one.
     assert stats.rows_scanned == 3
     # Both leaked groups get flagged. Representative snapshot_ids are
-    # the smallest in each group (300 and 400).
+    # the LARGEST in each group (301 for A, 400 for B — single-row
+    # group). Flag attaches to the newest snapshot.
     assert stats.snapshot_groups_flagged == 2
-    assert 300 in conn.flags_by_snapshot
+    assert 301 in conn.flags_by_snapshot
     assert 400 in conn.flags_by_snapshot
+    assert 300 not in conn.flags_by_snapshot
 
 
 def test_group_split_across_batch_boundary_handled_correctly() -> None:
@@ -328,7 +334,7 @@ def test_group_split_across_batch_boundary_handled_correctly() -> None:
     `id`, so keyset pagination will frequently split a group across
     two (or more) batches. Force that scenario with batch_size=2 and
     verify the per-group accumulator (leaked_set, roster_size,
-    representative min snapshot_id) is unchanged vs. a single-batch
+    representative max snapshot_id) is unchanged vs. a single-batch
     scan.
     """
     # Two groups (Z, W) interleaved by id. With batch_size=2 the page
@@ -354,15 +360,15 @@ def test_group_split_across_batch_boundary_handled_correctly() -> None:
     assert stats.snapshot_groups_scanned == 2
     assert stats.snapshot_groups_flagged == 2
 
-    # Z group: representative = min id = 50, two leaked strings, three rows.
-    assert 50 in conn.flags_by_snapshot
-    z_md = conn.flags_by_snapshot[50]["metadata"]
+    # Z group: representative = max id = 54, two leaked strings, three rows.
+    assert 54 in conn.flags_by_snapshot
+    z_md = conn.flags_by_snapshot[54]["metadata"]
     assert sorted(z_md["leaked_strings"]) == ["Home", "Sitemap"]
     assert z_md["snapshot_roster_size"] == 3
 
-    # W group: representative = min id = 51, one leaked string, four rows.
-    assert 51 in conn.flags_by_snapshot
-    w_md = conn.flags_by_snapshot[51]["metadata"]
+    # W group: representative = max id = 56, one leaked string, four rows.
+    assert 56 in conn.flags_by_snapshot
+    w_md = conn.flags_by_snapshot[56]["metadata"]
     assert w_md["leaked_strings"] == ["Contact"]
     assert w_md["snapshot_roster_size"] == 4
 
@@ -372,12 +378,12 @@ def test_group_split_across_batch_boundary_handled_correctly() -> None:
     conn_one_batch = FakeConn(snapshots)
     detector.detect_all(conn_one_batch, dry_run=False, batch_size=1000)
     assert (
-        conn_one_batch.flags_by_snapshot[50]["metadata"]
-        == conn.flags_by_snapshot[50]["metadata"]
+        conn_one_batch.flags_by_snapshot[54]["metadata"]
+        == conn.flags_by_snapshot[54]["metadata"]
     )
     assert (
-        conn_one_batch.flags_by_snapshot[51]["metadata"]
-        == conn.flags_by_snapshot[51]["metadata"]
+        conn_one_batch.flags_by_snapshot[56]["metadata"]
+        == conn.flags_by_snapshot[56]["metadata"]
     )
 
 
@@ -388,16 +394,81 @@ def test_re_run_after_leak_change_updates_metadata() -> None:
     ]
     conn = FakeConn(snapshots)
     detector.detect_all(conn, dry_run=False)
-    first_md = dict(conn.flags_by_snapshot[40]["metadata"])
+    # First run: group ids {40, 41} → flag attaches to max id = 41.
+    first_md = dict(conn.flags_by_snapshot[41]["metadata"])
     assert first_md["leaked_strings"] == ["Home"]
     assert first_md["snapshot_roster_size"] == 2
 
-    # Add another leaked row to the same group.
+    # Add another leaked row to the same group. Now ids {40, 41, 42}
+    # → flag's representative snapshot shifts to max id = 42; the new
+    # row is inserted at id=42 and the old id=41 flag stays in place
+    # (no auto-cleanup; that's by design — operator triage decides).
     snapshots.append(_row(42, "Z", "2024-25", "U15", "Boys", "Contact"))
     stats2 = detector.detect_all(conn, dry_run=False)
 
-    assert stats2.flags_inserted == 0
-    assert stats2.flags_updated == 1
-    md2 = conn.flags_by_snapshot[40]["metadata"]
+    # New flag inserted at id=42 (the new max); the id=41 flag from the
+    # first run is left alone — it's a different snapshot id, so it
+    # doesn't hit the (snapshot_id, flag_type) unique constraint.
+    assert stats2.flags_inserted == 1
+    assert stats2.flags_updated == 0
+    md2 = conn.flags_by_snapshot[42]["metadata"]
     assert sorted(md2["leaked_strings"]) == ["Contact", "Home"]
     assert md2["snapshot_roster_size"] == 3
+
+
+def test_flag_attaches_to_newest_snapshot_in_group() -> None:
+    """
+    When a (club, season, age_group, gender) group has multiple
+    snapshots that all leak nav strings, the flag must attach to the
+    NEWEST snapshot (max snapshot_id), not the oldest. Operators
+    browsing recent flagged rosters in the admin UI need to see the
+    most recent occurrence — the previous min-id behavior hid newer
+    leaks under an old flag row.
+    """
+    snapshots = [
+        # Same group, leaked across 3 different snapshots ordered by id.
+        _row(500, "Riptide FC", "2024-25", "U16", "Boys", "Home"),
+        _row(501, "Riptide FC", "2024-25", "U16", "Boys", "Real Player"),
+        _row(550, "Riptide FC", "2024-25", "U16", "Boys", "Contact"),
+        _row(551, "Riptide FC", "2024-25", "U16", "Boys", "Another Real"),
+        _row(600, "Riptide FC", "2024-25", "U16", "Boys", "Sitemap"),
+        _row(601, "Riptide FC", "2024-25", "U16", "Boys", "Yet Another Real"),
+    ]
+    conn = FakeConn(snapshots)
+    stats = detector.detect_all(conn, dry_run=False)
+
+    assert stats.snapshot_groups_flagged == 1
+    # Flag must attach to id=601 (max), NOT id=500 (min).
+    assert 601 in conn.flags_by_snapshot
+    assert 500 not in conn.flags_by_snapshot
+    assert 550 not in conn.flags_by_snapshot
+    assert 600 not in conn.flags_by_snapshot
+    md = conn.flags_by_snapshot[601]["metadata"]
+    assert sorted(md["leaked_strings"]) == ["Contact", "Home", "Sitemap"]
+    assert md["snapshot_roster_size"] == 6
+
+
+def test_leaked_strings_are_case_folded() -> None:
+    """
+    "Home", "HOME", "home" are the same nav-word leak — the metadata
+    must collapse them to one entry, not three. The first-seen casing
+    is preserved as the display value for human-readable audits.
+    """
+    snapshots = [
+        _row(700, "Surge SC", "2024-25", "U14", "Girls", "Home"),
+        _row(701, "Surge SC", "2024-25", "U14", "Girls", "HOME"),
+        _row(702, "Surge SC", "2024-25", "U14", "Girls", "home"),
+        _row(703, "Surge SC", "2024-25", "U14", "Girls", "Real Player"),
+    ]
+    conn = FakeConn(snapshots)
+    stats = detector.detect_all(conn, dry_run=False)
+
+    assert stats.snapshot_groups_flagged == 1
+    # Flag attaches to max id = 703.
+    assert 703 in conn.flags_by_snapshot
+    md = conn.flags_by_snapshot[703]["metadata"]
+    # Exactly ONE leaked string entry — the three case variants collapse.
+    assert len(md["leaked_strings"]) == 1
+    # Preserved casing is the first-seen ("Home").
+    assert md["leaked_strings"] == ["Home"]
+    assert md["snapshot_roster_size"] == 4

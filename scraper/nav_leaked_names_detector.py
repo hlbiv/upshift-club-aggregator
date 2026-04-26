@@ -294,7 +294,7 @@ def detect_all(
     Group accumulators that span batch boundaries are handled
     correctly: the iterator yields rows in `id` order across
     arbitrarily many pages, and each group's per-group accumulator
-    (leaked-set, roster size, min snapshot_id) is updated incrementally
+    (leaked-set, roster size, max snapshot_id) is updated incrementally
     as each row arrives.
 
     Args:
@@ -317,8 +317,9 @@ def detect_all(
     # distinct (club, season, age_group, gender) groups in the scan
     # window — orders of magnitude smaller than the row count.
     #
-    # leaked_set is a dict-as-ordered-set preserving the first-seen
-    # casing of each offending player_name.
+    # leaked_set is a dict-as-ordered-set keyed by the case-folded
+    # player_name so "Home" / "HOME" / "home" collapse to one entry;
+    # the value preserves the first-seen original casing for display.
     accumulators: Dict[
         GroupKey, Dict[str, Any]
     ] = {}
@@ -338,32 +339,39 @@ def detect_all(
             acc = accumulators.get(key)
             if acc is None:
                 acc = {
-                    "min_id": row_id,
+                    "max_id": row_id,
                     "roster_size": 0,
-                    "leaked_set": {},  # dict-as-ordered-set
+                    "leaked_set": {},  # dict-as-ordered-set, case-folded keys
                 }
                 accumulators[key] = acc
             else:
-                if row_id < acc["min_id"]:
-                    acc["min_id"] = row_id
+                # Track the NEWEST snapshot in the group so the flag attaches
+                # to the most-recent leaked roster, not the oldest — operators
+                # browsing recent flagged snapshots in the admin UI need to see
+                # the latest occurrence.
+                if row_id > acc["max_id"]:
+                    acc["max_id"] = row_id
             acc["roster_size"] += 1
 
             if is_nav_word(player_name):
-                # Preserve original case of the offending player_name.
-                acc["leaked_set"].setdefault(player_name.strip(), None)
+                # Case-fold the dedup key so "Home"/"HOME"/"home" collapse;
+                # preserve the first-seen original casing as the value for
+                # human-readable audit output.
+                stripped = player_name.strip()
+                acc["leaked_set"].setdefault(stripped.casefold(), stripped)
 
         stats.snapshot_groups_scanned = len(accumulators)
 
         for key, acc in accumulators.items():
-            leaked_set: Dict[str, None] = acc["leaked_set"]
+            leaked_set: Dict[str, str] = acc["leaked_set"]
             if not leaked_set:
                 continue
 
             stats.snapshot_groups_flagged += 1
-            leaked_strings = list(leaked_set.keys())
+            leaked_strings = list(leaked_set.values())
             stats.leaked_strings_seen += len(leaked_strings)
             roster_size = acc["roster_size"]
-            representative_snapshot_id = acc["min_id"]
+            representative_snapshot_id = acc["max_id"]
 
             if len(stats.sample_flags) < 10:
                 stats.sample_flags.append(
