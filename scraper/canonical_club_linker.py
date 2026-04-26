@@ -222,6 +222,16 @@ def resolve_raw_team_name(
     # Build two candidate keys: the raw name itself (lowered) and the
     # stripped guess. Pass #1 + #2 try both — some sources store the
     # canonical form as the raw string already (linker is idempotent).
+    #
+    # Pass-precedence note: raw_key is tried BEFORE stripped_key in both
+    # pass #1 and pass #2 because two distinct clubs can share the same
+    # stripped form (e.g. `St. Louis FC` vs `St Louis FC` collapse to the
+    # same token sequence after `_PUNCTUATION` removal in
+    # `strip_team_descriptors`). The unstripped, lowercased raw match
+    # preserves that distinction whenever it's present in the index;
+    # only when the raw lookup misses do we fall back to the punctuation-
+    # collapsed stripped form. Reversing this order would silently fold
+    # punctuation-distinguished clubs together at pass #1.
     raw_key = raw.strip().lower()
     stripped = strip_team_descriptors(raw)
     stripped_key = stripped.lower() if stripped else ""
@@ -301,12 +311,18 @@ def _is_unsafe_subset_match(query: str, matched_choice: str) -> bool:
     "Dallas". Guard rule:
 
       Reject when the matched choice has <= 2 tokens AND its token set
-      is a strict subset of the query's AND the query has more than
+      is a strict subset of the query's AND the query has at least
       twice as many tokens.
 
     Multi-token short canonicals ("Dallas Texans") and exact-token
     matches still pass — only the genuinely under-specified short
-    canonicals are filtered.
+    canonicals are filtered. The boundary is `>=` rather than `>` so
+    that a 2-token canonical does NOT swallow a 4-token query (the
+    failure mode that motivated the one-count tightening): with `>`
+    the inequality `4 > 4` was false and the match leaked through;
+    with `>=` the inequality `4 >= 4` is true and the match is rejected.
+    A 3-token canonical against a 4-token query (`4 >= 6` false) still
+    passes — only the genuinely-too-loose 2-vs-4 case is filtered.
     """
     q_tokens = set(query.split())
     m_tokens = set(matched_choice.split())
@@ -319,7 +335,7 @@ def _is_unsafe_subset_match(query: str, matched_choice: str) -> bool:
     if m_tokens == q_tokens:
         return False
     # Query has materially more tokens than the matched choice.
-    return len(q_tokens) > 2 * len(m_tokens)
+    return len(q_tokens) >= 2 * len(m_tokens)
 
 
 def _difflib_token_set_ratio(a: str, b: str) -> float:
