@@ -9,32 +9,64 @@ and writes aggregated W/L/D + GF/GA counts.
 
 Idempotency
 -----------
-Each run is a full recompute within a single transaction:
+Each run is an UPSERT within a single transaction:
 
-    DELETE FROM club_results [WHERE season = ... [AND league = ...]];
-    INSERT INTO club_results (...) SELECT ... FROM matches [...];
+    INSERT INTO club_results (...)
+    SELECT ... FROM matches [...]
+    ON CONFLICT (club_id, season, league, division, age_group, gender)
+    DO UPDATE SET wins = EXCLUDED.wins, ... ,
+                  last_calculated_at = NOW();
 
-This is safe because the table is derived data. Two successive runs
-produce identical counts.
+The earlier implementation was ``DELETE`` + ``INSERT … SELECT``
+inside a transaction. That had two issues:
+
+1. The unscoped path wiped every ``club_results`` row before the
+   re-INSERT, so a re-run after a linker pass advanced the
+   ``last_calculated_at`` timestamp on every row in the table —
+   including scopes the operator hadn't asked to touch.
+2. After a linker pass resolved new FKs, a scoped re-run on one
+   scope was correct in isolation, but mixing a stale unscoped run
+   with scoped reruns destroyed ``last_calculated_at`` evidence on
+   other partitions.
+
+The UPSERT approach only updates rows that were actually computed
+this run; rows in scopes that produced no output stay untouched.
+NOTE: this means a row that USED to be produced but no longer is
+(e.g. all its source matches were deleted) will linger as a stale
+``club_results`` entry. That is an acceptable trade-off for a
+derived rollup — operators can clear stale rows by running an
+explicitly-scoped ``DELETE`` if needed.
 
 Scope
 -----
 The rollup can be partitioned by ``(season)`` or ``(season, league)``:
 
-* No flags (default) — full wipe + recompute. Backwards compatible
-  with the original behavior; safe while datasets are small but
-  expensive once multiple seasons of league data exist.
-* ``season=...`` — DELETE + INSERT scoped to that season. Other
-  seasons' rows (and their ``last_calculated_at`` timestamps) are
-  untouched.
-* ``season=..., league=...`` — DELETE + INSERT scoped to a single
+* No flags (default) — full UPSERT. Touches every row currently
+  derivable from ``matches``.
+* ``season=...`` — UPSERT scoped to that season. Other seasons'
+  rows (and their ``last_calculated_at`` timestamps) are untouched.
+* ``season=..., league=...`` — UPSERT scoped to a single
   ``(season, league)`` partition. Useful for a per-league nightly
   refresh that doesn't churn the whole table.
 
-The scope WHERE fragment is appended to the ``DELETE``, both INSERT
-inner ``SELECT`` projections, the linker precheck, and the skipped-
-count query so each scoped invocation only inspects matches in its
-partition.
+The scope WHERE fragment is appended to both INSERT inner ``SELECT``
+projections, the linker precheck, and the skipped-count query so
+each scoped invocation only inspects matches in its partition.
+
+Conflict-target NULL caveat
+---------------------------
+The ``club_results_unique`` index is on
+``(club_id, season, league, division, age_group, gender)`` without
+``NULLS NOT DISTINCT``. Postgres treats NULLs as distinct in unique
+indexes, so groups where ``league``/``division``/``age_group``/
+``gender`` are NULL won't match an existing row via ON CONFLICT and
+will be inserted as new rows. ``season`` is guaranteed non-NULL by
+the INSERT's ``WHERE season IS NOT NULL`` filter and the
+``club_results.season NOT NULL`` schema constraint; ``club_id`` is
+similarly NOT NULL. In practice the GotSport matches scraper
+populates league/age_group/gender for all rows, so this caveat
+matters only for sources that omit those fields. A schema follow-up
+to make the index ``NULLS NOT DISTINCT`` is tracked separately.
 
 Linker dependency
 -----------------
@@ -72,8 +104,8 @@ def _scope_clause(
     template, so the unscoped path emits exactly the original SQL.
 
     ``prefix`` is the keyword to lead with: ``"AND"`` when the
-    surrounding query already has a ``WHERE``, ``"WHERE"`` for the
-    bare DELETE.
+    surrounding query already has a ``WHERE``, ``"WHERE"`` for a
+    bare top-level query.
     """
     parts: List[str] = []
     params: List[Any] = []
@@ -91,26 +123,38 @@ def _scope_clause(
 
 
 def _linker_precheck_sql(scope_sql: str) -> str:
+    # The actual INSERT requires BOTH FKs (see ``_insert_sql``: each
+    # inner SELECT carries ``home_club_id IS NOT NULL AND
+    # away_club_id IS NOT NULL``). The precheck must mirror that —
+    # using OR here would let a match where only one side is resolved
+    # pass the guard, after which the INSERT would silently skip it
+    # and the operator would see "precheck pass" alongside zero
+    # rows_written. AND is the conservative predicate that matches
+    # what the rollup actually consumes.
     return f"""
 SELECT COUNT(*)::int
 FROM matches
-WHERE (home_club_id IS NOT NULL OR away_club_id IS NOT NULL)
+WHERE home_club_id IS NOT NULL
+  AND away_club_id IS NOT NULL
 {scope_sql}
 """
 
 
-def _delete_sql(season: Optional[str], league: Optional[str]) -> Tuple[str, List[Any]]:
-    where_sql, params = _scope_clause(season, league, prefix="WHERE")
-    return f"DELETE FROM club_results{where_sql}", params
-
-
 def _insert_sql(scope_sql: str) -> str:
-    """Build the INSERT ... SELECT, with ``scope_sql`` appended to
-    BOTH inner SELECT WHERE clauses (home + away projections).
+    """Build the INSERT ... SELECT ... ON CONFLICT DO UPDATE, with
+    ``scope_sql`` appended to BOTH inner SELECT WHERE clauses
+    (home + away projections).
 
     The two ``%s`` placeholders for season/league appear once per
     inner SELECT, so the parameter list passed to ``cur.execute`` is
     ``params * 2`` (see :func:`recompute_club_results`).
+
+    The ON CONFLICT target mirrors the ``club_results_unique``
+    Drizzle index. The DO UPDATE clause refreshes every aggregate
+    column AND ``last_calculated_at = NOW()`` so the timestamp
+    tracks the most recent recompute that actually produced a row.
+    Only rows produced by this run get bumped — scopes the operator
+    didn't ask about retain their previous ``last_calculated_at``.
     """
     return f"""
 INSERT INTO club_results (
@@ -170,6 +214,15 @@ FROM (
       {scope_sql}
 ) per_side
 GROUP BY club_id, season, league, division, age_group, gender
+ON CONFLICT (club_id, season, league, division, age_group, gender)
+DO UPDATE SET
+    wins               = EXCLUDED.wins,
+    losses             = EXCLUDED.losses,
+    draws              = EXCLUDED.draws,
+    goals_for          = EXCLUDED.goals_for,
+    goals_against      = EXCLUDED.goals_against,
+    matches_played     = EXCLUDED.matches_played,
+    last_calculated_at = NOW()
 """
 
 
@@ -227,16 +280,22 @@ def recompute_club_results(
     dry_run
         If True, log the intent and return zeros without touching the DB.
     season, league
-        Optional partition. With both None (default), the full table
-        is wiped + rebuilt. With ``season`` set, only rows for that
-        season are touched. With both set, only the
-        ``(season, league)`` partition is touched. ``last_calculated_at``
-        on rows outside the partition is not updated.
+        Optional partition. With both None (default), an unscoped
+        UPSERT runs against every ``matches`` row. With ``season``
+        set, only rows for that season are touched. With both set,
+        only the ``(season, league)`` partition is touched.
+        ``last_calculated_at`` on rows outside the partition is not
+        updated.
 
     Returns
     -------
     dict
         ``{"rows_written": int, "skipped_linker_pending": int}``.
+        ``rows_written`` reflects the post-UPSERT row count of
+        ``club_results`` within the scope (matching the previous
+        DELETE+INSERT contract — for an UPSERT this is the number of
+        rows now present in the partition, NOT the number of rows
+        the UPSERT actually mutated).
     """
     scope_label = _format_scope(season, league)
     log.info("[club-results] rollup scope=%s", scope_label)
@@ -258,33 +317,32 @@ def recompute_club_results(
     try:
         with conn.cursor() as cur:
             # Linker guard: if no matches in the requested scope have
-            # any club FK resolved, the rollup would produce zero rows
-            # AND wipe the existing rows for that scope. Abort loudly
-            # so the operator runs the linker first. This is the common
-            # failure mode the first time the matches scraper runs in
-            # a fresh environment.
+            # BOTH club FKs resolved, the rollup would produce zero
+            # rows. Abort loudly so the operator runs the linker
+            # first. This is the common failure mode the first time
+            # the matches scraper runs in a fresh environment. The
+            # AND predicate (vs. an OR) matches what the INSERT
+            # actually consumes; a half-linked match (only one side
+            # resolved) does NOT count toward "rollup is ready".
             cur.execute(_linker_precheck_sql(scope_sql), scope_params)
             linked_count = cur.fetchone()[0]
             if linked_count == 0:
                 raise RuntimeError(
                     "club_results rollup aborted: no matches rows have "
-                    "home_club_id or away_club_id populated "
-                    f"(scope={scope_label}). The linker hasn't run yet — "
-                    "running this rollup would produce zero rows AND wipe "
-                    "any existing club_results data in scope. Run the "
-                    "canonical-club linker first (see "
-                    "claude/canonical-club-linker branch), then re-run "
-                    "this rollup."
+                    "BOTH home_club_id and away_club_id populated "
+                    f"(scope={scope_label}). The linker hasn't fully "
+                    "resolved this scope — running this rollup would "
+                    "produce zero rows. Run the canonical-club linker "
+                    "first (see claude/canonical-club-linker branch), "
+                    "then re-run this rollup."
                 )
 
             cur.execute(_skipped_count_sql(scope_sql), scope_params)
             skipped = cur.fetchone()[0]
 
-            delete_sql, delete_params = _delete_sql(season, league)
-            cur.execute(delete_sql, delete_params)
-
             # Each inner SELECT in the INSERT consumes one copy of the
             # scope params; the UNION ALL projection has two SELECTs.
+            # The ON CONFLICT clause carries no parameters.
             cur.execute(_insert_sql(scope_sql), scope_params + scope_params)
 
             inserted_sql, inserted_params = _inserted_count_sql(season, league)
