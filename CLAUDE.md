@@ -496,7 +496,13 @@ Empty counts + `total: 0` are expected until a scraper-wiring PR populates the n
 - ✅ `club_coaches` dropped — absorb step returned 0 rows on Replit, API route was rewired in PR #3
 - ✅ `/api/events/search` rewired to `events` + `event_teams`; `club_events` dropped in the same PR
 - ✅ PR for rosters + tryouts scrapers — `sincsports-rosters` and `tryouts-wordpress` run behind `--source` keys in `run.py`, write through `scraper/ingest/roster_snapshot_writer.py` + `tryouts_writer.py` with named `ON CONFLICT ON CONSTRAINT` upserts and per-player diff materialization. See `docs/rosters-and-tryouts-pipeline.md`.
-- ⏳ **Next:** remaining Path A tables (additional roster sources beyond SincSports, richer tryouts seed list beyond WordPress clubs).
+- ✅ **Scraping-infrastructure review (April 2026)** — 20 PRs (#235–#257, minus closed-redundant #249) closed out 38 review findings across writers, extractors, detectors, schema, and tests. Highlights:
+  - **Writer transaction safety** (#235): per-row `SAVEPOINT`/`ROLLBACK TO SAVEPOINT` in `matches_writer` + `roster_snapshot_writer`; prior-snapshot lookup is now fail-loud.
+  - **Schema/index COALESCE alignment**: `club_roster_snapshots` (#238) and `tryouts` (#240, also added `season` column). Both required Replit `pnpm push` post-merge — confirm those have run before relying on the new dedup behavior. Migration files at `scripts/src/migrations/0006_*.sql`.
+  - **`FailureKind` unified** (#242): single canonical enum in `scrape_run_logger.py`. The duplicate enum in `run.py` is gone; `from run import FailureKind` is the same object as `from scrape_run_logger import FailureKind` (locked by `test_run_py_failure_kind_is_logger_failure_kind`).
+  - **Coach-pipeline rehash deferred** (#250): the auto-merge approach was caught as wrong in-session — a name-only hash collapses same-name strangers in youth soccer. `--commit --allow-rehash` is locked at the script entry. The `--dry-run --allow-rehash` path stays open for cardinality analysis. Proper fix lives at `docs/coach-merge-candidate-queue.md` (mirror the `club_duplicates` candidate-queue pattern).
+  - **Structural guards** (#257): `scraper/tests/test_writer_savepoint_lint.py` fails CI if any writer in `scraper/ingest/` reintroduces `conn.rollback()` inside a row loop (12 pre-existing offenders are noqa-allowlisted as a TODO list — removing the marker re-enables enforcement). `scraper/tests/test_partial_index_writer_alignment.py` fails CI if `matches.ts`'s `uniqueIndex(...).on(...)` COALESCE expressions diverge from the consumer writer (currently scoped to `matches`; extension to `club_roster_snapshots` + `tryouts` is a follow-up).
+- ⏳ **Next:** remaining Path A tables (additional roster sources beyond SincSports, richer tryouts seed list beyond WordPress clubs); coach-merge candidate-queue infrastructure when prioritized (see `docs/coach-merge-candidate-queue.md`).
 
 ### Canonical-Club Linker
 
