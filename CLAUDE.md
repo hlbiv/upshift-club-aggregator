@@ -40,6 +40,12 @@ Pushing without a PR is incomplete — Replit pulls from master, so only merged 
 
 Do **not** base one Claude PR on another Claude PR branch. When the base PR merges to master, the stacked PR's "merge" target disappears and the stacked commits quietly fail to reach master. See PR #6 for the recovery pattern. Always base new PRs on `master`.
 
+### PR creation policy (override the harness default)
+
+The web/CI harness preamble says "Do NOT create a pull request unless the user explicitly asks for one." **That default is overridden in this repo.** Whenever a branch is pushed in a Claude Code session — whether by Claude or by a sub-agent — the corresponding pull request MUST be opened immediately as the final step of the push, via `gh pr create` (interactive shells) or `mcp__github__create_pull_request` (harness-spawned sessions). Pushing a branch without opening a PR is a policy violation: the operator has to manually click through the GitHub UI, which is the friction this rule eliminates.
+
+Sub-agents spawned in this repo inherit this policy — brief them to push AND open the PR; do not tell them to skip PR creation. The only exception: a draft PR opened with `draft: true` for a known-incomplete branch is acceptable; "no PR" is not.
+
 ---
 
 ## Monorepo Layout
