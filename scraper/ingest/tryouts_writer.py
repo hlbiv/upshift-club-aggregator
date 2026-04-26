@@ -9,7 +9,8 @@ natural-key unique index is:
           club_name_raw,
           COALESCE(tryout_date, 'epoch'::timestamp),
           COALESCE(age_group, ''),
-          COALESCE(gender, '')
+          COALESCE(gender, ''),
+          COALESCE(season, '')
       )
 
 The index is created by hand-rolled SQL (migration 0001); it's a bare
@@ -44,7 +45,7 @@ log = logging.getLogger("tryouts_writer")
 _INSERT_TRYOUT_SQL = """
 INSERT INTO tryouts (
     club_id, club_name_raw,
-    age_group, gender, division,
+    age_group, gender, division, season,
     tryout_date, registration_deadline,
     location_name, location_address, location_city, location_state,
     cost, url, notes,
@@ -52,7 +53,7 @@ INSERT INTO tryouts (
 )
 VALUES (
     NULL, %(club_name_raw)s,
-    %(age_group)s, %(gender)s, %(division)s,
+    %(age_group)s, %(gender)s, %(division)s, %(season)s,
     %(tryout_date)s, %(registration_deadline)s,
     %(location_name)s, %(location_address)s, %(location_city)s, %(location_state)s,
     %(cost)s, %(url)s, %(notes)s,
@@ -63,10 +64,12 @@ DO UPDATE SET
     location_name = COALESCE(EXCLUDED.location_name, tryouts.location_name),
     url           = COALESCE(EXCLUDED.url, tryouts.url),
     notes         = COALESCE(EXCLUDED.notes, tryouts.notes),
+    season        = COALESCE(EXCLUDED.season, tryouts.season),
     scraped_at    = now()
 WHERE tryouts.location_name IS DISTINCT FROM EXCLUDED.location_name
    OR tryouts.url           IS DISTINCT FROM EXCLUDED.url
    OR tryouts.notes         IS DISTINCT FROM EXCLUDED.notes
+   OR tryouts.season        IS DISTINCT FROM EXCLUDED.season
 RETURNING (xmax = 0) AS inserted
 """
 
@@ -98,6 +101,7 @@ def _normalize_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "age_group": row.get("age_group"),
         "gender": row.get("gender"),
         "division": row.get("division"),
+        "season": row.get("season"),
         "tryout_date": row.get("tryout_date"),
         "registration_deadline": row.get("registration_deadline"),
         "location_name": row.get("location_name"),
