@@ -496,3 +496,139 @@ def test_non_canonicalizable_row_is_dropped_counted_and_logged(caplog):
     msg = drop_warnings[0].getMessage()
     assert "Real Team FC" in msg
     assert "(U-12)" in msg
+
+
+# ---------------------------------------------------------------------------
+# PR 15 — multi-match-per-row split, word-boundary score regex,
+# microsecond-truncated dedup key
+# ---------------------------------------------------------------------------
+
+def test_extract_matches_multi_match_per_row():
+    """A single <tr> packing TWO matches (alternating home/away columns)
+    should yield BOTH matches, not just the first.
+    """
+    html = _read_fixture("schedules_multi_match_per_row.html")
+    rows = _extract_matches_from_html(
+        html,
+        event_id=12345,
+        source_url="https://example.test",
+        default_season="2025-26",
+    )
+    by_id = {r["platform_match_id"]: r for r in rows}
+    assert "MM-1" in by_id, f"expected first match in row; got {list(by_id)}"
+    assert "MM-2" in by_id, f"expected second match in row; got {list(by_id)}"
+
+    # Per-pair name + score resolution.
+    assert by_id["MM-1"]["home_team_name"] == "Concorde Fire SC"
+    assert by_id["MM-1"]["away_team_name"] == "NTH Tophat"
+    assert by_id["MM-1"]["home_score"] == 3
+    assert by_id["MM-1"]["away_score"] == 1
+
+    assert by_id["MM-2"]["home_team_name"] == "Atlanta United Academy"
+    assert by_id["MM-2"]["away_team_name"] == "Bethesda SC"
+    assert by_id["MM-2"]["home_score"] == 2
+    assert by_id["MM-2"]["away_score"] == 2
+
+    # Shared row cells (date, division) are broadcast to both sub-matches.
+    assert by_id["MM-1"]["match_date"] == datetime(2026, 4, 11, 9, 0)
+    assert by_id["MM-2"]["match_date"] == datetime(2026, 4, 11, 9, 0)
+    assert by_id["MM-1"]["age_group"] == "U15"
+    assert by_id["MM-2"]["age_group"] == "U15"
+
+
+def test_word_boundary_score_regex_does_not_eat_year_in_team_name():
+    """A team name like "FC 2010-2012" must NOT have its year eaten by the
+    inline score regex. With the old eager pattern, "10-20" would be
+    pulled out as a 10-20 score and the residual name corrupted.
+    """
+    html = """
+    <html><body>
+    <table>
+      <thead><tr><th>Match</th></tr></thead>
+      <tbody>
+        <tr class="match">
+          <td>FC 2010-2012 vs Tigers SC 2010-2012</td>
+        </tr>
+      </tbody>
+    </table>
+    </body></html>
+    """
+    rows = _extract_matches_from_html(
+        html, event_id=1, source_url="https://example.test"
+    )
+    assert len(rows) == 1
+    r = rows[0]
+    # The year-numbers must remain in the team names; no spurious score.
+    assert "2010-2012" in r["home_team_name"], (
+        f"home_team_name lost its year; got {r['home_team_name']!r}"
+    )
+    assert "2010-2012" in r["away_team_name"], (
+        f"away_team_name lost its year; got {r['away_team_name']!r}"
+    )
+    assert r["home_score"] is None
+    assert r["away_score"] is None
+
+
+def test_dedup_truncates_microseconds_in_natural_key():
+    """Two emissions of the same logical match with microsecond-different
+    timestamps should dedup to ONE row. The ``match_date`` field on the
+    surviving row is left untouched (we only truncate inside the dedup
+    key, not the persisted value).
+    """
+    md_a = datetime(2026, 4, 11, 9, 0, 0, 0)
+    md_b = datetime(2026, 4, 11, 9, 0, 0, 999999)
+    rows = [
+        {
+            "source": "gotsport",
+            "platform_match_id": None,
+            "home_team_name": "X",
+            "away_team_name": "Y",
+            "match_date": md_a,
+            "age_group": "U15",
+            "gender": "M",
+        },
+        {
+            "source": "gotsport",
+            "platform_match_id": None,
+            "home_team_name": "X",
+            "away_team_name": "Y",
+            "match_date": md_b,
+            "age_group": "U15",
+            "gender": "M",
+        },
+    ]
+    out = _dedup_matches(rows)
+    assert len(out) == 1
+    # Persisted match_date is the FIRST emission's, untruncated.
+    assert out[0]["match_date"] == md_a
+    assert out[0]["match_date"].microsecond == 0  # md_a happened to be 0
+
+
+def test_dedup_does_not_collapse_dates_a_second_apart():
+    """Two matches a full second apart are different logical matches and
+    must NOT collapse — guards against an over-eager truncation.
+    """
+    md_a = datetime(2026, 4, 11, 9, 0, 0)
+    md_b = datetime(2026, 4, 11, 9, 0, 1)
+    rows = [
+        {
+            "source": "gotsport",
+            "platform_match_id": None,
+            "home_team_name": "X",
+            "away_team_name": "Y",
+            "match_date": md_a,
+            "age_group": "U15",
+            "gender": "M",
+        },
+        {
+            "source": "gotsport",
+            "platform_match_id": None,
+            "home_team_name": "X",
+            "away_team_name": "Y",
+            "match_date": md_b,
+            "age_group": "U15",
+            "gender": "M",
+        },
+    ]
+    out = _dedup_matches(rows)
+    assert len(out) == 2

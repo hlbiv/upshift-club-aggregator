@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head><title>Multi-match-per-row fixture</title></head>
+<body>
+<!--
+  Fixture for the rare GotSport schedule layout that packs TWO matches
+  into a single <tr>, with alternating home/away/score columns. Each
+  match carries its own data-match-id on the .home cell so the per-pair
+  id resolver picks the right one.
+-->
+<table>
+  <thead>
+    <tr><th>Date</th>
+        <th>Home</th><th>Score</th><th>Away</th>
+        <th>Home</th><th>Score</th><th>Away</th>
+        <th>Division</th></tr>
+  </thead>
+  <tbody>
+    <tr class="match">
+      <td class="match-date">2026-04-11 09:00</td>
+      <td class="home" data-match-id="MM-1">Concorde Fire SC</td>
+      <td><span class="home-score">3</span> - <span class="away-score">1</span></td>
+      <td class="away">NTH Tophat</td>
+      <td class="home" data-match-id="MM-2">Atlanta United Academy</td>
+      <td><span class="home-score">2</span> - <span class="away-score">2</span></td>
+      <td class="away">Bethesda SC</td>
+      <td class="division">B15 Premier</td>
+    </tr>
+  </tbody>
+</table>
+</body>
+</html>

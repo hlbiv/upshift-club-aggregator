@@ -126,6 +126,12 @@ _SCORE_PATTERN = re.compile(
     r"(?:\s+FF|\s+F)?\s*$",                       # optional trailing forfeit marker
     re.IGNORECASE,
 )
+# Word-boundary score finder used inside larger free-text cells (e.g. a
+# "Home vs Away 3-1" merged cell). We need negative-digit lookarounds so
+# year-numbers in a team name like "FC 2010-2012" don't get parsed as a
+# score (otherwise "10-20" would be picked up and "FC 2012" left as the
+# residual name).
+_INLINE_SCORE_PATTERN = re.compile(r"(?<!\d)(\d{1,2})\s*[-–]\s*(\d{1,2})(?!\d)")
 _BYE_PATTERN = re.compile(r"^\s*bye\s*$", re.IGNORECASE)
 # "FF" / "forfeit" anywhere, OR a leading "F " before a score (GotSport's
 # forfeit-with-awarded-score notation, e.g. "F 1-0").
@@ -291,7 +297,7 @@ def _extract_matches_from_html(
     # Strategy A — rows with class "match" or data-match-id attributes.
     # Many GotSport events render one match per `<tr class="match">`.
     for tr in soup.select("tr.match, tr[data-match-id]"):
-        row = _extract_match_from_tr(
+        rows = _extract_matches_from_tr(
             tr,
             event_id=event_id,
             source_url=source_url,
@@ -302,8 +308,7 @@ def _extract_matches_from_html(
             default_league=default_league,
             stats=stats,
         )
-        if row is not None:
-            matches.append(row)
+        matches.extend(rows)
 
     if matches:
         return _dedup_matches(matches)
@@ -319,7 +324,7 @@ def _extract_matches_from_html(
         for tr in table.find_all("tr"):
             if tr.find("th") and not tr.find("td"):
                 continue  # header row
-            row = _extract_match_from_tr(
+            rows = _extract_matches_from_tr(
                 tr,
                 event_id=event_id,
                 source_url=source_url,
@@ -330,10 +335,82 @@ def _extract_matches_from_html(
                 default_league=default_league,
                 stats=stats,
             )
-            if row is not None:
-                matches.append(row)
+            matches.extend(rows)
 
     return _dedup_matches(matches)
+
+
+def _extract_matches_from_tr(
+    tr,
+    *,
+    event_id: int | str,
+    source_url: str,
+    default_age: Optional[str],
+    default_gender: Optional[str],
+    default_division: Optional[str],
+    default_season: Optional[str],
+    default_league: Optional[str],
+    stats: Optional[Dict[str, int]] = None,
+) -> List[Dict[str, Any]]:
+    """Return one OR MORE match dicts for a single ``<tr>``.
+
+    Most GotSport schedule pages render exactly one match per ``<tr>``, but
+    a few layouts pack two matches into the same row (alternating
+    home/away/score columns, e.g. when the page is a side-by-side bracket
+    view). When that shape is detected — the row carries 2+ ``.home``
+    selectors, 2+ ``.away`` selectors, or 2+ inline-score patterns and
+    the team-name slot count divides evenly — we slice the row and run
+    the per-match extractor on each pair.
+    """
+    home_els = tr.select(".home, .home-team, [data-side='home']")
+    away_els = tr.select(".away, .away-team, [data-side='away']")
+    score_home_els = tr.select(".home-score, [data-home-score]")
+    score_away_els = tr.select(".away-score, [data-away-score]")
+
+    # Multi-match-per-row shape: 2+ home AND 2+ away selectors, equal
+    # counts on each side. The shared cells (date, division, status) are
+    # broadcast to every sub-match.
+    if len(home_els) >= 2 and len(away_els) >= 2 and len(home_els) == len(away_els):
+        out: List[Dict[str, Any]] = []
+        for i in range(len(home_els)):
+            sub = _extract_match_from_tr(
+                tr,
+                event_id=event_id,
+                source_url=source_url,
+                default_age=default_age,
+                default_gender=default_gender,
+                default_division=default_division,
+                default_season=default_season,
+                default_league=default_league,
+                stats=stats,
+                _pair_index=i,
+                _home_el_override=home_els[i],
+                _away_el_override=away_els[i],
+                _score_home_el_override=(
+                    score_home_els[i] if i < len(score_home_els) else None
+                ),
+                _score_away_el_override=(
+                    score_away_els[i] if i < len(score_away_els) else None
+                ),
+            )
+            if sub is not None:
+                out.append(sub)
+        if out:
+            return out
+        # Fall through: detection misfired, try the single-match path.
+
+    single = _extract_match_from_tr(
+        tr,
+        event_id=event_id,
+        source_url=source_url,
+        default_age=default_age,
+        default_gender=default_gender,
+        default_division=default_division,
+        default_season=default_season,
+        default_league=default_league,
+        stats=stats,
+    )
+    return [single] if single is not None else []
 
 
 def _extract_match_from_tr(
@@ -347,12 +424,19 @@ def _extract_match_from_tr(
     default_season: Optional[str],
     default_league: Optional[str],
     stats: Optional[Dict[str, int]] = None,
+    _pair_index: int = 0,
+    _home_el_override=None,
+    _away_el_override=None,
+    _score_home_el_override=None,
+    _score_away_el_override=None,
 ) -> Optional[Dict[str, Any]]:
-    # First try stable class selectors.
-    home_el = tr.select_one(".home, .home-team, [data-side='home']")
-    away_el = tr.select_one(".away, .away-team, [data-side='away']")
-    score_home_el = tr.select_one(".home-score, [data-home-score]")
-    score_away_el = tr.select_one(".away-score, [data-away-score]")
+    # First try stable class selectors. The ``_*_override`` params are the
+    # multi-match-per-row hook: when ``_extract_matches_from_tr`` slices a
+    # row into N sub-matches it passes the i-th home/away/score cell here.
+    home_el = _home_el_override if _home_el_override is not None else tr.select_one(".home, .home-team, [data-side='home']")
+    away_el = _away_el_override if _away_el_override is not None else tr.select_one(".away, .away-team, [data-side='away']")
+    score_home_el = _score_home_el_override if _score_home_el_override is not None else tr.select_one(".home-score, [data-home-score]")
+    score_away_el = _score_away_el_override if _score_away_el_override is not None else tr.select_one(".away-score, [data-away-score]")
     date_el = tr.select_one(".match-date, .date, time")
     status_el = tr.select_one(".status, .match-status")
     division_el = tr.select_one(".division, .bracket, .age-group")
@@ -368,10 +452,24 @@ def _extract_match_from_tr(
         )
         return None
 
-    match_id_attr = tr.get("data-match-id") or (
-        tr.select_one("[data-match-id]").get("data-match-id")
-        if tr.select_one("[data-match-id]") else None
-    )
+    # Per-pair match id wins in multi-match-per-row mode: check the home
+    # cell subtree first (its own attr or any descendant carrying one),
+    # fall back to the row-level attr only when nothing pair-local exists.
+    match_id_attr: Optional[str] = None
+    if home_el is not None:
+        try:
+            match_id_attr = home_el.get("data-match-id")
+        except AttributeError:
+            match_id_attr = None
+        if not match_id_attr:
+            inner = home_el.select_one("[data-match-id]") if hasattr(home_el, "select_one") else None
+            if inner is not None:
+                match_id_attr = inner.get("data-match-id")
+    if not match_id_attr:
+        match_id_attr = tr.get("data-match-id") or (
+            tr.select_one("[data-match-id]").get("data-match-id")
+            if tr.select_one("[data-match-id]") else None
+        )
 
     home_score: Optional[int] = None
     away_score: Optional[int] = None
@@ -409,19 +507,28 @@ def _extract_match_from_tr(
                 vs_text = t
                 break
         if vs_text:
-            parts = re.split(r"\bvs\.?\b", vs_text, maxsplit=1, flags=re.IGNORECASE)
+            # Extract the score FIRST (before name-splitting), using a
+            # word-boundary regex so a team name containing year-numbers
+            # like "FC 2010-2012" doesn't get its year eaten by score
+            # parsing. Strip the matched score off the merged text before
+            # splitting names so the residual name halves are clean.
+            score_text = vs_text
+            score_m = _INLINE_SCORE_PATTERN.search(vs_text) if (
+                home_score is None and away_score is None
+            ) else None
+            if score_m:
+                home_score = int(score_m.group(1))
+                away_score = int(score_m.group(2))
+                # Strip the score chunk out of the cell before splitting names.
+                score_text = (
+                    vs_text[: score_m.start()] + " " + vs_text[score_m.end() :]
+                )
+            parts = re.split(
+                r"\bvs\.?\b", score_text, maxsplit=1, flags=re.IGNORECASE
+            )
             if len(parts) == 2:
                 home_name = home_name or parts[0].strip()
                 away_name = away_name or parts[1].strip()
-                # A trailing score like "Team A 3 - 1 Team B" may get merged in.
-                score_m = re.search(r"(\d{1,2})\s*[-–]\s*(\d{1,2})", vs_text)
-                if score_m and home_score is None and away_score is None:
-                    # Only adopt when home/away names don't themselves end in digits.
-                    home_score = int(score_m.group(1))
-                    away_score = int(score_m.group(2))
-                    # Strip trailing numbers from names.
-                    home_name = re.sub(r"\s+\d{1,2}\s*$", "", home_name).strip()
-                    away_name = re.sub(r"^\s*\d{1,2}\s+", "", away_name).strip()
 
         # BYE cell — not a real match, skip the row entirely.
         for t in texts:
@@ -515,18 +622,29 @@ def _extract_match_from_tr(
 
 
 def _dedup_matches(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """De-duplicate within a single scrape based on platform id or natural key."""
+    """De-duplicate within a single scrape based on platform id or natural key.
+
+    The natural-key path truncates ``match_date`` to whole-second precision
+    in the dedup key only — the persisted ``match_date`` on the row dict
+    is left untouched. Two parsing paths can emit the same logical match
+    with microsecond-different timestamps (e.g. one path passes the cell
+    text through a date library that stamps now()-style microseconds),
+    and we don't want those to escape dedup as two rows.
+    """
     seen: set = set()
     out: List[Dict[str, Any]] = []
     for r in rows:
         if r.get("platform_match_id"):
             key: Tuple = ("pid", r["source"], r["platform_match_id"])
         else:
+            md = r.get("match_date")
+            if isinstance(md, datetime):
+                md = md.replace(microsecond=0)
             key = (
                 "nat",
                 r["home_team_name"],
                 r["away_team_name"],
-                r.get("match_date"),
+                md,
                 r.get("age_group") or "",
                 r.get("gender") or "",
             )
