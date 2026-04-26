@@ -170,10 +170,44 @@ def test_archive_called_once_with_post_render_content(monkeypatch):
     # and the page's final URL.
     archive_mock.assert_called_once()
     args, kwargs = archive_mock.call_args
-    # Positional signature is (source_url, html, run_id=None).
+    # Positional signature is (source_url, html, scrape_run_log_id=None).
     assert args[0] == _FINAL_URL
     assert args[1] == _POST_RENDER_HTML
-    assert kwargs.get("run_id") is None
+    # Caller didn't pass scrape_run_log_id → defaults to None.
+    assert kwargs.get("scrape_run_log_id") is None
+
+
+def test_archive_receives_threaded_scrape_run_log_id(monkeypatch):
+    """
+    When ``scrape_js`` is called with an explicit ``scrape_run_log_id``,
+    that id is forwarded to ``archive_raw_html`` as a kwarg so the
+    archive row gets FK'd to the owning scrape run.
+    """
+    monkeypatch.setenv("ARCHIVE_RAW_HTML_ENABLED", "true")
+
+    fake_sp, _page = _build_fake_sync_playwright()
+    monkeypatch.setattr(scraper_js, "sync_playwright", fake_sp)
+    monkeypatch.setattr(
+        scraper_js,
+        "_parse_rendered_html",
+        lambda html, url, league_name: [],
+    )
+
+    archive_mock = MagicMock(return_value=None)
+    monkeypatch.setattr(scraper_js, "archive_raw_html", archive_mock)
+
+    scraper_js.scrape_js(
+        "https://example.com/start",
+        "Test League",
+        scrape_run_log_id=12345,
+    )
+
+    archive_mock.assert_called_once()
+    _args, kwargs = archive_mock.call_args
+    assert kwargs.get("scrape_run_log_id") == 12345, (
+        "scrape_js must forward its scrape_run_log_id kwarg to "
+        "archive_raw_html so the archive row is tied to the owning run"
+    )
 
 
 def test_archive_uses_original_url_when_page_url_falsy(monkeypatch):

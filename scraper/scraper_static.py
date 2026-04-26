@@ -6,7 +6,7 @@ Handles plain HTML pages that don't require JavaScript.
 from __future__ import annotations
 
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import requests
 from bs4 import BeautifulSoup
@@ -175,12 +175,21 @@ def _is_retryable(exc: Exception) -> bool:
     return False
 
 
-def scrape_static(url: str, league_name: str) -> List[Dict]:
+def scrape_static(
+    url: str,
+    league_name: str,
+    scrape_run_log_id: Optional[int] = None,
+) -> List[Dict]:
     """
     Fetch a static HTML page and extract clubs from tables, lists, or links.
 
     Retries up to MAX_RETRIES times on transient network errors (connection
     errors, timeouts, 5xx responses) using exponential backoff.
+
+    ``scrape_run_log_id`` is the FK to ``scrape_run_logs.id`` for the owning
+    scrape run; threaded down so the raw-HTML archive row can be tied back
+    to the run for post-mortem replay. Pass ``None`` from ad-hoc / test
+    callers — the archive row is still useful even without a run context.
 
     Returns a list of raw club dicts (pre-normalization).
     """
@@ -216,11 +225,15 @@ def scrape_static(url: str, league_name: str) -> List[Dict]:
 
     # Archive the raw HTML. Gated on ARCHIVE_RAW_HTML_ENABLED env var —
     # disabled by default, so this is a cheap no-op in local dev / CI.
-    # A scrape_run_log_id isn't plumbed down to this layer
-    # (ScrapeRunLogger lives in run.py's per-league loop), so pass None;
-    # the archive row is still useful even without a run context.
+    # ``scrape_run_log_id`` is threaded down from run.py's scrape_league()
+    # (or None for ad-hoc callers) so the archive row can be tied back to
+    # the owning scrape run for post-mortem replay.
     try:
-        archive_raw_html(response.url, response.text, scrape_run_log_id=None)
+        archive_raw_html(
+            response.url,
+            response.text,
+            scrape_run_log_id=scrape_run_log_id,
+        )
     except Exception as exc:  # pragma: no cover — strictly defensive
         logger.warning("raw-html archival skipped (%s): %s", url, exc)
 
