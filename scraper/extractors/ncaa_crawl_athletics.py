@@ -160,6 +160,10 @@ def _score_anchor(href: str, text: str, gender: str) -> int:
     1  = anchor text mentions soccer (soft)
     10 = href path matches soccer pattern (hard)
     +5 = gender-matched (href signals correct gender)
+    -5 = wrong gender (href explicitly signals the opposite gender)
+         → score becomes 5, below the hard-hit threshold of 10; a page
+         whose only soccer link is wrong-gender produces no result rather
+         than a false positive.
     """
     parsed = urlparse(href)
     host = parsed.netloc.lower()
@@ -175,6 +179,14 @@ def _score_anchor(href: str, text: str, gender: str) -> int:
             score += 5
         elif gender == "mens" and _MENS_SIGNALS.search(path):
             score += 5
+        # Penalise wrong-gender links strongly so a womens URL never wins for
+        # a mens program (and vice versa) when a correct or neutral URL exists.
+        # Score becomes 5 → below the hard-hit threshold of 10, so wrong-gender-
+        # only pages correctly produce no result rather than a false positive.
+        elif gender == "mens" and _WOMENS_SIGNALS.search(path):
+            score -= 5
+        elif gender == "womens" and _MENS_SIGNALS.search(path):
+            score -= 5
         # Small penalty for combined gender pages so gendered pages win
         if re.search(r"(?<![wm])/soccer(?!/[wm])", path, re.IGNORECASE):
             score -= 1
