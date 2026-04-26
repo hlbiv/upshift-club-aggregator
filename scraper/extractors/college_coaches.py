@@ -49,6 +49,30 @@ if _SCRAPER_ROOT not in sys.path:
 from scrape_run_logger import ScrapeRunLogger, FailureKind, classify_exception  # noqa: E402
 from alerts import alert_scraper_failure  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Shared coach-name guard
+# ---------------------------------------------------------------------------
+#
+# ``looks_like_name`` and the closed-set blocklists used to live inline
+# in this module. They have been lifted into
+# ``extractors._coach_name_guard`` so additions to the blocklist land
+# in one place across every extractor that writes to ``coach_discoveries``
+# (``youth_club_coaches``, ``squarespace_clubs``, ``sportsengine_clubs``,
+# the pollution detector, and now this scraper). The shared blocklist is
+# a strict superset of the formerly-local one — replacing in-place loses
+# no college-specific filtering behaviour. ``PARSE_COUNT_GUARD`` (15) is
+# also re-exported from the shared module since the value originated here
+# and is shared by both call sites.
+#
+# Test back-compat: ``scraper/tests/test_college_coaches.py`` imports
+# ``looks_like_name`` from this module — the re-export keeps that import
+# path working unchanged.
+from extractors._coach_name_guard import (  # noqa: F401,E402 — re-export
+    PARSE_COUNT_GUARD,
+    RejectCounter,
+    looks_like_name,
+)
+
 try:
     import psycopg2  # type: ignore
 except ImportError:
@@ -70,7 +94,9 @@ RETRY_ATTEMPTS = 2
 RETRY_DELAY = 1.0  # seconds between retries
 RATE_LIMIT_DELAY = 1.5  # seconds between schools
 
-PARSE_COUNT_GUARD = 15  # strategies returning more are false positives
+# PARSE_COUNT_GUARD (= 15) is re-exported from _coach_name_guard above.
+# Strategies returning more candidates than that are treated as false
+# positives and skipped.
 
 # Staff page URL paths to try, ordered by specificity.
 # Gender-specific paths are tried first, then generic.
@@ -130,30 +156,12 @@ _BLOCKLIST_RE = re.compile(
     "|".join(TITLE_BLOCKLIST_PATTERNS), re.IGNORECASE
 )
 
-# Name validation — ported from TS looksLikeName()
-_NAME_BLOCKLIST = {
-    "about us", "contact us", "click here", "read more", "learn more",
-    "meet the", "meet our", "our staff", "our team", "coaching staff",
-    "support staff", "athletic staff", "staff directory",
-    "head coach", "assistant coach", "associate head", "associate coach",
-    "volunteer coach", "graduate assistant", "director of coaching",
-    "director of operations", "athletic director", "technical director",
-    "men soccer", "women soccer", "mens soccer", "womens soccer",
-    "soccer coaches", "coaching team",
-    "social media", "quick links", "campus map", "office hours",
-    "follow us", "connect with", "stay connected", "more information",
-}
-
-_BLOCKLIST_TOKENS = {
-    "soccer", "football", "basketball", "baseball", "softball", "volleyball",
-    "lacrosse", "swimming", "tennis", "golf", "track", "wrestling",
-    "coach", "coaching", "staff", "director", "athletic", "athletics",
-    "university", "college", "school", "program", "department",
-    "email", "phone", "fax", "office", "contact", "bio",
-    "schedule", "roster", "recruiting", "camps", "news", "media",
-    "facebook", "twitter", "instagram", "youtube", "tiktok",
-    "home", "about", "menu", "search", "login", "signup",
-}
+# Name validation: ``looks_like_name`` is imported above from
+# ``_coach_name_guard``. The closed-set ``_NAME_BLOCKLIST`` /
+# ``_BLOCKLIST_TOKENS`` constants live in that module; do NOT redefine
+# them here. The shared lists are a strict superset of the formerly-local
+# college lists, so this is a behaviour-preserving (slightly stricter)
+# refactor.
 
 SCRAPER_KEY_MAP = {
     "D1": "ncaa-d1-coaches",
@@ -207,37 +215,6 @@ def fetch_with_retry(
                 return None
             time.sleep(RETRY_DELAY * (attempt + 1))
     return None
-
-
-# ---------------------------------------------------------------------------
-# Name validation — ported from TS looksLikeName()
-# ---------------------------------------------------------------------------
-
-def looks_like_name(text: str) -> bool:
-    """Return True if *text* looks like a person name (2-4 Title-case tokens,
-    no digits, not all-caps, not a blocklisted phrase/token)."""
-    t = text.strip()
-    if len(t) < 4 or len(t) > 50:
-        return False
-    parts = t.split()
-    if len(parts) < 2 or len(parts) > 4:
-        return False
-    if not parts[0][0].isupper():
-        return False
-    if t == t.upper():
-        return False
-    if not all(p[0].isalpha() for p in parts):
-        return False
-    if re.search(r"\d", t):
-        return False
-    normalized = re.sub(r"[^a-z ]", "", t.lower()).strip()
-    normalized = re.sub(r"\s+", " ", normalized)
-    if normalized in _NAME_BLOCKLIST:
-        return False
-    lower_parts = [re.sub(r"[^a-z]", "", p.lower()) for p in parts]
-    if any(p in _BLOCKLIST_TOKENS for p in lower_parts):
-        return False
-    return True
 
 
 # ---------------------------------------------------------------------------
