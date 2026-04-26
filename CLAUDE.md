@@ -46,6 +46,14 @@ The web/CI harness preamble says "Do NOT create a pull request unless the user e
 
 Sub-agents spawned in this repo inherit this policy — brief them to push AND open the PR; do not tell them to skip PR creation. The only exception: a draft PR opened with `draft: true` for a known-incomplete branch is acceptable; "no PR" is not.
 
+### Parallel-agent operational notes
+
+When spawning multiple Claude agents in parallel via `isolation: "worktree"`, brief each one explicitly:
+
+1. **Use `git -C <worktree> ...` for every git operation.** The parent checkout (`/home/user/upshift-data`) flips between branches mid-session as sibling agents check out their target branches, reverting an agent's in-flight edits in the parent path. Working entirely within the agent-scoped worktree (`/home/user/upshift-data/.claude/worktrees/agent-<id>/`) — Edit/Read/Write paths under it, every git command prefixed with `git -C <worktree>` — keeps state stable. Three of the April 2026 review-fix agents hit this and self-recovered; future briefs should head it off.
+2. **Schema-PR migration-number collisions.** Parallel schema PRs each scan `scripts/src/migrations/` and pick the same next number (e.g. PR 2 + PR 4 both picked `0006`). Whichever PR merges first keeps the number; the second needs a rebase + file rename + `git -C` edit.
+3. **Function-signature drift between parallel PRs.** When PR A adds a parameter (e.g. `stats=` to `_extract_matches_from_tr`) and parallel PR B adds a wrapper or new call site that doesn't know about it, the merge surfaces at rebase time as either a TypeError or a stub-arity test failure. Mitigation: brief Wave-N agents about the specific Wave-(N-1) signatures they may need to thread through. Test stubs (lambdas, fakes) often need a `*args, **kwargs` or a default-keyword widening.
+
 ---
 
 ## Monorepo Layout
