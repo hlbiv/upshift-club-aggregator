@@ -565,12 +565,20 @@ def _update_player_id_selection(cur, row_id: int, club_id: int) -> None:
 def _insert_alias(cur, club_id: int, alias_name: str) -> None:
     """
     Cache a fuzzy-hit alias so future runs short-circuit at pass #1.
-    Unique on (club_id, alias_name) — ON CONFLICT DO NOTHING.
+
+    Unique on ``(club_id, alias_name)``. On conflict, update ``source``
+    only if it actually changed — this preserves an audit trail when an
+    operator promotes a fuzzy-cached alias (``source='linker-fuzzy'``)
+    to manual (``source='manual'``) out of band, while keeping a true
+    no-op (re-running the linker against an already-cached alias) a true
+    no-op via the ``IS DISTINCT FROM`` guard.
     """
     cur.execute(
         "INSERT INTO club_aliases (club_id, alias_name, source, is_official) "
         "VALUES (%s, %s, 'linker-fuzzy', false) "
-        "ON CONFLICT ON CONSTRAINT club_aliases_club_alias_uq DO NOTHING",
+        "ON CONFLICT ON CONSTRAINT club_aliases_club_alias_uq "
+        "DO UPDATE SET source = EXCLUDED.source "
+        "WHERE club_aliases.source IS DISTINCT FROM EXCLUDED.source",
         (club_id, alias_name),
     )
 
