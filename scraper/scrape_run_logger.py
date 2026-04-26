@@ -257,6 +257,10 @@ def _conn():
     global _CONN
     if _CONN is not None:
         try:
+            # psycopg2 convention: connection.closed == 0 means OPEN,
+            # non-zero (1 = closed by client, 2 = closed by server) means
+            # CLOSED. So `== 0` here correctly returns the cached conn
+            # only when it's still live. Do NOT "fix" this to `!= 0`.
             if getattr(_CONN, "closed", 0) == 0:
                 return _CONN
         except Exception:
@@ -544,6 +548,16 @@ class ScrapeRunLogger:
     _triggered_by: str = field(default="manual", init=False)
 
     def start(self, source_url: Optional[str] = None) -> None:
+        # Capture trigger source BEFORE any DB-touching code (drain,
+        # connect, INSERT). If start() bails out early — DB unconfigured,
+        # drain raises, or the INSERT fails partway and spills to JSONL —
+        # the fallback writers still see the operator-supplied value
+        # rather than the dataclass default ("manual"). Stamping early
+        # also immunises us against an upstream caller mutating
+        # SCRAPE_TRIGGERED_BY between start() and finish_*().
+        self._triggered_by = _triggered_by()
+        self._source_url = source_url
+
         # No DB configured → silent no-op. Matches pre-PR behaviour for
         # local dev runs that deliberately don't set DATABASE_URL.
         if not _db_configured():
@@ -555,11 +569,7 @@ class ScrapeRunLogger:
         except Exception as exc:  # pragma: no cover — defensive
             log.warning("scrape_run_logger: start-time drain failed — %s", exc)
 
-        self._source_url = source_url
         self._started_at_iso = _now_iso()
-        # Capture at start-time so start/finish/drain all see the same
-        # value even if the env var is mutated mid-run.
-        self._triggered_by = _triggered_by()
 
         conn = _conn()
         if conn is None:
@@ -620,6 +630,8 @@ class ScrapeRunLogger:
         records_updated: int = 0,
         records_failed: int = 0,
         error_message: Optional[str] = None,
+        records_raw: Optional[int] = None,
+        records_deduped: Optional[int] = None,
     ) -> None:
         # Mirror start(): if the caller opted out of DB logging entirely
         # by leaving DATABASE_URL unset, finish_*() is a silent no-op.
@@ -643,6 +655,28 @@ class ScrapeRunLogger:
             "source_url": self._source_url,
             "triggered_by": self._triggered_by,
         }
+        # Optional dedup-ratio metrics. `records_created` is the
+        # post-dedup count that hit the DB; `records_raw` /
+        # `records_deduped` let an operator see how much the scraper
+        # threw away (and spot parser regressions where suddenly 90% of
+        # rows are duplicates). NOT persisted to scrape_run_logs — that
+        # table has no metadata jsonb column today and adding one is
+        # out of scope for this PR. They land in the JSONL fallback +
+        # the log line below; persisting to scrape_run_logs is a
+        # deferred follow-up.
+        if records_raw is not None:
+            payload["records_raw"] = records_raw
+        if records_deduped is not None:
+            payload["records_deduped"] = records_deduped
+        if records_raw is not None or records_deduped is not None:
+            log.info(
+                "scrape_run_logger: %s finished — created=%d, raw=%s, "
+                "deduped=%s",
+                self.scraper_key,
+                records_created,
+                records_raw,
+                records_deduped,
+            )
 
         conn = _conn()
         if conn is None:
@@ -696,12 +730,17 @@ class ScrapeRunLogger:
         records_created: int = 0,
         records_updated: int = 0,
         records_failed: int = 0,
+        *,
+        records_raw: Optional[int] = None,
+        records_deduped: Optional[int] = None,
     ) -> None:
         self._finish(
             Status.OK,
             records_created=records_created,
             records_updated=records_updated,
             records_failed=records_failed,
+            records_raw=records_raw,
+            records_deduped=records_deduped,
         )
 
     def finish_partial(
