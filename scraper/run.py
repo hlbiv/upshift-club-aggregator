@@ -3694,22 +3694,46 @@ def _handle_ncaa_crawl_athletics_pages(args: argparse.Namespace) -> None:
                 for college_id, name, division, gender_program, website in rows:
                     tag = f"{name} ({division} {gender_program})"
 
-                    html = fetch_html(website, session)
-                    _time.sleep(1.5)
+                    # Normalise to origin (scheme + host only) so we can
+                    # construct fallback paths cleanly.
+                    from urllib.parse import urlparse as _urlparse, urlunparse as _urlunparse
+                    _p = _urlparse(website)
+                    _origin = _urlunparse((_p.scheme, _p.netloc, "", "", "", ""))
 
-                    if not html:
+                    # Pages to try in order.  Homepage first; then the SIDEARM
+                    # static sport-index page (/sports/) which exists even when
+                    # the homepage nav is JS-rendered; then /athletics/ for
+                    # university custom sites.
+                    _pages_to_try = [
+                        website,
+                        f"{_origin}/sports/",
+                        f"{_origin}/athletics/",
+                    ]
+
+                    soccer_url = None
+                    fetch_error = True
+                    for _page_url in _pages_to_try:
+                        html = fetch_html(_page_url, session)
+                        _time.sleep(1.0)
+                        if not html:
+                            continue
+                        fetch_error = False
+                        soccer_url = find_soccer_url(html, _page_url, gender)
+                        if soccer_url:
+                            break
+
+                    if fetch_error:
                         logger.debug(
-                            "[ncaa-crawl-athletics] could not fetch %s for %s",
-                            website, tag,
+                            "[ncaa-crawl-athletics] could not fetch any page for %s",
+                            tag,
                         )
                         errors += 1
                         continue
 
-                    soccer_url = find_soccer_url(html, website, gender)
                     if not soccer_url:
                         logger.debug(
-                            "[ncaa-crawl-athletics] no soccer link found on %s for %s",
-                            website, tag,
+                            "[ncaa-crawl-athletics] no soccer link found on any page for %s",
+                            tag,
                         )
                         missed += 1
                         continue
