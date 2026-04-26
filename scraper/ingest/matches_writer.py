@@ -217,6 +217,15 @@ def insert_matches(
                 row = _normalize_row(raw)
                 has_pid = row["platform_match_id"] is not None
                 sql = _INSERT_WITH_PLATFORM_ID if has_pid else _INSERT_NATURAL_KEY
+                # Per-row SAVEPOINT isolates a single bad row from the
+                # batch. Previously this used ``conn.rollback()`` which
+                # rolls back the WHOLE transaction on any single-row
+                # failure, including the presweep UPDATE that already
+                # ran for this row and any successful prior rows in the
+                # batch — defeating the split-brain guard for the
+                # entire group.
+                cur.execute("SAVEPOINT match_row")
+                presweep_count = 0
                 try:
                     # Split-brain sweep: upgrade any prior natural-key
                     # row to carry this platform_match_id so the INSERT
@@ -224,7 +233,7 @@ def insert_matches(
                     if has_pid:
                         cur.execute(_PRESWEEP_PLATFORM_ID, row)
                         if cur.rowcount and cur.rowcount > 0:
-                            counts["presweep_upgraded"] += cur.rowcount
+                            presweep_count = cur.rowcount
                     cur.execute(sql, row)
                     result = cur.fetchone()
                 except Exception as exc:
@@ -235,8 +244,14 @@ def insert_matches(
                         exc,
                     )
                     counts["skipped"] += 1
-                    conn.rollback()
+                    cur.execute("ROLLBACK TO SAVEPOINT match_row")
                     continue
+                cur.execute("RELEASE SAVEPOINT match_row")
+                # Only count the presweep upgrade after the INSERT
+                # commits at the savepoint level — otherwise a failing
+                # INSERT would leave the counter inflated even though
+                # the presweep UPDATE was rolled back.
+                counts["presweep_upgraded"] += presweep_count
                 if result is None:
                     counts["skipped"] += 1
                     continue

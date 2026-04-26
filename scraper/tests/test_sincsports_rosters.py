@@ -12,7 +12,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
@@ -176,9 +176,15 @@ class _FakeCursor:
     def __exit__(self, *exc):
         return False
 
-    def execute(self, sql: str, params: Dict[str, Any]):
+    def execute(self, sql: str, params: Optional[Dict[str, Any]] = None):
         op = sql.strip().split()[0].upper()
-        self.executed.append((op, dict(params)))
+        # SAVEPOINT / RELEASE SAVEPOINT / ROLLBACK TO SAVEPOINT are
+        # transaction-control statements, not data ops. They don't
+        # consume from the script and don't get logged in `executed`
+        # (existing test assertions filter on op = INSERT, etc.).
+        if op in ("SAVEPOINT", "RELEASE", "ROLLBACK"):
+            return
+        self.executed.append((op, dict(params or {})))
         if self.script:
             row, rc = self.script.pop(0)
             self._last_rows = row
