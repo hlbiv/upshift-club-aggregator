@@ -47,12 +47,14 @@ The extractor now:
     SincSports redesign, or an alternate roster source that reuses
     this module).
   * at runtime (``scrape_sincsports_rosters``) detects the "no teamid
-    anchors on real TTTeamList" case and emits a single loud warning
-    per run instead of continuing to thrash the network. Also counts
-    total ``teamid=`` regex hits in the raw HTML so future SincSports
-    template changes that re-expose the links are caught automatically.
-  * returns ``[]`` gracefully so the runner's ZERO_RESULTS path records
-    the partial run correctly.
+    anchors on real TTTeamList" case and raises
+    ``SincSportsPageShapeChanged`` (a ``ValueError`` subclass) so the
+    runner records the failure as ``parse_error`` rather than silently
+    classifying as ``zero_results``. Also counts total ``teamid=`` regex
+    hits in the raw HTML so future SincSports template changes that
+    re-expose the links are caught automatically. The warning is logged
+    on every offending call (NOT once per process) so an operator
+    scanning logs can identify which seed ``tid`` tripped the guard.
 
 If/when SincSports exposes public rosters via a different endpoint, the
 pure parse functions can be reused against that endpoint with only
@@ -94,6 +96,18 @@ _TEAM_LIST_PATH = "/TTTeamList.aspx"
 _ROSTER_PATH = "/TTRoster.aspx"
 
 _TEAMID_RE = re.compile(r"teamid=(\d+)", re.IGNORECASE)
+
+
+class SincSportsPageShapeChanged(ValueError):
+    """TTRoster.aspx anchors absent on TeamList page — site likely changed.
+
+    Subclass of ``ValueError`` so ``scrape_run_logger.classify_exception``
+    routes it to ``FailureKind.PARSE_ERROR`` (the explicit
+    ``isinstance(exc, ValueError)`` branch) rather than the default
+    ``UNKNOWN`` / a per-call ``zero_results`` misclassification by the
+    runner. Raised per-call (not latched) so every offending tid surfaces
+    in ``scrape_run_logs`` and operator log scans.
+    """
 
 # Roster table header tokens. SincSports varies column names across
 # tournaments — match on any that looks like a player name / jersey.
@@ -332,19 +346,26 @@ def scrape_sincsports_rosters(
     # SincSports' public TTTeamList page does not render TTRoster.aspx
     # anchors — rosters are gated behind team-admin auth + __doPostBack.
     # Detect that shape explicitly (zero teamid= hits anywhere in the
-    # raw HTML) and fail loudly *once* rather than logging "0 teams"
-    # per seed on every run. If SincSports ever starts exposing teamid
-    # links again, this guard auto-disables and parse_team_descriptors
-    # takes over.
+    # raw HTML) and raise ``SincSportsPageShapeChanged`` so the runner
+    # logs failure_kind='parse_error' (via classify_exception's ValueError
+    # branch) instead of misclassifying as 'zero_results'. The warning is
+    # logged on every offending call so an operator scanning logs can
+    # distinguish "scraper didn't fire" from "tournament had 0 teams" and
+    # see which seed tids tripped the guard. If SincSports ever starts
+    # exposing teamid links again, this guard auto-disables and
+    # parse_team_descriptors takes over.
     teamid_hits = len(_TEAMID_RE.findall(html))
     if teamid_hits == 0:
         logger.warning(
             "[sincsports-rosters] tid=%s — TTTeamList exposes no teamid "
             "anchors; SincSports rosters are not publicly scrapable via "
-            "TTRoster.aspx. Skipping. (HTML length=%d; grep teamid=0)",
+            "TTRoster.aspx. (HTML length=%d; grep teamid=0)",
             tid, len(html),
         )
-        return []
+        raise SincSportsPageShapeChanged(
+            f"TTTeamList page for tid={tid} exposes 0 teamid= anchors "
+            f"(HTML length={len(html)}); SincSports template likely changed."
+        )
 
     descriptors = parse_team_descriptors(html, tid)
     if max_teams is not None:
