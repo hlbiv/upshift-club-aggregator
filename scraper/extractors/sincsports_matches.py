@@ -59,6 +59,42 @@ KNOWN_TIDS = [
     "SHOWME", "BADGER", "CORNHSK", "SCCLCUP3",
 ]
 
+_EVENTS_URL = f"{_BASE_URL}/events.aspx"
+
+
+def fetch_sincsports_event_tids() -> List[Tuple[str, str]]:
+    """Scrape soccer.sincsports.com/events.aspx and return (tid, name) pairs.
+
+    Used by the batch handler instead of the static KNOWN_TIDS list so that
+    newly-posted tournaments are picked up automatically.
+    """
+    try:
+        r = requests.get(_EVENTS_URL, headers=_HEADERS, timeout=25)
+        r.raise_for_status()
+    except requests.RequestException as exc:
+        logger.error("[SincSports matches] events.aspx fetch failed: %s", exc)
+        return []
+
+    soup = BeautifulSoup(r.text, "lxml")
+    seen: set = set()
+    results: List[Tuple[str, str]] = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if "TTIntro" not in href:
+            continue
+        m = re.search(r"[?&]tid=([^&]+)", href)
+        if not m:
+            continue
+        tid = m.group(1)
+        if tid in seen:
+            continue
+        seen.add(tid)
+        name = a.get_text(strip=True)
+        results.append((tid, name))
+
+    logger.info("[SincSports matches] events.aspx → %d tournament(s) discovered", len(results))
+    return results
+
 _AGE_RE = re.compile(r"\bU(?:nder\s+)?(\d{1,2})\b", re.IGNORECASE)
 _GENDER_RE = re.compile(r"\b(boys?|girls?|male|female|men|women)\b", re.IGNORECASE)
 _GENDER_MAP = {

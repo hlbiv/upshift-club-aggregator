@@ -521,14 +521,25 @@ def _handle_gotsport_matches_batch(args: argparse.Namespace) -> None:
 
 
 def _handle_sincsports_matches(args: argparse.Namespace) -> None:
-    from extractors.sincsports_matches import scrape_sincsports_matches, KNOWN_TIDS
+    from extractors.sincsports_matches import (
+        scrape_sincsports_matches, KNOWN_TIDS, fetch_sincsports_event_tids,
+    )
     from ingest.tournament_matches_writer import insert_tournament_matches
 
-    tids = [args.tid] if args.tid else KNOWN_TIDS
+    if args.tid:
+        tid_name_pairs = [(args.tid, args.league_name or f"SincSports Tournament {args.tid}")]
+    else:
+        # Auto-discover from events.aspx; fall back to KNOWN_TIDS on failure.
+        discovered = fetch_sincsports_event_tids()
+        if discovered:
+            tid_name_pairs = discovered
+        else:
+            logger.warning("[sincsports-matches] events.aspx discovery failed — using KNOWN_TIDS fallback")
+            tid_name_pairs = [(t, f"SincSports Tournament {t}") for t in KNOWN_TIDS]
+
     totals = {"inserted": 0, "updated": 0, "skipped": 0}
 
-    for tid in tids:
-        tournament_name = (args.league_name if args.tid else None) or f"SincSports Tournament {tid}"
+    for tid, tournament_name in tid_name_pairs:
         rows = scrape_sincsports_matches(
             tid=tid,
             tournament_name=tournament_name,
@@ -549,7 +560,7 @@ def _handle_sincsports_matches(args: argparse.Namespace) -> None:
         for k in totals:
             totals[k] += counts.get(k, 0)
 
-    if not args.dry_run and len(tids) > 1:
+    if not args.dry_run and len(tid_name_pairs) > 1:
         logger.info(
             "[sincsports-matches] batch total → inserted=%d updated=%d skipped=%d",
             totals["inserted"], totals["updated"], totals["skipped"],
