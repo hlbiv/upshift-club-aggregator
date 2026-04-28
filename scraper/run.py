@@ -591,6 +591,41 @@ def _handle_athleteone_matches(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_totalglobalsports_matches(args: argparse.Namespace) -> None:
+    from extractors.totalglobalsports_matches import scrape_totalglobalsports_matches, KNOWN_EVENT_IDS
+    from ingest.matches_writer import insert_matches
+
+    event_ids = [str(args.event_id)] if args.event_id else KNOWN_EVENT_IDS
+    totals = {"inserted": 0, "updated": 0, "skipped": 0}
+
+    for eid in event_ids:
+        league_name = (args.league_name if args.event_id else None) or f"TGS Event {eid}"
+        rows = scrape_totalglobalsports_matches(
+            eid,
+            league_name=league_name,
+            season=args.season,
+        )
+        if not rows:
+            logger.warning("[tgs-matches] event=%s → 0 matches", eid)
+            continue
+        if args.dry_run:
+            logger.info("[dry-run] would upsert %d matches for tgs event=%s", len(rows), eid)
+            continue
+        counts = insert_matches(rows, dry_run=False)
+        logger.info(
+            "[tgs-matches] event=%s → inserted=%d updated=%d skipped=%d",
+            eid, counts["inserted"], counts["updated"], counts["skipped"],
+        )
+        for k in totals:
+            totals[k] += counts.get(k, 0)
+
+    if not args.dry_run and len(event_ids) > 1:
+        logger.info(
+            "[tgs-matches] batch total → inserted=%d updated=%d skipped=%d",
+            totals["inserted"], totals["updated"], totals["skipped"],
+        )
+
+
 def _handle_gotsport_rosters(args: argparse.Namespace) -> None:
     from gotsport_rosters_runner import run_gotsport_rosters
     from gotsport_rosters_runner import print_summary as _gr_print_summary
@@ -3888,6 +3923,10 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "sincsports_matches": _handle_sincsports_matches,
     "athleteone-matches": _handle_athleteone_matches,
     "athleteone_matches": _handle_athleteone_matches,
+    "tgs-matches": _handle_totalglobalsports_matches,
+    "tgs_matches": _handle_totalglobalsports_matches,
+    "totalglobalsports-matches": _handle_totalglobalsports_matches,
+    "totalglobalsports_matches": _handle_totalglobalsports_matches,
     "gotsport-rosters": _handle_gotsport_rosters,
     "gotsport_rosters": _handle_gotsport_rosters,
     "tryouts-wordpress": _handle_tryouts_wordpress,
@@ -3971,6 +4010,7 @@ SOURCE_HELP: dict[str, str] = {
     "gotsport-matches-batch": "batch matches across all GotSport events",
     "sincsports-matches": "populates tournament_matches from SincSports schedule (requires --tid)",
     "athleteone-matches": "populates matches + tournament_matches from all ECNL AthleteOne org_seasons",
+    "tgs-matches": "populates matches from TGS (STXCL NPL) schedules (optional --event-id; default: all KNOWN_EVENT_IDS)",
     "gotsport-events": "populates events + event_teams from GotSport",
     "gotsport-rosters": "populates club_roster_snapshots from GotSport rosters",
     "totalglobalsports-events": "populates events + event_teams from TotalGlobalSports (alias: tgs-events)",
