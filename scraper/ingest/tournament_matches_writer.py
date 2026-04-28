@@ -1,18 +1,17 @@
 """
 tournament_matches_writer.py — Idempotent Postgres upsert for ``tournament_matches`` rows.
 
-Two unique indexes on ``tournament_matches`` that we target explicitly:
+Two partial unique indexes on ``tournament_matches`` (created via CREATE UNIQUE
+INDEX, not ADD CONSTRAINT — so ON CONFLICT must use the column-list form):
 
     tournament_matches_source_platform_id_uq
         UNIQUE (source, platform_match_id) WHERE platform_match_id IS NOT NULL
 
     tournament_matches_natural_key_uq
         UNIQUE (
-            home_team_name,
-            away_team_name,
+            home_team_name, away_team_name,
             COALESCE(match_date, 'epoch'::timestamp),
-            COALESCE(age_group, ''),
-            COALESCE(gender, ''),
+            COALESCE(age_group, ''), COALESCE(gender, ''),
             COALESCE(tournament_name, '')
         ) WHERE platform_match_id IS NULL
 
@@ -54,7 +53,7 @@ INSERT INTO tournament_matches (
     %(tournament_name)s, %(flight)s, %(group_name)s, %(bracket_round)s, %(match_type)s,
     %(status)s, %(source)s, %(source_url)s, %(platform_match_id)s
 )
-ON CONFLICT ON CONSTRAINT tournament_matches_source_platform_id_uq
+ON CONFLICT (source, platform_match_id) WHERE platform_match_id IS NOT NULL
 DO UPDATE SET
     home_team_name  = EXCLUDED.home_team_name,
     away_team_name  = EXCLUDED.away_team_name,
@@ -93,7 +92,14 @@ INSERT INTO tournament_matches (
     %(tournament_name)s, %(flight)s, %(group_name)s, %(bracket_round)s, %(match_type)s,
     %(status)s, %(source)s, %(source_url)s, %(platform_match_id)s
 )
-ON CONFLICT ON CONSTRAINT tournament_matches_natural_key_uq
+ON CONFLICT (
+    home_team_name,
+    away_team_name,
+    COALESCE(match_date, 'epoch'::timestamp),
+    COALESCE(age_group, ''),
+    COALESCE(gender, ''),
+    COALESCE(tournament_name, '')
+) WHERE platform_match_id IS NULL
 DO UPDATE SET
     home_score      = EXCLUDED.home_score,
     away_score      = EXCLUDED.away_score,
