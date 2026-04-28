@@ -59,10 +59,6 @@ _GENDER_MAP = {
     "girl": "G", "girls": "G", "female": "G", "women": "G",
 }
 
-# "H: Team Name" or "A: Team Name" prefixes
-_HOME_RE = re.compile(r"^H:\s*(.+)$", re.IGNORECASE)
-_AWAY_RE = re.compile(r"^A:\s*(.+)$", re.IGNORECASE)
-
 _DATE_FORMATS = [
     "%m/%d/%Y %I:%M %p",
     "%m/%d/%Y %H:%M",
@@ -168,80 +164,117 @@ def _parse_division_html(
     """
     Parse a SincSports division schedule page.
 
-    Match rows contain cells with "H:" and "A:" prefixed team names.
-    Scores appear as individual digit cells immediately after team cells.
+    Actual DOM structure (observed April 2026, soccer.sincsports.com):
+      <div class="form-row game-row">
+        <div class="col-md-3 d-cell">          ← date + time + game#
+          <div class="row">
+            <div class="col-6">
+              <span>Saturday</span>
+              <span>2/28/2026</span>
+            </div>
+            <div class="col-6 ...">
+              <span>8:00 AM</span>
+              <span>#00001</span>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <div class="row">
+            <div class="col-9">
+              <div class="hometeam">
+                <a href="/team/..."><div class="hora">H:</div></a>
+                <a href="schedule.aspx?...">Team Name</a>
+              </div>
+              <div class="awayteam">
+                <a href="/team/..."><div class="hora">A:</div></a>
+                <a href="schedule.aspx?...">Team Name</a>
+              </div>
+            </div>
+            <div class="col-3 text-right">   ← scores (color-styled divs, skip class="clear")
+              <div style="color:...">1</div>
+              <div class="clear"></div>
+              <div style="color:...">1</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">               ← division label + venue link
+          ...
+        </div>
+      </div>
     """
     soup = BeautifulSoup(html, "lxml")
     age_group, gender = _parse_age_gender(div_name)
     records: List[Dict] = []
 
-    current_date: Optional[str] = None
+    game_rows = soup.find_all("div", class_=lambda c: c and "game-row" in c.split())
+    logger.debug("[SincSports matches] %s → %d game-row divs found", div_name, len(game_rows))
 
-    for table in soup.find_all("table"):
-        for tr in table.find_all("tr"):
-            cells = [td.get_text(separator=" ", strip=True) for td in tr.find_all(["td", "th"])]
-            if not cells:
-                continue
+    for row in game_rows:
+        # ── Date / time / game# ─────────────────────────────────────────────
+        date_cell = row.find("div", class_=lambda c: c and "d-cell" in c.split())
+        date_str = time_str = game_num = None
+        if date_cell:
+            spans = [s.get_text(strip=True) for s in date_cell.find_all("span") if s.get_text(strip=True)]
+            for span in spans:
+                if re.match(r"^\d{1,2}/\d{1,2}/\d{4}$", span):
+                    date_str = span
+                elif re.match(r"^\d{1,2}:\d{2}\s*(AM|PM)$", span, re.IGNORECASE):
+                    time_str = span
+                elif re.match(r"^#\d+", span):
+                    game_num = span.lstrip("#").strip()
 
-            # Detect date header rows — contain a date like "2/28/2026" or day+date
-            date_m = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", " ".join(cells))
-            if date_m:
-                current_date = date_m.group(1)
+        # ── Team names ───────────────────────────────────────────────────────
+        home_div = row.find("div", class_="hometeam")
+        away_div = row.find("div", class_="awayteam")
+        if not home_div or not away_div:
+            continue
 
-            # Find home/away team cells
-            home_raw = away_raw = None
-            time_str = ""
-            game_num = None
-            home_score = away_score = None
+        # Second <a> is the team name link; first <a> wraps the "H:"/"A:" label div
+        home_links = home_div.find_all("a")
+        away_links = away_div.find_all("a")
+        if len(home_links) < 2 or len(away_links) < 2:
+            continue
+        home_raw = home_links[-1].get_text(strip=True)
+        away_raw = away_links[-1].get_text(strip=True)
+        if not home_raw or not away_raw:
+            continue
 
-            for i, cell in enumerate(cells):
-                hm = _HOME_RE.match(cell)
-                if hm:
-                    home_raw = hm.group(1).strip()
-                am = _AWAY_RE.match(cell)
-                if am:
-                    away_raw = am.group(1).strip()
-
-                # Time
-                if re.match(r"^\d{1,2}:\d{2}\s*(AM|PM)$", cell, re.IGNORECASE):
-                    time_str = cell
-
-                # Game number
-                if re.match(r"^#\d+", cell):
-                    game_num = cell.lstrip("#")
-
-            if not home_raw or not away_raw:
-                continue
-
-            # Scores: look for standalone digit(s) in cells after teams
-            score_cells = [c for c in cells if re.match(r"^\d{1,2}$", c)]
-            if len(score_cells) >= 2:
+        # ── Scores ───────────────────────────────────────────────────────────
+        home_score = away_score = None
+        score_col = row.find("div", class_=lambda c: c and "col-3" in c.split() and "text-right" in c.split())
+        if score_col:
+            score_divs = [
+                d for d in score_col.find_all("div", recursive=False)
+                if "clear" not in (d.get("class") or [])
+            ]
+            score_texts = [d.get_text(strip=True) for d in score_divs if re.match(r"^\d{1,2}$", d.get_text(strip=True))]
+            if len(score_texts) >= 2:
                 try:
-                    home_score = int(score_cells[0])
-                    away_score = int(score_cells[1])
+                    home_score = int(score_texts[0])
+                    away_score = int(score_texts[1])
                 except ValueError:
                     pass
 
-            status = "final" if (home_score is not None and away_score is not None) else "scheduled"
-            match_date = _parse_date(current_date or "", time_str, year) if current_date else None
+        status = "final" if (home_score is not None and away_score is not None) else "scheduled"
+        match_date = _parse_date(date_str or "", time_str or "", year) if date_str else None
 
-            records.append({
-                "home_team_name":    home_raw,
-                "away_team_name":    away_raw,
-                "home_score":        home_score,
-                "away_score":        away_score,
-                "match_date":        match_date,
-                "age_group":         age_group,
-                "gender":            gender,
-                "division":          div_name,
-                "season":            season,
-                "tournament_name":   tournament_name,
-                "match_type":        "group",
-                "status":            status,
-                "source":            "sincsports",
-                "source_url":        source_url,
-                "platform_match_id": game_num,
-            })
+        records.append({
+            "home_team_name":    home_raw,
+            "away_team_name":    away_raw,
+            "home_score":        home_score,
+            "away_score":        away_score,
+            "match_date":        match_date,
+            "age_group":         age_group,
+            "gender":            gender,
+            "division":          div_name,
+            "season":            season,
+            "tournament_name":   tournament_name,
+            "match_type":        "group",
+            "status":            status,
+            "source":            "sincsports",
+            "source_url":        source_url,
+            "platform_match_id": game_num,
+        })
 
     return records
 
