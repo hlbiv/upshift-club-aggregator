@@ -520,6 +520,74 @@ def _handle_gotsport_matches_batch(args: argparse.Namespace) -> None:
     _gmb_print_summary(outcomes)
 
 
+def _handle_sincsports_matches(args: argparse.Namespace) -> None:
+    from extractors.sincsports_matches import scrape_sincsports_matches
+    from ingest.tournament_matches_writer import insert_tournament_matches
+
+    # Resolve tid list: --tid overrides; otherwise all tids from leagues_master
+    # where source_type = 'sincsports' (or 'tournament' with sincsports platform).
+    # For now, require --tid to run a single event; batch mode is a follow-up.
+    if not args.tid:
+        logger.error("--source sincsports-matches requires --tid (e.g. --tid CONCFC)")
+        logger.error("Batch mode across all SincSports tids is a follow-up feature.")
+        import sys
+        sys.exit(2)
+
+    tid = args.tid
+    tournament_name = args.league_name or f"SincSports Tournament {tid}"
+    rows = scrape_sincsports_matches(
+        tid=tid,
+        tournament_name=tournament_name,
+        season=args.season,
+    )
+    if not rows:
+        logger.warning("[sincsports-matches] tid=%s → 0 matches", tid)
+        return
+    if args.dry_run:
+        logger.info("[dry-run] would upsert %d tournament matches for tid=%s", len(rows), tid)
+        return
+    counts = insert_tournament_matches(rows, dry_run=False)
+    logger.info(
+        "[sincsports-matches] tid=%s → inserted=%d updated=%d skipped=%d",
+        tid, counts["inserted"], counts["updated"], counts["skipped"],
+    )
+
+
+def _handle_athleteone_matches(args: argparse.Namespace) -> None:
+    from extractors.athleteone_matches import scrape_athleteone_matches, ALL_ORG_SEASONS
+    from ingest.matches_writer import insert_matches
+    from ingest.tournament_matches_writer import insert_tournament_matches
+
+    league_rows, tournament_rows = scrape_athleteone_matches(
+        org_season_ids=None,  # all ECNL org_seasons
+        season=args.season,
+    )
+
+    if args.dry_run:
+        logger.info("[dry-run] would upsert %d league matches + %d tournament matches",
+                    len(league_rows), len(tournament_rows))
+        return
+
+    total_league = {"inserted": 0, "updated": 0, "skipped": 0}
+    if league_rows:
+        counts = insert_matches(league_rows, dry_run=False)
+        for k in total_league:
+            total_league[k] += counts.get(k, 0)
+
+    total_tourn = {"inserted": 0, "updated": 0, "skipped": 0}
+    if tournament_rows:
+        counts = insert_tournament_matches(tournament_rows, dry_run=False)
+        for k in total_tourn:
+            total_tourn[k] += counts.get(k, 0)
+
+    logger.info(
+        "[athleteone-matches] league → inserted=%d updated=%d skipped=%d | "
+        "tournament → inserted=%d updated=%d skipped=%d",
+        total_league["inserted"], total_league["updated"], total_league["skipped"],
+        total_tourn["inserted"], total_tourn["updated"], total_tourn["skipped"],
+    )
+
+
 def _handle_gotsport_rosters(args: argparse.Namespace) -> None:
     from gotsport_rosters_runner import run_gotsport_rosters
     from gotsport_rosters_runner import print_summary as _gr_print_summary
@@ -3813,6 +3881,10 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "tgs_events": _handle_totalglobalsports_events,
     "gotsport-matches-batch": _handle_gotsport_matches_batch,
     "gotsport_matches_batch": _handle_gotsport_matches_batch,
+    "sincsports-matches": _handle_sincsports_matches,
+    "sincsports_matches": _handle_sincsports_matches,
+    "athleteone-matches": _handle_athleteone_matches,
+    "athleteone_matches": _handle_athleteone_matches,
     "gotsport-rosters": _handle_gotsport_rosters,
     "gotsport_rosters": _handle_gotsport_rosters,
     "tryouts-wordpress": _handle_tryouts_wordpress,
@@ -3894,6 +3966,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
 SOURCE_HELP: dict[str, str] = {
     "gotsport-matches": "populates matches from GotSport schedules (requires --event-id)",
     "gotsport-matches-batch": "batch matches across all GotSport events",
+    "sincsports-matches": "populates tournament_matches from SincSports schedule (requires --tid)",
+    "athleteone-matches": "populates matches + tournament_matches from all ECNL AthleteOne org_seasons",
     "gotsport-events": "populates events + event_teams from GotSport",
     "gotsport-rosters": "populates club_roster_snapshots from GotSport rosters",
     "totalglobalsports-events": "populates events + event_teams from TotalGlobalSports (alias: tgs-events)",

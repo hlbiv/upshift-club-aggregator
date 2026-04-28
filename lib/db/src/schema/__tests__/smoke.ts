@@ -815,6 +815,7 @@ assertEnumValues(schema.eventsSourceEnum, [
   "other",
   "totalglobalsports",
   "usclub_sanctioned",
+  "athleteone",
 ]);
 
 assertEnumValues(schema.rosterSourceEnum, [

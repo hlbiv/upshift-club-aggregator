@@ -334,3 +334,5 @@ export * from "./college-duplicates";
 export * from "./player-id-selections";
 export * from "./ynt";
 export * from "./video-sources";
+export * from "./tournament-matches";
+export * from "./coach-licenses";
