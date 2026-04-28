@@ -52,6 +52,13 @@ _HEADERS = {
 }
 _BASE_URL = "https://soccer.sincsports.com"
 
+KNOWN_TIDS = [
+    "CONCFC", "CONCG",
+    "GULFC", "HOOVHAV", "MISSFSC2", "APPHIGHSC", "REDRV", "KHILL",
+    "HFCSPRCL", "BAMABLST", "PALMETTO", "BAYOUCTY", "CAROCLS",
+    "SHOWME", "BADGER", "CORNHSK", "SCCLCUP3",
+]
+
 _AGE_RE = re.compile(r"\bU(?:nder\s+)?(\d{1,2})\b", re.IGNORECASE)
 _GENDER_RE = re.compile(r"\b(boys?|girls?|male|female|men|women)\b", re.IGNORECASE)
 _GENDER_MAP = {
