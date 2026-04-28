@@ -521,37 +521,39 @@ def _handle_gotsport_matches_batch(args: argparse.Namespace) -> None:
 
 
 def _handle_sincsports_matches(args: argparse.Namespace) -> None:
-    from extractors.sincsports_matches import scrape_sincsports_matches
+    from extractors.sincsports_matches import scrape_sincsports_matches, KNOWN_TIDS
     from ingest.tournament_matches_writer import insert_tournament_matches
 
-    # Resolve tid list: --tid overrides; otherwise all tids from leagues_master
-    # where source_type = 'sincsports' (or 'tournament' with sincsports platform).
-    # For now, require --tid to run a single event; batch mode is a follow-up.
-    if not args.tid:
-        logger.error("--source sincsports-matches requires --tid (e.g. --tid CONCFC)")
-        logger.error("Batch mode across all SincSports tids is a follow-up feature.")
-        import sys
-        sys.exit(2)
+    tids = [args.tid] if args.tid else KNOWN_TIDS
+    totals = {"inserted": 0, "updated": 0, "skipped": 0}
 
-    tid = args.tid
-    tournament_name = args.league_name or f"SincSports Tournament {tid}"
-    rows = scrape_sincsports_matches(
-        tid=tid,
-        tournament_name=tournament_name,
-        season=args.season,
-        year=2026,
-    )
-    if not rows:
-        logger.warning("[sincsports-matches] tid=%s → 0 matches", tid)
-        return
-    if args.dry_run:
-        logger.info("[dry-run] would upsert %d tournament matches for tid=%s", len(rows), tid)
-        return
-    counts = insert_tournament_matches(rows, dry_run=False)
-    logger.info(
-        "[sincsports-matches] tid=%s → inserted=%d updated=%d skipped=%d",
-        tid, counts["inserted"], counts["updated"], counts["skipped"],
-    )
+    for tid in tids:
+        tournament_name = (args.league_name if args.tid else None) or f"SincSports Tournament {tid}"
+        rows = scrape_sincsports_matches(
+            tid=tid,
+            tournament_name=tournament_name,
+            season=args.season,
+            year=2026,
+        )
+        if not rows:
+            logger.warning("[sincsports-matches] tid=%s → 0 matches", tid)
+            continue
+        if args.dry_run:
+            logger.info("[dry-run] would upsert %d tournament matches for tid=%s", len(rows), tid)
+            continue
+        counts = insert_tournament_matches(rows, dry_run=False)
+        logger.info(
+            "[sincsports-matches] tid=%s → inserted=%d updated=%d skipped=%d",
+            tid, counts["inserted"], counts["updated"], counts["skipped"],
+        )
+        for k in totals:
+            totals[k] += counts.get(k, 0)
+
+    if not args.dry_run and len(tids) > 1:
+        logger.info(
+            "[sincsports-matches] batch total → inserted=%d updated=%d skipped=%d",
+            totals["inserted"], totals["updated"], totals["skipped"],
+        )
 
 
 def _handle_athleteone_matches(args: argparse.Namespace) -> None:
