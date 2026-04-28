@@ -1,25 +1,55 @@
 """
 GotSport per-event match (schedule) extractor.
 
-GotSport exposes a "Schedules" / "Results" HTML page per event at a URL
-of the form:
+DISCOVERY FLOW (current, observed 2026)
+----------------------------------------
+GotSport's bare /schedules URL redirects to the event home page with no
+schedule data. The actual schedule lives behind division-group URLs:
 
-    https://system.gotsport.com/org_event/events/{event_id}/schedules
+  1. Fetch event home:
+       https://system.gotsport.com/org_event/events/{event_id}
+     Parse all href="/org_event/events/{event_id}/schedules?group=<ID>"
+     links to discover division group IDs.
 
-Each row on this page corresponds to one scheduled or completed game.
-We extract one dict per row and shape it for the `matches` table in
-Domain 5 of the Path A data model.
+  2. For each group ID, fetch all matches:
+       https://system.gotsport.com/org_event/events/{event_id}/schedules
+           ?date=All&group=<ID>
+     This returns a page of one <table> per date bucket, each with
+     7 columns: Match # | Time | Home Team | Results | Away Team |
+     Location | Division. All matches for the division appear here
+     with no further pagination.
 
-Notes on the HTML shape
------------------------
-GotSport schedule markup is not perfectly uniform across events, but
-every variant we've seen renders one `<tr>` per match inside one or
-more `<table>` blocks. The columns we care about (date, home team,
-score, away team, age/gender/division, optional platform match id)
-are each surfaced with either a stable CSS class or a stable text
-layout. This extractor is defensive: it tries multiple strategies to
-pick up each field and only emits a row when it can extract at least
-home + away team names.
+  3. Parse match rows with Strategy C (column-position parser) and
+     accumulate across all groups.
+
+STRATEGY FALLBACKS
+------------------
+Strategy A — rows with class="match" or data-match-id (older layout).
+Strategy B — generic schedule tables with home/away column headers.
+Strategy C — GotSport's current per-date-group table format (primary).
+
+Output shape (one dict per match row):
+
+    {
+      "home_team_name": str,            # raw as scraped
+      "away_team_name": str,            # raw as scraped
+      "home_club_canonical": str,       # via _canonical() — linker input
+      "away_club_canonical": str,
+      "home_score": Optional[int],
+      "away_score": Optional[int],
+      "match_date": Optional[datetime], # UTC naive
+      "age_group": Optional[str],
+      "gender": Optional[str],          # "M" / "F" / None
+      "division": Optional[str],
+      "status": str,                    # "scheduled" | "final" | "cancelled" | ...
+      "platform_match_id": Optional[str],
+      "source": "gotsport",
+      "source_url": str,
+      "event_id": int,                  # GotSport platform id, not FK
+    }
+
+`home_club_id` / `away_club_id` are intentionally NOT populated here —
+they are resolved by a separate linker job.
 
 Output shape (one dict per match row):
 
@@ -102,6 +132,44 @@ def _get_with_retry(url: str, timeout: int = 20) -> requests.Response:
         base_delay=RETRY_BASE_DELAY_SECONDS,
         label=f"gotsport-matches:{url}",
     )
+
+
+# ---------------------------------------------------------------------------
+# Group discovery
+# ---------------------------------------------------------------------------
+
+def _discover_group_ids(event_id: int | str) -> List[str]:
+    """Fetch the event home page and return all division group IDs found.
+
+    The event home embeds links of the form
+        /org_event/events/{event_id}/schedules?group=<ID>
+    for every division in the event. Collecting them is enough to build
+    the ``?date=All&group=<ID>`` URLs that return the full per-division
+    schedule as static HTML.
+    """
+    url = f"{_BASE}/org_event/events/{event_id}"
+    try:
+        r = _get_with_retry(url)
+    except (TransientError, requests.RequestException) as exc:
+        logger.error("[gotsport-matches] event home fetch failed event=%s: %s", event_id, exc)
+        return []
+
+    soup = BeautifulSoup(r.text, "lxml")
+    pattern = re.compile(
+        r"/org_event/events/" + re.escape(str(event_id)) + r"/schedules\?(?:.*&)?group=(\d+)"
+    )
+    seen: set = set()
+    group_ids: List[str] = []
+    for a in soup.find_all("a", href=True):
+        m = pattern.search(a["href"])
+        if m:
+            gid = m.group(1)
+            if gid not in seen:
+                seen.add(gid)
+                group_ids.append(gid)
+
+    logger.info("[gotsport-matches] event %s → %d group(s) discovered", event_id, len(group_ids))
+    return group_ids
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +311,182 @@ def _normalize_status(
 
 
 # ---------------------------------------------------------------------------
+# Strategy C — GotSport per-date-group schedule table parser
+# ---------------------------------------------------------------------------
+
+# Timezone abbreviations appended to GotSport time strings (e.g. "9:15 AM CST").
+_TZ_SUFFIX_RE = re.compile(r"\s+[A-Z]{2,4}$")
+
+# Column header → canonical key mapping for Strategy C.
+_SCHED_HDR_MAP: List[Tuple[str, str]] = [
+    ("match", "match_num"),      # "Match #" / "Match#" / "Match"
+    ("time", "datetime"),        # "Time" / "Date/Time"
+    ("date", "datetime"),
+    ("home team", "home"),       # "Home Team"
+    ("home", "home"),
+    ("result", "score"),         # "Results" / "Result" / "Score"
+    ("score", "score"),
+    ("away team", "away"),       # "Away Team"
+    ("away", "away"),
+    ("division", "division"),    # "Division" / "Bracket"
+    ("bracket", "division"),
+    ("group", "division"),
+]
+
+# Status keywords embedded in the time cell after a double-newline.
+_STATUS_CELL_KEYWORDS = {
+    "canceled", "cancelled", "rescheduled", "postponed",
+    "forfeit", "ff", "field change",
+}
+
+
+def _parse_gotsport_schedule_tables(
+    soup: BeautifulSoup,
+    event_id: int | str,
+    source_url: str,
+    default_age: Optional[str],
+    default_gender: Optional[str],
+    default_division: Optional[str],
+    default_season: Optional[str],
+    default_league: Optional[str],
+    stats: Optional[Dict[str, int]],
+) -> List[Dict[str, Any]]:
+    """Strategy C — GotSport's current per-date-group table layout.
+
+    Each ``?date=All&group=<ID>`` page contains one ``<table>`` per date
+    bucket, all with headers::
+
+        Match # | Time | Home Team | Results | Away Team | Location | Division
+
+    The Time cell may embed a status tag after a blank line::
+
+        "Feb 14, 2026\\n9:15 AM CST"                 → no status
+        "Mar 07, 2026\\n1:00 PM CST\\n\\nCanceled"   → status = canceled
+
+    Scores: ``"X - Y"`` for played matches; ``"-"`` for unplayed.
+    """
+    rows: List[Dict[str, Any]] = []
+
+    for table in soup.find_all("table"):
+        header_row = table.find("tr")
+        if not header_row:
+            continue
+        raw_headers = [_row_text(th).lower() for th in header_row.find_all(["th", "td"])]
+        if not raw_headers:
+            continue
+
+        # Build column-index map from header names.
+        idx: Dict[str, int] = {}
+        for col_i, hdr in enumerate(raw_headers):
+            for keyword, key in _SCHED_HDR_MAP:
+                if keyword in hdr and key not in idx:
+                    idx[key] = col_i
+                    break
+
+        # Must have at minimum a home and an away column to be a schedule table.
+        if "home" not in idx or "away" not in idx:
+            continue
+
+        for tr in table.find_all("tr"):
+            if tr.find("th") and not tr.find("td"):
+                continue  # header-only row
+            tds = tr.find_all("td")
+            min_col = max(idx.get("home", 0), idx.get("away", 0))
+            if len(tds) <= min_col:
+                continue
+
+            home_name = _row_text(tds[idx["home"]]) if "home" in idx else ""
+            away_name = _row_text(tds[idx["away"]]) if "away" in idx else ""
+            if not home_name or not away_name:
+                continue
+            if _is_bye_cell(home_name) or _is_bye_cell(away_name):
+                continue
+
+            # Time cell: split into date/time lines and optional status tag.
+            match_date = None
+            status_from_cell: Optional[str] = None
+            if "datetime" in idx and idx["datetime"] < len(tds):
+                # Use .strings to get text nodes separated naturally.
+                cell_lines = [
+                    s.strip() for s in tds[idx["datetime"]].strings if s.strip()
+                ]
+                date_parts: List[str] = []
+                for line in cell_lines:
+                    if line.lower() in _STATUS_CELL_KEYWORDS or any(
+                        kw in line.lower() for kw in _STATUS_CELL_KEYWORDS
+                    ):
+                        status_from_cell = line
+                    else:
+                        date_parts.append(line)
+                date_time_str = _TZ_SUFFIX_RE.sub("", " ".join(date_parts)).strip()
+                match_date = _parse_date(date_time_str)
+
+            # Score cell: "X - Y" → final; "-" or empty → not yet played.
+            home_score: Optional[int] = None
+            away_score: Optional[int] = None
+            score_cell_text: Optional[str] = None
+            if "score" in idx and idx["score"] < len(tds):
+                score_cell_text = _row_text(tds[idx["score"]])
+                # "X - Y" with optional spaces around dash.
+                sm = re.match(r"^(\d{1,2})\s*-\s*(\d{1,2})$", score_cell_text)
+                if sm:
+                    home_score, away_score = int(sm.group(1)), int(sm.group(2))
+
+            # Division and age/gender.
+            division: Optional[str] = None
+            if "division" in idx and idx["division"] < len(tds):
+                division = _row_text(tds[idx["division"]]) or None
+            age_group, gender = _parse_age_gender(division or "")
+            age_group = age_group or default_age
+            gender = gender or default_gender
+            division = division or default_division
+
+            # Platform match id.
+            platform_match_id: Optional[str] = None
+            if "match_num" in idx and idx["match_num"] < len(tds):
+                platform_match_id = _row_text(tds[idx["match_num"]]) or None
+
+            status = _normalize_status(
+                status_from_cell, home_score, away_score, score_cell_text
+            )
+
+            home_canonical = _canonical(home_name)
+            away_canonical = _canonical(away_name)
+            if not home_canonical or not away_canonical:
+                if stats is not None:
+                    stats["dropped_non_canonicalizable"] = (
+                        stats.get("dropped_non_canonicalizable", 0) + 1
+                    )
+                logger.warning(
+                    "[gotsport-matches] dropping non-canonicalizable: home=%r away=%r",
+                    home_name, away_name,
+                )
+                continue
+
+            rows.append({
+                "home_team_name": home_name,
+                "away_team_name": away_name,
+                "home_club_canonical": home_canonical,
+                "away_club_canonical": away_canonical,
+                "home_score": home_score,
+                "away_score": away_score,
+                "match_date": match_date,
+                "age_group": age_group,
+                "gender": gender,
+                "division": division,
+                "season": default_season,
+                "league": default_league,
+                "status": status,
+                "platform_match_id": platform_match_id,
+                "source": "gotsport",
+                "source_url": source_url,
+                "event_id": int(event_id) if str(event_id).isdigit() else None,
+            })
+
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Row extractor
 # ---------------------------------------------------------------------------
 
@@ -289,6 +533,23 @@ def _extract_matches_from_html(
     """
     soup = BeautifulSoup(html, "lxml")
     matches: List[Dict[str, Any]] = []
+
+    # Strategy C — GotSport's current per-date-group table format (primary path).
+    # Handles pages fetched via ?date=All&group=<ID>: one <table> per date bucket,
+    # headers = Match # | Time | Home Team | Results | Away Team | Location | Division.
+    c_matches = _parse_gotsport_schedule_tables(
+        soup,
+        event_id=event_id,
+        source_url=source_url,
+        default_age=default_age,
+        default_gender=default_gender,
+        default_division=default_division,
+        default_season=default_season,
+        default_league=default_league,
+        stats=stats,
+    )
+    if c_matches:
+        return _dedup_matches(c_matches)
 
     # Strategy A — rows with class "match" or data-match-id attributes.
     # Many GotSport events render one match per `<tr class="match">`.
@@ -665,19 +926,68 @@ def scrape_gotsport_matches(
     default_season: Optional[str] = None,
     default_league: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """
-    Fetch the GotSport schedules page for ``event_id`` and extract match rows.
+    """Fetch all GotSport match rows for ``event_id``.
 
-    Returns a list of dicts shaped for ``scraper.ingest.matches_writer.insert_matches``.
+    Discovery flow:
+    1. Fetch the event home page and collect all ``?group=<ID>`` links.
+    2. For each group, fetch ``?date=All&group=<ID>`` and parse with
+       Strategy C (column-position table parser).
+    3. If no groups are found, fall back to a direct ``source_url`` fetch
+       parsed with the legacy Strategy A/B parsers.
+
+    Returns a list of dicts shaped for
+    ``scraper.ingest.matches_writer.insert_matches``.
     """
+    stats: Dict[str, int] = {"dropped_non_canonicalizable": 0}
+
+    # --- Group-based discovery (primary path) --------------------------------
+    group_ids = _discover_group_ids(event_id)
+    if group_ids:
+        all_matches: List[Dict[str, Any]] = []
+        for group_id in group_ids:
+            group_url = (
+                f"{_BASE}/org_event/events/{event_id}"
+                f"/schedules?date=All&group={group_id}"
+            )
+            logger.debug("[gotsport-matches] fetching group %s: %s", group_id, group_url)
+            try:
+                r = _get_with_retry(group_url)
+            except (TransientError, requests.RequestException) as exc:
+                logger.warning(
+                    "[gotsport-matches] fetch failed event=%s group=%s: %s",
+                    event_id, group_id, exc,
+                )
+                continue
+            rows = _extract_matches_from_html(
+                r.text,
+                event_id=event_id,
+                source_url=group_url,
+                default_age=default_age,
+                default_gender=default_gender,
+                default_division=default_division,
+                default_season=default_season,
+                default_league=default_league,
+                stats=stats,
+            )
+            all_matches.extend(rows)
+
+        all_matches = _dedup_matches(all_matches)
+        logger.info(
+            "[gotsport-matches] event %s → %d matches across %d groups "
+            "(dropped %d non-canonicalizable rows)",
+            event_id, len(all_matches), len(group_ids),
+            stats["dropped_non_canonicalizable"],
+        )
+        return all_matches
+
+    # --- Legacy fallback (direct URL, older event layouts) -------------------
     url = source_url or f"{_BASE}/org_event/events/{event_id}/schedules"
-    logger.info("[gotsport-matches] fetching %s", url)
+    logger.info("[gotsport-matches] no groups found, fetching %s", url)
     try:
         r = _get_with_retry(url)
     except (TransientError, requests.RequestException) as exc:
         logger.error("[gotsport-matches] fetch failed for event %s: %s", event_id, exc)
         return []
-    stats: Dict[str, int] = {"dropped_non_canonicalizable": 0}
     matches = _extract_matches_from_html(
         r.text,
         event_id=event_id,
