@@ -112,14 +112,43 @@ def _get_year_from_url(url: str) -> int:
 def _fetch_division_links(tid: str, year: int) -> List[Tuple[str, str, str]]:
     """
     Fetch division listing and return list of (div_code, division_name, full_url).
+
+    SincSports returns 403 when no tournament exists for the requested year
+    (not an auth error). Falls back to year-1 automatically so tournaments
+    that ran in 2025 but haven't yet in 2026 are still scraped.
     """
-    url = f"{_BASE_URL}/schedule.aspx?div=N&tid={tid}&year={year}&stid={tid}&syear={year}"
-    try:
-        r = requests.get(url, headers=_HEADERS, timeout=25)
-        r.raise_for_status()
-    except requests.RequestException as exc:
-        logger.error("[SincSports matches] division listing failed tid=%s: %s", tid, exc)
+    years_to_try = [year, year - 1] if year > 2000 else [year]
+    last_exc: Optional[Exception] = None
+
+    for yr in years_to_try:
+        url = f"{_BASE_URL}/schedule.aspx?div=N&tid={tid}&year={yr}&stid={tid}&syear={yr}"
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=25)
+            r.raise_for_status()
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 403 and yr != years_to_try[-1]:
+                logger.debug(
+                    "[SincSports matches] 403 for tid=%s year=%d — retrying with year=%d",
+                    tid, yr, yr - 1,
+                )
+                last_exc = exc
+                continue
+            logger.error("[SincSports matches] division listing failed tid=%s: %s", tid, exc)
+            return []
+        except requests.RequestException as exc:
+            logger.error("[SincSports matches] division listing failed tid=%s: %s", tid, exc)
+            return []
+        actual_year = yr
+        break  # successful response — exit the year loop
+    else:
+        logger.error("[SincSports matches] division listing failed tid=%s (all years tried): %s", tid, last_exc)
         return []
+
+    if actual_year != year:
+        logger.info(
+            "[SincSports matches] tid=%s: fell back from year=%d to year=%d",
+            tid, year, actual_year,
+        )
 
     soup = BeautifulSoup(r.text, "lxml")
     divisions: List[Tuple[str, str, str]] = []
@@ -138,7 +167,7 @@ def _fetch_division_links(tid: str, year: int) -> List[Tuple[str, str, str]]:
         full_url = urljoin(_BASE_URL + "/", href)
         divisions.append((div_code, div_name, full_url))
 
-    logger.info("[SincSports matches] tid=%s year=%d → %d divisions", tid, year, len(divisions))
+    logger.info("[SincSports matches] tid=%s year=%d → %d divisions", tid, actual_year, len(divisions))
     return divisions
 
 
