@@ -5,16 +5,12 @@ Fetches match results from the AthleteOne API that backs ECNL, ECNL RL,
 and Pre-ECNL league scheduling.
 
 DISCOVERY FLOW:
-  1. Call /get-conference-standings/0/{org_id}/{org_season_id}/0/0 to get all
-     conference event_ids (same endpoint used by ecnl.py for club discovery).
-  2. For each conference event_id, call the schedule endpoint to get match rows.
-
-SCHEDULE ENDPOINT (speculative — validate on first run):
-  https://api.athleteone.com/api/Script/get-event-schedule/{event_id}/{org_id}/{org_season_id}/0/0
-
-  If this endpoint 404s or returns no data, check the DevTools network panel
-  on theecnl.com while navigating to a conference schedule page to identify
-  the actual endpoint path.
+  1. get-conference-standings/0/{org_id}/{org_season_id}/0/0
+       → conference event_ids + names (select#event-select options)
+  2. get-division-list-by-event-id/{org_id}/{event_id}/0/0
+       → division_ids for each conference (select#division-select options)
+  3. get-conference-schedules/{org_id}/{org_season_id}/{event_id}/{division_id}/0
+       → HTML table of match rows for that conference + division
 
 ORG_ID = 12 for all ECNL org_seasons.
 
@@ -31,12 +27,6 @@ ORG_SEASON_IDS (current 2025-26 season):
 OUTPUT:
   League conference matches → ``matches`` table (via matches_writer.insert_matches)
   Showcase / national event matches → ``tournament_matches`` table
-  (distinction made by inspecting event_type field in API response if present,
-   otherwise defaults to league for all ECNL regular-season conferences)
-
-NOTE: This extractor is a first-pass implementation based on the AthleteOne
-API patterns from ecnl.py. Validate the schedule endpoint URL on first run:
-  python3 run.py --source athleteone-matches --dry-run
 """
 
 from __future__ import annotations
@@ -74,10 +64,8 @@ ORG_SEASON_MAP: Dict[int, Tuple[str, str, bool]] = {
     75: ("Pre-ECNL North Girls", "G", False),
 }
 
-# All org_season_ids to scrape by default.
 ALL_ORG_SEASONS = list(ORG_SEASON_MAP.keys())
 
-# Conference name hints that indicate a showcase/national event vs regular season.
 _SHOWCASE_KEYWORDS = re.compile(
     r"\b(national event|showcase|cup|fest|invitational|classic)\b",
     re.IGNORECASE,
@@ -85,9 +73,11 @@ _SHOWCASE_KEYWORDS = re.compile(
 
 _AGE_RE = re.compile(r"\b[BG](\d{2})\b")
 _GENDER_LETTER = re.compile(r"\b([BG])\d{2}\b")
-_SCORE_RE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
+_SCORE_RE = re.compile(r"^(\d+)$")
 
 _DATE_FORMATS = [
+    "%b %d, %Y %I:%M %p",   # "Aug 17, 2025 11:00 AM"
+    "%b %d, %Y",             # "Aug 17, 2025"
     "%m/%d/%Y %I:%M %p",
     "%m/%d/%Y %H:%M",
     "%Y-%m-%dT%H:%M:%S",
@@ -95,17 +85,9 @@ _DATE_FORMATS = [
 ]
 
 
-def _conference_standings_url(org_season_id: int, event_id: int = 0) -> str:
-    return f"{_BASE}/get-conference-standings/{event_id}/{_ORG_ID}/{org_season_id}/0/0"
-
-
-def _schedule_url(org_season_id: int, event_id: int) -> str:
-    return f"{_BASE}/get-event-schedule/{event_id}/{_ORG_ID}/{org_season_id}/0/0"
-
-
 def _get_conference_event_ids(org_season_id: int) -> List[Tuple[str, str]]:
     """Return list of (event_id, conference_name) for an org_season."""
-    url = _conference_standings_url(org_season_id, 0)
+    url = f"{_BASE}/get-conference-standings/0/{_ORG_ID}/{org_season_id}/0/0"
     try:
         r = requests.get(url, headers=_HEADERS, timeout=15)
         if r.status_code != 200 or len(r.text) < 100:
@@ -134,13 +116,40 @@ def _get_conference_event_ids(org_season_id: int) -> List[Tuple[str, str]]:
     return events
 
 
-def _parse_score(text: str) -> Tuple[Optional[int], Optional[int]]:
+def _get_division_ids(event_id: str) -> List[Tuple[str, str]]:
+    """Return list of (division_id, division_label) for a conference event."""
+    url = f"{_BASE}/get-division-list-by-event-id/{_ORG_ID}/{event_id}/0/0"
+    try:
+        r = requests.get(url, headers=_HEADERS, timeout=12)
+        if r.status_code != 200 or len(r.text) < 10:
+            return []
+    except Exception as exc:
+        logger.debug("[AthleteOne matches] division list failed event=%s: %s", event_id, exc)
+        return []
+
+    soup = BeautifulSoup(r.text, "lxml")
+    # Try select#division-select first, then any select with division options.
+    sel = soup.find("select", id="division-select") or soup.find("select")
+    if not sel:
+        return []
+
+    divisions: List[Tuple[str, str]] = []
+    for opt in sel.find_all("option"):
+        val = opt.get("value", "").strip()
+        txt = opt.get_text(strip=True)
+        if val and val != "0":
+            divisions.append((val, txt))
+
+    return divisions
+
+
+def _parse_score(text: str) -> Optional[int]:
     m = _SCORE_RE.match(text.strip())
-    return (int(m.group(1)), int(m.group(2))) if m else (None, None)
+    return int(m.group(1)) if m else None
 
 
 def _parse_date(text: str) -> Optional[datetime]:
-    text = text.strip()
+    text = re.sub(r"\s+", " ", text.strip())
     for fmt in _DATE_FORMATS:
         try:
             return datetime.strptime(text, fmt)
@@ -150,7 +159,6 @@ def _parse_date(text: str) -> Optional[datetime]:
 
 
 def _parse_age_group(raw_name: str) -> Tuple[Optional[str], Optional[str]]:
-    """Extract age group (e.g. 'U13') and gender letter from ECNL team name."""
     age_m = _AGE_RE.search(raw_name)
     gender_m = _GENDER_LETTER.search(raw_name)
     age_group = f"U{age_m.group(1)}" if age_m else None
@@ -158,131 +166,6 @@ def _parse_age_group(raw_name: str) -> Tuple[Optional[str], Optional[str]]:
         "G" if (gender_m and gender_m.group(1) == "G") else None
     )
     return age_group, gender
-
-
-def _fetch_schedule_for_conference(
-    org_season_id: int,
-    event_id: str,
-    conf_name: str,
-    league_name: str,
-    season: Optional[str],
-) -> List[Dict]:
-    """
-    Fetch match rows for one conference event.
-
-    The AthleteOne schedule endpoint returns HTML. We attempt to parse it as
-    a table of match rows. If the endpoint returns empty or unexpected HTML,
-    we log a warning and return [] — the caller continues to the next conference.
-    """
-    url = _schedule_url(org_season_id, int(event_id))
-    try:
-        r = requests.get(url, headers=_HEADERS, timeout=12)
-        if r.status_code != 200 or len(r.text) < 50:
-            logger.debug("[AthleteOne matches] schedule empty org_season=%s event=%s status=%d",
-                         org_season_id, event_id, r.status_code)
-            return []
-    except Exception as exc:
-        logger.debug("[AthleteOne matches] schedule fetch failed event=%s: %s", event_id, exc)
-        return []
-
-    return _parse_schedule_html(
-        r.text,
-        source_url=url,
-        league_name=league_name,
-        conf_name=conf_name,
-        org_season_id=org_season_id,
-        event_id=event_id,
-        season=season,
-    )
-
-
-def _parse_schedule_html(
-    html: str,
-    source_url: str,
-    league_name: str,
-    conf_name: str,
-    org_season_id: int,
-    event_id: str,
-    season: Optional[str],
-) -> List[Dict]:
-    """
-    Parse AthleteOne schedule HTML into match row dicts.
-
-    AthleteOne schedule pages vary by season — this parser tries the most
-    common table structure. If it returns 0 rows on first run, inspect the
-    raw HTML via --dry-run and adjust the column mapping below.
-
-    Expected columns (subject to validation):
-      td[0] = Match date/time
-      td[1] = Home team name (with ECNL suffix, e.g. "Concorde Fire ECNL B15")
-      td[2] = Score or "vs"
-      td[3] = Away team name
-      td[4] = Venue/field (optional)
-    """
-    soup = BeautifulSoup(html, "lxml")
-    rows: List[Dict] = []
-
-    is_showcase = bool(_SHOWCASE_KEYWORDS.search(conf_name))
-
-    for table in soup.find_all("table"):
-        for tr in table.find_all("tr"):
-            tds = tr.find_all("td")
-            if len(tds) < 3:
-                continue
-
-            col = [td.get_text(separator=" ", strip=True) for td in tds]
-
-            # Skip header rows.
-            if any(kw in col[0].lower() for kw in ("date", "time", "home", "match")):
-                continue
-
-            date_text = col[0]
-            home_raw = col[1] if len(col) > 1 else ""
-            score_text = col[2] if len(col) > 2 else ""
-            away_raw = col[3] if len(col) > 3 else ""
-
-            if not home_raw or not away_raw:
-                continue
-
-            score_lower = score_text.lower().strip()
-            is_played = score_lower not in ("vs", "v", "", "-", "tbd")
-            home_score, away_score = _parse_score(score_text) if is_played else (None, None)
-            status = "final" if home_score is not None else "scheduled"
-
-            match_date = _parse_date(date_text)
-            age_group, gender = _parse_age_group(home_raw)
-
-            # Strip ECNL suffix from team name for storage.
-            # e.g. "Concorde Fire ECNL B15" → "Concorde Fire"
-            home_team = _strip_ecnl_suffix(home_raw)
-            away_team = _strip_ecnl_suffix(away_raw)
-
-            # platform_match_id from data attribute on the row (if present).
-            platform_match_id = tr.get("data-match-id") or tr.get("data-game-id")
-
-            row: Dict = {
-                "home_team_name":   home_team or home_raw,
-                "away_team_name":   away_team or away_raw,
-                "home_score":       home_score,
-                "away_score":       away_score,
-                "match_date":       match_date,
-                "age_group":        age_group,
-                "gender":           gender,
-                "division":         conf_name,
-                "season":           season,
-                "status":           status,
-                "source":           "athleteone",
-                "source_url":       source_url,
-                "platform_match_id": platform_match_id,
-                "league":           league_name,
-            }
-            if is_showcase:
-                row["tournament_name"] = conf_name
-                row["match_type"] = "group"
-
-            rows.append(row)
-
-    return rows
 
 
 _ECNL_SUFFIX_RE = re.compile(
@@ -293,6 +176,143 @@ _ECNL_SUFFIX_RE = re.compile(
 
 def _strip_ecnl_suffix(raw: str) -> str:
     return _ECNL_SUFFIX_RE.sub("", raw).strip()
+
+
+def _fetch_schedule(
+    org_season_id: int,
+    event_id: str,
+    division_id: str,
+    division_label: str,
+    conf_name: str,
+    league_name: str,
+    season: Optional[str],
+) -> List[Dict]:
+    url = f"{_BASE}/get-conference-schedules/{_ORG_ID}/{org_season_id}/{event_id}/{division_id}/0"
+    try:
+        r = requests.get(url, headers=_HEADERS, timeout=15)
+        if r.status_code != 200 or len(r.text) < 50:
+            logger.debug("[AthleteOne matches] empty response event=%s div=%s status=%d",
+                         event_id, division_id, r.status_code)
+            return []
+    except Exception as exc:
+        logger.debug("[AthleteOne matches] fetch failed event=%s div=%s: %s",
+                     event_id, division_id, exc)
+        return []
+
+    return _parse_schedule_html(
+        r.text,
+        source_url=url,
+        league_name=league_name,
+        conf_name=conf_name,
+        division_label=division_label,
+        season=season,
+    )
+
+
+def _parse_schedule_html(
+    html: str,
+    source_url: str,
+    league_name: str,
+    conf_name: str,
+    division_label: str,
+    season: Optional[str],
+) -> List[Dict]:
+    """
+    Parse AthleteOne get-conference-schedules HTML.
+
+    Observed table structure (theecnl.com, April 2026):
+      td[0] = GM# (game number = platform_match_id)
+      td[1] = GAME INFO: date + time text, division label (multiline)
+      td[2] = TEAM & VENUE: two team name elements stacked, then venue
+      td[3] = DETAILS: home score, away score (separate elements), "Box Score" link
+
+    Age group / gender are extracted from team names in td[2].
+    """
+    soup = BeautifulSoup(html, "lxml")
+    rows: List[Dict] = []
+    is_showcase = bool(_SHOWCASE_KEYWORDS.search(conf_name))
+
+    for table in soup.find_all("table"):
+        for tr in table.find_all("tr"):
+            tds = tr.find_all("td")
+            if len(tds) < 3:
+                continue
+
+            # td[0]: GM# / game number
+            gm_text = tds[0].get_text(strip=True)
+            if not gm_text or not gm_text.isdigit():
+                continue
+            platform_match_id = gm_text
+
+            # td[1]: GAME INFO — date/time on first line(s), division label after
+            info_lines = [s.strip() for s in tds[1].get_text(separator="\n").splitlines() if s.strip()]
+            date_text = ""
+            for line in info_lines:
+                # Stop at the division label line (contains "ECNL", "RL", etc.)
+                if re.search(r"ECNL|Pre-ECNL|RL", line, re.IGNORECASE):
+                    break
+                if date_text:
+                    date_text += " " + line
+                else:
+                    date_text = line
+            match_date = _parse_date(date_text) if date_text else None
+
+            # td[2]: TEAM & VENUE — team names always contain "ECNL" (e.g. "Eugene Metro FC ECNL B11")
+            # venue links do not (e.g. "Bob Keefer - Field 1"), so filter by that.
+            team_cell = tds[2]
+            cell_lines = [s.strip() for s in team_cell.get_text(separator="\n").splitlines()
+                          if s.strip()]
+            ecnl_lines = [l for l in cell_lines if re.search(r"ECNL|Pre.?ECNL", l, re.IGNORECASE)]
+            if len(ecnl_lines) >= 2:
+                home_raw = ecnl_lines[0]
+                away_raw = ecnl_lines[1]
+            elif len(cell_lines) >= 2:
+                home_raw = cell_lines[0]
+                away_raw = cell_lines[1]
+            else:
+                continue
+
+            if not home_raw or not away_raw:
+                continue
+
+            # td[3]: DETAILS — scores
+            home_score: Optional[int] = None
+            away_score: Optional[int] = None
+            if len(tds) >= 4:
+                score_lines = [s.strip() for s in tds[3].get_text(separator="\n").splitlines()
+                               if s.strip() and s.strip().isdigit()]
+                if len(score_lines) >= 2:
+                    home_score = _parse_score(score_lines[0])
+                    away_score = _parse_score(score_lines[1])
+
+            status = "final" if (home_score is not None and away_score is not None) else "scheduled"
+            age_group, gender = _parse_age_group(home_raw)
+            home_team = _strip_ecnl_suffix(home_raw) or home_raw
+            away_team = _strip_ecnl_suffix(away_raw) or away_raw
+
+            row: Dict = {
+                "home_team_name":    home_team,
+                "away_team_name":    away_team,
+                "home_score":        home_score,
+                "away_score":        away_score,
+                "match_date":        match_date,
+                "age_group":         age_group or division_label,
+                "gender":            gender,
+                "division":          conf_name,
+                "season":            season,
+                "status":            status,
+                "source":            "athleteone",
+                "source_url":        source_url,
+                "platform_match_id": platform_match_id,
+                "league":            league_name,
+            }
+            if is_showcase:
+                row["tournament_name"] = conf_name
+                row["match_type"] = "group"
+
+            rows.append(row)
+
+    return rows
 
 
 def scrape_athleteone_matches(
@@ -308,27 +328,30 @@ def scrape_athleteone_matches(
 
     Returns:
         (league_rows, tournament_rows)
-        league_rows      — for matches_writer.insert_matches()
-        tournament_rows  — for tournament_matches_writer.insert_tournament_matches()
     """
     if org_season_ids is None:
         org_season_ids = ALL_ORG_SEASONS
 
-    # Collect all (org_season_id, event_id, conf_name, league_name) work items.
-    work: List[Tuple[int, str, str, str]] = []
+    # Build work items: (org_season_id, event_id, division_id, division_label, conf_name, league_name)
+    work: List[Tuple[int, str, str, str, str, str]] = []
     for org_season_id in org_season_ids:
         league_name, _gender, _is_tourn = ORG_SEASON_MAP.get(
             org_season_id, (f"ECNL org_season={org_season_id}", "", False)
         )
         for event_id, conf_name in _get_conference_event_ids(org_season_id):
-            work.append((org_season_id, event_id, conf_name, league_name))
+            divisions = _get_division_ids(event_id)
+            if not divisions:
+                # Fall back: try with division_id=0 (returns all divisions together)
+                work.append((org_season_id, event_id, "0", "", conf_name, league_name))
+            else:
+                for div_id, div_label in divisions:
+                    work.append((org_season_id, event_id, div_id, div_label, conf_name, league_name))
 
     if not work:
-        logger.error("[AthleteOne matches] no conferences discovered for org_seasons=%s",
-                     org_season_ids)
+        logger.error("[AthleteOne matches] no work items for org_seasons=%s", org_season_ids)
         return [], []
 
-    logger.info("[AthleteOne matches] fetching schedules for %d conferences", len(work))
+    logger.info("[AthleteOne matches] fetching %d conference×division schedules", len(work))
 
     league_rows: List[Dict] = []
     tournament_rows: List[Dict] = []
@@ -336,13 +359,13 @@ def scrape_athleteone_matches(
     with ThreadPoolExecutor(max_workers=12) as ex:
         futs = {
             ex.submit(
-                _fetch_schedule_for_conference,
-                org_season_id, event_id, conf_name, league_name, season
-            ): (org_season_id, event_id, conf_name)
-            for org_season_id, event_id, conf_name, league_name in work
+                _fetch_schedule,
+                org_season_id, event_id, div_id, div_label, conf_name, league_name, season
+            ): (conf_name, div_label)
+            for org_season_id, event_id, div_id, div_label, conf_name, league_name in work
         }
         for f in as_completed(futs):
-            org_season_id, event_id, conf_name = futs[f]
+            conf_name, div_label = futs[f]
             rows = f.result()
             for row in rows:
                 if row.get("tournament_name"):
@@ -350,8 +373,7 @@ def scrape_athleteone_matches(
                 else:
                     league_rows.append(row)
             if rows:
-                logger.debug("[AthleteOne matches] %s (event=%s) → %d rows",
-                             conf_name, event_id, len(rows))
+                logger.debug("[AthleteOne matches] %s %s → %d rows", conf_name, div_label, len(rows))
 
     logger.info(
         "[AthleteOne matches] total league=%d tournament=%d",
