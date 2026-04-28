@@ -1,47 +1,46 @@
 """
 SincSports match/schedule extractor.
 
-Fetches the schedule page for a SincSports tournament (soccer.sincsports.com)
-and parses match results into rows for the ``tournament_matches`` table.
+Fetches match results from soccer.sincsports.com tournament schedule pages.
 
-SCHEDULE PAGE URL:
-  https://soccer.sincsports.com/schedule.aspx?tid=<TID>
+DISCOVERY FLOW:
+  1. Fetch division listing:
+       https://soccer.sincsports.com/schedule.aspx?div=N&tid=<TID>&year=<YEAR>&stid=<TID>&syear=<YEAR>
+     Parse all division links to get (div_code, division_name) pairs.
+     Division link pattern: schedule.aspx?tid=X&year=Y&stid=X&syear=Y&div=U15M01
 
-The schedule page renders plain HTML (no JS required) with one or more
-<table> blocks — one per age-group/gender division. Each row is a match:
-  td[0] = Date/time (e.g. "Sat 03/15 10:00 AM")
-  td[1] = Home team name
-  td[2] = Score or "vs" if not yet played (e.g. "2-1", "0-0", "vs")
-  td[3] = Away team name
-  td[4] = Field/venue (optional)
+  2. For each division, fetch:
+       https://soccer.sincsports.com/schedule.aspx?tid=<TID>&year=<YEAR>&stid=<TID>&syear=<YEAR>&div=<DIV_CODE>
+     The page is server-rendered ASP.NET — match data is in the initial HTML.
 
-Division label appears as a header row above each group of matches.
-The division text (e.g. "U13 Boys Premier", "U15 Girls Championship")
-is used to extract age_group and gender.
+MATCH ROW STRUCTURE (observed April 2026, Concorde Fire Challenge Cup):
+  Match data is in <table> rows. Each match row contains cells with:
+    - Date (e.g. "Saturday2/28/2026") or date header
+    - Time (e.g. "8:00 AM")
+    - Game # (e.g. "#00001")
+    - Home team prefixed with "H:" (e.g. "H: Coastal Rush ECNL RL B11")
+    - Away team prefixed with "A:" (e.g. "A: FTL UTD 2011 ECNL")
+    - Scores (home_score, away_score as separate digits)
+    - Division name + venue
 
 KNOWN TIDS (tournament source ids):
   Demo-critical:
     CONCFC  — Concorde Fire Challenge Cup Boys
     CONCG   — Concorde Fire Challenge Cup Girls
-  Regional (already in leagues_master.csv):
+  Regional (in leagues_master.csv):
     GULFC, HOOVHAV, MISSFSC2, APPHIGHSC, REDRV, KHILL,
     HFCSPRCL, BAMABLST, PALMETTO, BAYOUCTY, CAROCLS,
     SHOWME, BADGER, CORNHSK, SCCLCUP3
-
-NOTE: This extractor was written against the observed page structure but
-has not yet been run live. On first run validate the HTML shape matches
-expectations and adjust the column index if needed. Enable DEBUG logging
-to see raw row data:
-  python3 run.py --source sincsports-matches --tid CONCFC --dry-run
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -52,37 +51,26 @@ _HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; UpshiftClubBot/1.0; +https://upshift.club)"
 }
 _BASE_URL = "https://soccer.sincsports.com"
-_SCHEDULE_PATH = "/schedule.aspx"
 
-# Age group extraction: "U13", "U15", "U14 Boys", "U11 Girls", etc.
-_AGE_RE = re.compile(r"\bU(\d{1,2})\b", re.IGNORECASE)
+_AGE_RE = re.compile(r"\bU(?:nder\s+)?(\d{1,2})\b", re.IGNORECASE)
 _GENDER_RE = re.compile(r"\b(boys?|girls?|male|female|men|women)\b", re.IGNORECASE)
 _GENDER_MAP = {
     "boy": "M", "boys": "M", "male": "M", "men": "M",
     "girl": "G", "girls": "G", "female": "G", "women": "G",
 }
 
-# Score parsing: "2-1", "0-0", "3 - 2" (with spaces)
-_SCORE_RE = re.compile(r"^(\d+)\s*-\s*(\d+)$")
+# "H: Team Name" or "A: Team Name" prefixes
+_HOME_RE = re.compile(r"^H:\s*(.+)$", re.IGNORECASE)
+_AWAY_RE = re.compile(r"^A:\s*(.+)$", re.IGNORECASE)
 
-# Date parsing — SincSports observed formats:
-#   "Sat 03/15 10:00 AM"  → no year (infer current season)
-#   "03/15/2026 10:00 AM"
 _DATE_FORMATS = [
-    "%a %m/%d %I:%M %p",   # "Sat 03/15 10:00 AM" (no year)
-    "%m/%d/%Y %I:%M %p",   # "03/15/2026 10:00 AM"
-    "%m/%d/%Y %H:%M",      # "03/15/2026 14:00"
-    "%m/%d %I:%M %p",      # "03/15 10:00 AM" (no day name, no year)
+    "%m/%d/%Y %I:%M %p",
+    "%m/%d/%Y %H:%M",
+    "%m/%d/%Y",
 ]
 
-# Minimum columns a row needs to be a match row (not a header).
-_MIN_MATCH_COLS = 3
-
-
-def _extract_tid(url: str) -> Optional[str]:
-    parsed = urlparse(url)
-    qs = parse_qs(parsed.query)
-    return qs.get("tid", [None])[0]
+# Year to use when year can't be determined from URL
+_DEFAULT_YEAR = 2026
 
 
 def _parse_age_gender(text: str) -> Tuple[Optional[str], Optional[str]]:
@@ -93,138 +81,166 @@ def _parse_age_gender(text: str) -> Tuple[Optional[str], Optional[str]]:
     return age_group, gender
 
 
-def _parse_score(text: str) -> Tuple[Optional[int], Optional[int]]:
-    text = text.strip()
-    m = _SCORE_RE.match(text)
-    if m:
-        return int(m.group(1)), int(m.group(2))
-    return None, None
-
-
-def _parse_date(text: str, season_year: int = 2026) -> Optional[datetime]:
-    text = text.strip()
-    if not text:
-        return None
+def _parse_date(date_str: str, time_str: str = "", year: int = _DEFAULT_YEAR) -> Optional[datetime]:
+    # SincSports dates: "2/28/2026" with optional time "8:00 AM"
+    text = f"{date_str} {time_str}".strip() if time_str else date_str.strip()
     for fmt in _DATE_FORMATS:
         try:
-            dt = datetime.strptime(text, fmt)
-            # If format has no year component, attach the season year.
-            if dt.year == 1900:
-                dt = dt.replace(year=season_year)
-            return dt
+            return datetime.strptime(text, fmt)
         except ValueError:
             continue
-    logger.debug("[SincSports matches] unparseable date: %r", text)
+    # Try inserting year if missing
+    if "/" in date_str and date_str.count("/") == 1:
+        text2 = f"{date_str}/{year} {time_str}".strip()
+        for fmt in _DATE_FORMATS:
+            try:
+                return datetime.strptime(text2, fmt)
+            except ValueError:
+                continue
+    logger.debug("[SincSports matches] unparseable date: %r %r", date_str, time_str)
     return None
 
 
-def _fetch_schedule(tid: str) -> Tuple[str, str]:
-    url = f"{_BASE_URL}{_SCHEDULE_PATH}?tid={tid}"
-    logger.info("[SincSports matches] fetching schedule: %s", url)
-    r = requests.get(url, headers=_HEADERS, timeout=25)
-    r.raise_for_status()
-    return r.text, url
+def _get_year_from_url(url: str) -> int:
+    m = re.search(r"[?&]year=(\d{4})", url)
+    return int(m.group(1)) if m else _DEFAULT_YEAR
 
 
-def _is_division_header(row) -> Optional[str]:
-    """Return division text if this <tr> is a division/age-group header, else None."""
-    tds = row.find_all(["td", "th"])
-    if len(tds) == 1:
-        text = tds[0].get_text(separator=" ", strip=True)
-        if text and len(text) > 2:
-            return text
-    # Some SincSports pages use a <tr> with colspan spanning all columns.
-    if len(tds) >= 1:
-        first = tds[0]
-        colspan = int(first.get("colspan", 1))
-        if colspan >= 3:
-            text = first.get_text(separator=" ", strip=True)
-            if text:
-                return text
-    return None
+def _fetch_division_links(tid: str, year: int) -> List[Tuple[str, str, str]]:
+    """
+    Fetch division listing and return list of (div_code, division_name, full_url).
+    """
+    url = f"{_BASE_URL}/schedule.aspx?div=N&tid={tid}&year={year}&stid={tid}&syear={year}"
+    try:
+        r = requests.get(url, headers=_HEADERS, timeout=25)
+        r.raise_for_status()
+    except requests.RequestException as exc:
+        logger.error("[SincSports matches] division listing failed tid=%s: %s", tid, exc)
+        return []
+
+    soup = BeautifulSoup(r.text, "lxml")
+    divisions: List[Tuple[str, str, str]] = []
+    seen = set()
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        m = re.search(r"[?&]div=([^&]+)", href)
+        if not m:
+            continue
+        div_code = m.group(1)
+        if div_code in seen or div_code.upper() == "N":
+            continue
+        seen.add(div_code)
+        div_name = a.get_text(strip=True)
+        full_url = urljoin(_BASE_URL + "/", href)
+        divisions.append((div_code, div_name, full_url))
+
+    logger.info("[SincSports matches] tid=%s year=%d → %d divisions", tid, year, len(divisions))
+    return divisions
 
 
-def parse_schedule_html(
+def _fetch_division_schedule(
+    div_url: str,
+    div_code: str,
+    div_name: str,
+    tournament_name: str,
+    season: Optional[str],
+) -> List[Dict]:
+    year = _get_year_from_url(div_url)
+    try:
+        r = requests.get(div_url, headers=_HEADERS, timeout=25)
+        r.raise_for_status()
+    except requests.RequestException as exc:
+        logger.debug("[SincSports matches] fetch failed div=%s: %s", div_code, exc)
+        return []
+
+    return _parse_division_html(r.text, div_url, div_name, tournament_name, season, year)
+
+
+def _parse_division_html(
     html: str,
     source_url: str,
+    div_name: str,
     tournament_name: str,
-    season: Optional[str] = None,
+    season: Optional[str],
+    year: int,
 ) -> List[Dict]:
     """
-    Parse SincSports schedule HTML into match rows.
+    Parse a SincSports division schedule page.
 
-    Returns list of dicts shaped for tournament_matches_writer.insert_tournament_matches().
+    Match rows contain cells with "H:" and "A:" prefixed team names.
+    Scores appear as individual digit cells immediately after team cells.
     """
     soup = BeautifulSoup(html, "lxml")
+    age_group, gender = _parse_age_gender(div_name)
     records: List[Dict] = []
 
-    # Infer season year for date parsing.
-    season_year = 2026
-    if season:
-        m = re.search(r"(\d{4})", season)
-        if m:
-            season_year = int(m.group(1))
-
-    current_division: Optional[str] = None
-    current_age_group: Optional[str] = None
-    current_gender: Optional[str] = None
+    current_date: Optional[str] = None
 
     for table in soup.find_all("table"):
-        for row in table.find_all("tr"):
-            # Check for division header.
-            div_text = _is_division_header(row)
-            if div_text:
-                current_division = div_text
-                current_age_group, current_gender = _parse_age_gender(div_text)
-                logger.debug("[SincSports matches] division: %r → age=%s gender=%s",
-                             div_text, current_age_group, current_gender)
+        for tr in table.find_all("tr"):
+            cells = [td.get_text(separator=" ", strip=True) for td in tr.find_all(["td", "th"])]
+            if not cells:
                 continue
 
-            tds = row.find_all("td")
-            if len(tds) < _MIN_MATCH_COLS:
+            # Detect date header rows — contain a date like "2/28/2026" or day+date
+            date_m = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", " ".join(cells))
+            if date_m:
+                current_date = date_m.group(1)
+
+            # Find home/away team cells
+            home_raw = away_raw = None
+            time_str = ""
+            game_num = None
+            home_score = away_score = None
+
+            for i, cell in enumerate(cells):
+                hm = _HOME_RE.match(cell)
+                if hm:
+                    home_raw = hm.group(1).strip()
+                am = _AWAY_RE.match(cell)
+                if am:
+                    away_raw = am.group(1).strip()
+
+                # Time
+                if re.match(r"^\d{1,2}:\d{2}\s*(AM|PM)$", cell, re.IGNORECASE):
+                    time_str = cell
+
+                # Game number
+                if re.match(r"^#\d+", cell):
+                    game_num = cell.lstrip("#")
+
+            if not home_raw or not away_raw:
                 continue
 
-            col_texts = [td.get_text(separator=" ", strip=True) for td in tds]
+            # Scores: look for standalone digit(s) in cells after teams
+            score_cells = [c for c in cells if re.match(r"^\d{1,2}$", c)]
+            if len(score_cells) >= 2:
+                try:
+                    home_score = int(score_cells[0])
+                    away_score = int(score_cells[1])
+                except ValueError:
+                    pass
 
-            # Expect: date, home_team, score_or_vs, away_team [, field]
-            # Skip obvious header rows.
-            if any(kw in col_texts[0].lower() for kw in ("date", "time", "home", "away")):
-                continue
-
-            date_text = col_texts[0]
-            home_team = col_texts[1] if len(col_texts) > 1 else ""
-            score_text = col_texts[2] if len(col_texts) > 2 else ""
-            away_team = col_texts[3] if len(col_texts) > 3 else ""
-
-            if not home_team or not away_team:
-                continue
-            if home_team.lower() in ("home", "team", "tbd", "bye") or \
-               away_team.lower() in ("away", "team", "tbd", "bye"):
-                continue
-
-            score_lower = score_text.lower().strip()
-            is_played = score_lower not in ("vs", "v", "", "-", "tbd")
-            home_score, away_score = _parse_score(score_text) if is_played else (None, None)
             status = "final" if (home_score is not None and away_score is not None) else "scheduled"
-
-            match_date = _parse_date(date_text, season_year)
+            match_date = _parse_date(current_date or "", time_str, year) if current_date else None
 
             records.append({
-                "home_team_name":  home_team,
-                "away_team_name":  away_team,
-                "home_score":      home_score,
-                "away_score":      away_score,
-                "match_date":      match_date,
-                "age_group":       current_age_group,
-                "gender":          current_gender,
-                "division":        current_division,
-                "season":          season,
-                "tournament_name": tournament_name,
-                "match_type":      "group",
-                "status":          status,
-                "source":          "sincsports",
-                "source_url":      source_url,
-                "platform_match_id": None,
+                "home_team_name":    home_raw,
+                "away_team_name":    away_raw,
+                "home_score":        home_score,
+                "away_score":        away_score,
+                "match_date":        match_date,
+                "age_group":         age_group,
+                "gender":            gender,
+                "division":          div_name,
+                "season":            season,
+                "tournament_name":   tournament_name,
+                "match_type":        "group",
+                "status":            status,
+                "source":            "sincsports",
+                "source_url":        source_url,
+                "platform_match_id": game_num,
             })
 
     return records
@@ -234,31 +250,49 @@ def scrape_sincsports_matches(
     tid: str,
     tournament_name: str,
     season: Optional[str] = None,
+    year: int = _DEFAULT_YEAR,
 ) -> List[Dict]:
     """
-    Scrape all match rows for a SincSports tournament id.
+    Scrape all match rows for a SincSports tournament.
 
     Args:
         tid:             SincSports tournament id (e.g. "CONCFC")
         tournament_name: Human-readable name (e.g. "Concorde Fire Challenge Cup Boys")
-        season:          Season tag (e.g. "2025-26"). Used for date year inference + row stamping.
+        season:          Season tag (e.g. "2025-26")
+        year:            Tournament year for URL construction (default 2026)
 
     Returns:
         List of match row dicts for tournament_matches_writer.
     """
-    try:
-        html, source_url = _fetch_schedule(tid)
-    except requests.RequestException as exc:
-        logger.error("[SincSports matches] failed to fetch schedule (tid=%s): %s", tid, exc)
+    divisions = _fetch_division_links(tid, year)
+    if not divisions:
+        logger.warning("[SincSports matches] tid=%s → no divisions found", tid)
         return []
 
-    rows = parse_schedule_html(html, source_url, tournament_name, season=season)
+    all_rows: List[Dict] = []
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {
+            ex.submit(
+                _fetch_division_schedule,
+                div_url, div_code, div_name, tournament_name, season
+            ): (div_code, div_name)
+            for div_code, div_name, div_url in divisions
+        }
+        for f in as_completed(futs):
+            div_code, div_name = futs[f]
+            rows = f.result()
+            all_rows.extend(rows)
+            if rows:
+                logger.debug("[SincSports matches] %s (%s) → %d rows", div_name, div_code, len(rows))
 
-    if not rows:
-        logger.warning("[SincSports matches] tid=%s → 0 matches parsed. "
-                       "Check that schedule.aspx?tid=%s has match data and "
-                       "the HTML structure matches expected column layout.", tid, tid)
+    if not all_rows:
+        logger.warning(
+            "[SincSports matches] tid=%s → 0 matches parsed across %d divisions. "
+            "Run with --dry-run and DEBUG logging to inspect HTML structure.",
+            tid, len(divisions)
+        )
     else:
-        logger.info("[SincSports matches] tid=%s (%s) → %d matches", tid, tournament_name, len(rows))
+        logger.info("[SincSports matches] tid=%s (%s) → %d matches across %d divisions",
+                    tid, tournament_name, len(all_rows), len(divisions))
 
-    return rows
+    return all_rows

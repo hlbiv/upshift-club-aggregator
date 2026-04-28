@@ -539,6 +539,7 @@ def _handle_sincsports_matches(args: argparse.Namespace) -> None:
         tid=tid,
         tournament_name=tournament_name,
         season=args.season,
+        year=2026,
     )
     if not rows:
         logger.warning("[sincsports-matches] tid=%s → 0 matches", tid)
