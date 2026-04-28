@@ -15,19 +15,11 @@ Two unique indexes on ``matches`` that we must target explicitly:
             COALESCE(gender, '')
         ) WHERE platform_match_id IS NULL
 
-Postgres' ``ON CONFLICT`` inference does **text-exact matching** against
-``pg_index.indexprs``. Drizzle's generated index expressions can differ in
-parenthesization / whitespace / casts from what a handwritten
-``ON CONFLICT (col, (COALESCE(x, '')), ...)`` statement emits, which
-makes inference brittle and produces the dreaded
-``no unique or exclusion constraint matching the ON CONFLICT`` error
-at runtime even though the index exists.
-
-To bypass the text-match rule entirely, we use
-``ON CONFLICT ON CONSTRAINT <index_name>`` and reference the Drizzle
-index names directly (they're stable: see
-``lib/db/src/schema/matches.ts``). This is resilient to Drizzle
-reformatting the stored expression text.
+Both indexes are partial ``CREATE UNIQUE INDEX`` (not ``ADD CONSTRAINT``),
+so ``ON CONFLICT ON CONSTRAINT <name>`` does not work — Postgres only
+recognizes that form for constraints created with ``ADD CONSTRAINT``.
+The column-list ``ON CONFLICT (cols) WHERE predicate`` form is required
+and must exactly match the stored index expression text.
 
 Split-brain guard
 -----------------
@@ -77,7 +69,7 @@ INSERT INTO matches (
     %(match_date)s, %(age_group)s, %(gender)s, %(division)s, %(season)s, %(league)s,
     %(status)s, %(source)s, %(source_url)s, %(platform_match_id)s
 )
-ON CONFLICT ON CONSTRAINT matches_source_platform_id_uq
+ON CONFLICT (source, platform_match_id) WHERE platform_match_id IS NOT NULL
 DO UPDATE SET
     home_team_name = EXCLUDED.home_team_name,
     away_team_name = EXCLUDED.away_team_name,
@@ -114,7 +106,13 @@ INSERT INTO matches (
     %(match_date)s, %(age_group)s, %(gender)s, %(division)s, %(season)s, %(league)s,
     %(status)s, %(source)s, %(source_url)s, %(platform_match_id)s
 )
-ON CONFLICT ON CONSTRAINT matches_natural_key_uq
+ON CONFLICT (
+    home_team_name,
+    away_team_name,
+    COALESCE(match_date, 'epoch'::timestamp),
+    COALESCE(age_group, ''),
+    COALESCE(gender, '')
+) WHERE platform_match_id IS NULL
 DO UPDATE SET
     home_score = EXCLUDED.home_score,
     away_score = EXCLUDED.away_score,
