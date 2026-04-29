@@ -81,6 +81,21 @@ _RAPIDFUZZ_AVAILABLE = fuzz is not None and rf_process is not None
 # optional "S" (small-sided) marker. Strip before other normalization passes.
 _USCLUB_64_PATTERN = re.compile(r"\s+64\s+[A-Z]{2,3}(\s+S)?\s*$")
 
+# GotSport league-abbreviation suffixes appended to team names within a
+# single-league event. GotSport tags every team with the league short-name
+# so operators can distinguish clubs across events on the same platform
+# (e.g. "City SC GA" in a Girls Academy event, "Concorde Fire ECNL" in an
+# ECNL event). Strip these before matching so "City SC GA" resolves to
+# the canonical "City SC".
+#
+# Entries here are word-boundary anchored at the end of the string and
+# must be uppercase abbreviations that would never appear as a meaningful
+# trailing word in a real club name (GA = Girls Academy, not Georgia —
+# a Georgia club would be "City SC (Alpharetta, GA)" not "City SC GA").
+_GOTSPORT_LEAGUE_SUFFIX_PATTERN = re.compile(
+    r"\s+(?:GA|ECNL|NPL|USYS|USSF)\s*$"
+)
+
 # Match U12 / U-12 / U 12 style age tokens.
 _AGE_PATTERN = re.compile(r"\bU-?\s*\d{1,2}\b", flags=re.IGNORECASE)
 # Four-digit birth-year tokens typical of youth soccer: 2004-2016 window.
@@ -129,6 +144,8 @@ def strip_team_descriptors(raw: str) -> str:
     # Strip US Club Soccer National Cup suffix before other passes so "64 CA"
     # doesn't survive as a stray token (e.g. "AYSO United 64 CA" → "AYSO United").
     s = _USCLUB_64_PATTERN.sub("", s)
+    # Strip GotSport league-abbreviation suffixes (e.g. "City SC GA" → "City SC").
+    s = _GOTSPORT_LEAGUE_SUFFIX_PATTERN.sub("", s)
     # Strip age patterns + birth years first (they're unambiguous).
     s = _AGE_PATTERN.sub(" ", s)
     s = _BIRTH_YEAR_PATTERN.sub(" ", s)

@@ -85,6 +85,17 @@ def test_strip_pre_ecnl_descriptor():
     assert strip_team_descriptors("FC Dallas Pre-ECNL") == "FC Dallas"
 
 
+def test_strip_gotsport_ga_suffix():
+    """GotSport appends ' GA' (Girls Academy) to every team in GA events.
+    The suffix must be stripped so 'City SC GA' resolves to 'City SC'.
+    """
+    assert strip_team_descriptors("City SC GA") == "City SC"
+    assert strip_team_descriptors("SoCal Reds FC GA") == "SoCal Reds FC"
+    assert strip_team_descriptors("SC del Sol GA") == "SC del Sol"
+    # Mid-string GA must NOT be stripped (only trailing).
+    assert strip_team_descriptors("GA Rush") == "GA Rush"
+
+
 # ---------------------------------------------------------------------------
 # Pass-3 subset guard — task #85 regression
 # ---------------------------------------------------------------------------
