@@ -72,6 +72,7 @@ def _fetch_gotsport_events(
         FROM events
         WHERE source = 'gotsport'
           AND platform_event_id IS NOT NULL
+          AND platform_event_id ~ '^\d+$'
     """
     params: list = []
     if event_id:
