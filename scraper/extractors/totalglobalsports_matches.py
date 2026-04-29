@@ -7,31 +7,41 @@ Fetches game schedules from the AthleteOne-backed TGS API at
 
 DISCOVERY FLOW
 --------------
-1. ``/api/Event/get-event-details-by-eventID/{eventID}``
-       → event name + metadata (reuses logic from totalglobalsports_events.py)
-2. ``/api/Event/get-division-list-by-event/{eventID}``
-       → divisions with divisionID, divisionName, divGender
-3. For each division:
-   ``/api/Event/get-schedule-list/{eventID}/{divisionID}``
-       → JSON array of game objects with home/away team, score, date fields
+1. ``/api/Event/get-event-schedule-or-standings/{eventID}``
+       → girlsDivAndFlightList + boysDivAndFlightList; each div has a
+         flightList of {flightID, flightName, teamsCount, hasActiveSchedule}.
+
+2. For each flightID:
+   ``/api/Event/get-team-list-by-flight/{flightID}``
+       → list of {clubID, name, teamID, headCoach, ...}
+
+3. Collect unique clubIDs across all flights, then for each:
+   ``/api/Event/get-club-schedules-by-eventID-and-clubID/{eventID}/{clubID}``
+       → array of game objects; deduplicate across clubs by matchID.
+
+NOTE: The ``get-schedule-list/{eventID}/{divisionID}`` endpoint does not
+exist in the TGS API — it 404s. The ``get-schedules-by-flight`` variant
+exists but returns empty arrays for league-play events; it appears reserved
+for bracket/playoff data. The per-club approach above is the confirmed
+production path.
 
 KNOWN TGS EVENT IDs (STXCL NPL, 2025-26):
     3979 — ECNL RL STXCL (current season A)
     3973 — ECNL RL STXCL (current season B)
+
+SCHEDULE RESPONSE FIELD NAMES (confirmed against event 3780, Surf Cup NW):
+    matchID / scheduleID / gamenumber  → platform_match_id
+    gameDate (ISO "2025-07-18T13:00:00") → match_date
+    homeTeam / awayTeam               → team names
+    hometeamscore / awayteamscore     → scores (null if unplayed)
+    division                          → division label
+    status                            → e.g. "On Time"
 
 OUTPUT
 ------
 League play → ``matches`` table via ``matches_writer.insert_matches``.
 ``home_club_id`` / ``away_club_id`` stay NULL at scrape time (linker resolves
 them in a separate pass, same as GotSport).
-
-NOTE ON ENDPOINT DISCOVERY
----------------------------
-The ``/api/Event/get-schedule-list/{eventID}/{divisionID}`` endpoint is the
-best candidate based on TGS's AthleteOne API naming convention. If the
-response structure differs from the parser below, run with ``--dry-run`` and
-check INFO/DEBUG logs — the raw JSON keys are logged at DEBUG level so the
-parser can be adjusted with a targeted edit.
 """
 
 from __future__ import annotations
@@ -79,11 +89,11 @@ except ImportError:
 KNOWN_EVENT_IDS = ["3979", "3973"]
 
 _DATE_FORMATS = [
-    "%m/%d/%Y %I:%M %p",
-    "%m/%d/%Y %H:%M",
     "%Y-%m-%dT%H:%M:%S",
     "%Y-%m-%dT%H:%M:%SZ",
     "%Y-%m-%dT%H:%M:%S.%fZ",
+    "%m/%d/%Y %I:%M %p",
+    "%m/%d/%Y %H:%M",
     "%m/%d/%Y",
     "%Y-%m-%d",
 ]
@@ -94,7 +104,7 @@ _GENDER_RE = re.compile(r"\b([BG])\d{2}", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
-# HTTP helpers (mirrors totalglobalsports_events.py)
+# HTTP helpers
 # ---------------------------------------------------------------------------
 
 def _is_retryable(exc: Exception) -> bool:
@@ -163,10 +173,7 @@ def _parse_age_gender(
     age_group: Optional[str] = None
     if age_m:
         token = age_m.group(1)
-        if len(token) == 4:
-            birth_year = int(token)
-        else:
-            birth_year = 2000 + int(token)
+        birth_year = int(token) if len(token) == 4 else 2000 + int(token)
         if season:
             m = re.match(r"(\d{4})", season)
             if m:
@@ -188,190 +195,161 @@ def _strip_brand(team_name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Division discovery
+# Discovery: flights + clubs
 # ---------------------------------------------------------------------------
 
-def _get_divisions(event_id: str) -> List[Dict]:
-    """Return list of division dicts from the TGS division endpoint.
+def _get_flights(event_id: str) -> List[Dict]:
+    """Fetch flight list via get-event-schedule-or-standings.
 
-    Each dict has at minimum: divisionID (str), divisionName (str),
-    divGender (str or None).
+    Returns list of dicts with keys: flightID, flightName, divisionName,
+    divisionID.
     """
-    url = f"{_API_BASE}/get-division-list-by-event/{event_id}"
+    url = f"{_API_BASE}/get-event-schedule-or-standings/{event_id}"
     try:
         resp = _fetch_json(url)
     except Exception as exc:
-        logger.error("[tgs-matches] division fetch failed event=%s: %s", event_id, exc)
+        logger.error("[tgs-matches] flights fetch failed event=%s: %s", event_id, exc)
         return []
 
-    data = resp.get("data") if isinstance(resp, dict) else resp
+    if not isinstance(resp, dict):
+        logger.warning("[tgs-matches] event=%s: unexpected flights response type=%s",
+                       event_id, type(resp).__name__)
+        return []
+
+    data = resp.get("data") or {}
+    if not isinstance(data, dict):
+        data = {}
+
+    flights: List[Dict] = []
+    for gender_key in ("girlsDivAndFlightList", "boysDivAndFlightList"):
+        for div in (data.get(gender_key) or []):
+            if not isinstance(div, dict):
+                continue
+            div_name = str(div.get("divisionName") or "").strip()
+            div_id = str(div.get("divisionID") or "").strip()
+            for flight in (div.get("flightList") or []):
+                if not isinstance(flight, dict):
+                    continue
+                flight_id = str(flight.get("flightID") or "").strip()
+                if flight_id and flight_id != "0":
+                    flights.append({
+                        "flightID": flight_id,
+                        "flightName": str(flight.get("flightName") or "").strip(),
+                        "divisionName": div_name,
+                        "divisionID": div_id,
+                    })
+
+    logger.info("[tgs-matches] event=%s → %d flight(s)", event_id, len(flights))
+    return flights
+
+
+def _get_club_ids_for_flight(flight_id: str) -> List[str]:
+    """Return distinct clubIDs for a flight via get-team-list-by-flight."""
+    url = f"{_API_BASE}/get-team-list-by-flight/{flight_id}"
+    try:
+        resp = _fetch_json(url)
+    except Exception as exc:
+        logger.debug("[tgs-matches] team list failed flight=%s: %s", flight_id, exc)
+        return []
+
+    data = (resp.get("data") or []) if isinstance(resp, dict) else []
     if not isinstance(data, list):
-        logger.warning(
-            "[tgs-matches] unexpected division payload type=%s event=%s",
-            type(data).__name__, event_id,
-        )
         return []
 
-    divisions = []
+    seen: set = set()
+    club_ids: List[str] = []
     for item in data:
         if not isinstance(item, dict):
             continue
-        div_id = str(item.get("divisionID") or item.get("divisionId") or "").strip()
-        div_name = str(item.get("divisionName") or "").strip()
-        if div_id and div_id != "0":
-            divisions.append({
-                "divisionID": div_id,
-                "divisionName": div_name,
-                "divGender": item.get("divGender"),
-            })
-
-    logger.info("[tgs-matches] event=%s → %d division(s)", event_id, len(divisions))
-    return divisions
+        cid = str(item.get("clubID") or "").strip()
+        if cid and cid not in seen:
+            seen.add(cid)
+            club_ids.append(cid)
+    return club_ids
 
 
 # ---------------------------------------------------------------------------
-# Schedule fetch + parse (per division)
+# Schedule fetch + parse (per club)
 # ---------------------------------------------------------------------------
 
-def _fetch_division_schedule(
+def _fetch_club_schedule(
     event_id: str,
-    division: Dict,
+    club_id: str,
     *,
     league_name: Optional[str],
     season: Optional[str],
 ) -> List[Dict]:
-    """Fetch match schedule for one division and return list of match dicts."""
-    div_id = division["divisionID"]
-    div_name = division.get("divisionName", "")
-
-    # Primary endpoint — best-guess based on AthleteOne /api/Event naming.
-    url = f"{_API_BASE}/get-schedule-list/{event_id}/{div_id}"
-    source_url = url
-
+    """Fetch raw game list for one club via get-club-schedules-by-eventID-and-clubID."""
+    url = f"{_API_BASE}/get-club-schedules-by-eventID-and-clubID/{event_id}/{club_id}"
     try:
         resp = _fetch_json(url)
     except Exception as exc:
-        logger.debug(
-            "[tgs-matches] schedule fetch failed event=%s div=%s: %s",
-            event_id, div_id, exc,
-        )
+        logger.debug("[tgs-matches] club schedule failed event=%s club=%s: %s",
+                     event_id, club_id, exc)
         return []
 
-    data = resp.get("data") if isinstance(resp, dict) else resp
+    data = (resp.get("data") or []) if isinstance(resp, dict) else []
     if not isinstance(data, list):
-        # Log keys so operators can see the actual structure on Replit.
-        if isinstance(resp, dict):
-            logger.debug(
-                "[tgs-matches] event=%s div=%s: top-level keys=%s",
-                event_id, div_id, list(resp.keys()),
-            )
-        logger.debug(
-            "[tgs-matches] event=%s div=%s: no data array in response",
-            event_id, div_id,
-        )
+        logger.debug("[tgs-matches] event=%s club=%s: unexpected data type=%s",
+                     event_id, club_id, type(data).__name__)
         return []
 
-    age_group, gender = _parse_age_gender(div_name, season)
+    return data
 
-    rows: List[Dict] = []
-    seen: set = set()
 
-    for item in data:
-        if not isinstance(item, dict):
-            continue
+def _parse_game_item(
+    item: Dict,
+    *,
+    source_url: str,
+    league_name: Optional[str],
+    season: Optional[str],
+) -> Optional[Dict]:
+    """Parse one raw game dict from get-club-schedules response."""
+    if not isinstance(item, dict):
+        return None
 
-        # Log first item's keys so we can verify the field names on Replit.
-        if not rows and not seen:
-            logger.debug(
-                "[tgs-matches] event=%s div=%s: first game keys=%s",
-                event_id, div_id, sorted(item.keys()),
-            )
+    home_raw = str(item.get("homeTeam") or "").strip()
+    away_raw = str(item.get("awayTeam") or "").strip()
 
-        # TGS JSON field names (best-guess from AthleteOne convention).
-        # If these are wrong the debug log above shows the actual keys.
-        home_raw = (
-            item.get("homeTeamName") or item.get("home_team_name") or
-            item.get("homeTeam") or item.get("homeName") or ""
-        ).strip()
-        away_raw = (
-            item.get("awayTeamName") or item.get("away_team_name") or
-            item.get("awayTeam") or item.get("awayName") or ""
-        ).strip()
+    if not home_raw or not away_raw:
+        return None
+    if home_raw.lower() in {"bye", "tbd", "tba"} or away_raw.lower() in {"bye", "tbd", "tba"}:
+        return None
 
-        if not home_raw or not away_raw:
-            continue
-        if home_raw.lower() in {"bye", "tbd", "tba"}:
-            continue
+    home_team = _strip_brand(home_raw)
+    away_team = _strip_brand(away_raw)
 
-        home_team = _strip_brand(home_raw)
-        away_team = _strip_brand(away_raw)
+    home_score = _parse_score(item.get("hometeamscore"))
+    away_score = _parse_score(item.get("awayteamscore"))
+    status = "final" if (home_score is not None and away_score is not None) else "scheduled"
 
-        # Scores.
-        home_score = _parse_score(
-            item.get("homeScore") or item.get("home_score") or
-            item.get("homeGoals")
-        )
-        away_score = _parse_score(
-            item.get("awayScore") or item.get("away_score") or
-            item.get("awayGoals")
-        )
-        status = "final" if (home_score is not None and away_score is not None) else "scheduled"
+    date_str = str(item.get("gameDate") or "").strip()
+    match_date = _parse_date(date_str) if date_str else None
 
-        # Date/time — TGS sometimes combines date + time as "gameDate" +
-        # "gameTime", sometimes as a single ISO field.
-        date_str = (
-            item.get("gameDate") or item.get("game_date") or
-            item.get("matchDate") or item.get("date") or ""
-        )
-        time_str = item.get("gameTime") or item.get("game_time") or ""
-        if date_str and time_str:
-            combined = f"{date_str} {time_str}".strip()
-        else:
-            combined = str(date_str).strip()
-        match_date = _parse_date(combined) if combined else None
+    div_name = str(item.get("division") or "").strip() or None
+    age_group, gender = _parse_age_gender(div_name or "", season)
 
-        # Platform match ID.
-        platform_match_id = (
-            str(item.get("gameID") or item.get("gameId") or
-                item.get("matchID") or item.get("scheduleID") or "").strip()
-            or None
-        )
-
-        # Division / age group from the division header when not in item.
-        item_div = (item.get("divisionName") or div_name or "").strip() or None
-
-        # Dedup within a single division fetch.
-        dedup_key = (
-            home_team.lower(), away_team.lower(),
-            (match_date.isoformat() if match_date else ""),
-            (age_group or ""), (gender or ""),
-        )
-        if dedup_key in seen:
-            continue
-        seen.add(dedup_key)
-
-        rows.append({
-            "home_team_name":    home_team,
-            "away_team_name":    away_team,
-            "home_score":        home_score,
-            "away_score":        away_score,
-            "match_date":        match_date,
-            "age_group":         age_group,
-            "gender":            gender,
-            "division":          item_div,
-            "season":            season,
-            "league":            league_name,
-            "status":            status,
-            "source":            "totalglobalsports",
-            "source_url":        source_url,
-            "platform_match_id": platform_match_id,
-        })
-
-    logger.debug(
-        "[tgs-matches] event=%s div=%s (%s) → %d rows",
-        event_id, div_id, div_name, len(rows),
+    platform_match_id = (
+        str(item.get("matchID") or item.get("scheduleID") or item.get("gamenumber") or "").strip()
+        or None
     )
-    return rows
+
+    return {
+        "home_team_name":    home_team,
+        "away_team_name":    away_team,
+        "home_score":        home_score,
+        "away_score":        away_score,
+        "match_date":        match_date,
+        "age_group":         age_group,
+        "gender":            gender,
+        "division":          div_name,
+        "season":            season,
+        "league":            league_name,
+        "status":            status,
+        "source":            "totalglobalsports",
+        "source_url":        source_url,
+        "platform_match_id": platform_match_id,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -386,53 +364,91 @@ def scrape_totalglobalsports_matches(
 ) -> List[Dict]:
     """Scrape all match schedules for one TGS event.
 
+    Discovery flow:
+    1. Fetch flights from get-event-schedule-or-standings.
+    2. Collect unique clubIDs from get-team-list-by-flight for each flight.
+    3. Fetch per-club schedules from get-club-schedules-by-eventID-and-clubID.
+    4. Deduplicate across clubs by matchID.
+
     Returns a list of match dicts shaped for ``insert_matches()``. Never
     writes to the DB — pure extraction.
 
     ``home_club_id`` / ``away_club_id`` are always absent from the output;
     the canonical-club linker resolves them in a separate pass.
-
-    Args:
-        event_id:    TGS numeric event ID string (e.g. "3979").
-        league_name: Human-readable name stamped on each row.
-        season:      Season string (e.g. "2025-26") for age-group inference.
     """
     event_id = str(event_id)
-    divisions = _get_divisions(event_id)
 
-    if not divisions:
+    # Step 1: flights
+    flights = _get_flights(event_id)
+    if not flights:
+        logger.warning("[tgs-matches] event=%s: no flights found — nothing to scrape", event_id)
+        return []
+
+    # Step 2: unique club IDs across all flights
+    all_club_ids: set = set()
+    for flight in flights:
+        club_ids = _get_club_ids_for_flight(flight["flightID"])
+        all_club_ids.update(club_ids)
+
+    if not all_club_ids:
         logger.warning(
-            "[tgs-matches] event=%s: no divisions found — nothing to scrape",
-            event_id,
+            "[tgs-matches] event=%s: no clubs found across %d flight(s)",
+            event_id, len(flights),
         )
         return []
 
+    logger.info(
+        "[tgs-matches] event=%s → %d unique club(s) across %d flight(s)",
+        event_id, len(all_club_ids), len(flights),
+    )
+
+    # Step 3: fetch per-club schedules, deduplicate by matchID
+    seen_match_ids: set = set()
     all_rows: List[Dict] = []
 
     with ThreadPoolExecutor(max_workers=8) as ex:
         futs = {
             ex.submit(
-                _fetch_division_schedule,
-                event_id, div,
+                _fetch_club_schedule,
+                event_id, club_id,
                 league_name=league_name,
                 season=season,
-            ): div
-            for div in divisions
+            ): club_id
+            for club_id in all_club_ids
         }
         for f in as_completed(futs):
-            div = futs[f]
+            club_id = futs[f]
             try:
-                rows = f.result()
+                raw_games = f.result()
             except Exception as exc:
-                logger.error(
-                    "[tgs-matches] event=%s div=%s failed: %s",
-                    event_id, div.get("divisionID"), exc,
+                logger.error("[tgs-matches] event=%s club=%s failed: %s",
+                             event_id, club_id, exc)
+                continue
+
+            source_url = (
+                f"{_API_BASE}/get-club-schedules-by-eventID-and-clubID"
+                f"/{event_id}/{club_id}"
+            )
+            for item in raw_games:
+                match_id = str(
+                    item.get("matchID") or item.get("scheduleID") or ""
+                ).strip()
+                if match_id and match_id in seen_match_ids:
+                    continue
+                if match_id:
+                    seen_match_ids.add(match_id)
+
+                parsed = _parse_game_item(
+                    item,
+                    source_url=source_url,
+                    league_name=league_name,
+                    season=season,
                 )
-                rows = []
-            all_rows.extend(rows)
+                if parsed:
+                    all_rows.append(parsed)
 
     logger.info(
-        "[tgs-matches] event=%s: %d total match rows across %d divisions",
-        event_id, len(all_rows), len(divisions),
+        "[tgs-matches] event=%s: %d total match rows across %d club(s)",
+        event_id, len(all_rows), len(all_club_ids),
     )
     return all_rows
