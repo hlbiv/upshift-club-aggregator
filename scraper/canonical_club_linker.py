@@ -96,6 +96,20 @@ _GOTSPORT_LEAGUE_SUFFIX_PATTERN = re.compile(
     r"\s+(?:GA|ECNL|NPL|USYS|USSF)\s*$"
 )
 
+# GotSport state-code suffixes: GotSport appends a 2-letter US state
+# abbreviation to disambiguate the same club's programs across events
+# (e.g. "Beach FC VA" = Beach FC's Virginia program).
+#
+# We exclude SC (South Carolina, but also "Soccer Club" in club names like
+# "City SC") and FC (not a state, but a common club identifier). Every
+# other 2-letter state abbreviation is safe to strip as a trailing token.
+# GA is already handled by _GOTSPORT_LEAGUE_SUFFIX_PATTERN above.
+_GOTSPORT_STATE_SUFFIX_PATTERN = re.compile(
+    r"\s+(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|"
+    r"MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SD|TN|"
+    r"TX|UT|VT|VA|WA|WV|WI|WY)\s*$"
+)
+
 # Match U12 / U-12 / U 12 style age tokens.
 _AGE_PATTERN = re.compile(r"\bU-?\s*\d{1,2}\b", flags=re.IGNORECASE)
 # Four-digit birth-year tokens typical of youth soccer: 2004-2016 window.
@@ -146,6 +160,11 @@ def strip_team_descriptors(raw: str) -> str:
     s = _USCLUB_64_PATTERN.sub("", s)
     # Strip GotSport league-abbreviation suffixes (e.g. "City SC GA" → "City SC").
     s = _GOTSPORT_LEAGUE_SUFFIX_PATTERN.sub("", s)
+    # Strip GotSport state-code suffixes (e.g. "Beach FC VA" → "Beach FC").
+    # Applied after the league-suffix strip so "Beach FC GA" hits the league
+    # pattern first (GA = Girls Academy); the state pattern is the fallback
+    # for suffixes like VA, NC, TX that the league pattern doesn't cover.
+    s = _GOTSPORT_STATE_SUFFIX_PATTERN.sub("", s)
     # Strip age patterns + birth years first (they're unambiguous).
     s = _AGE_PATTERN.sub(" ", s)
     s = _BIRTH_YEAR_PATTERN.sub(" ", s)
