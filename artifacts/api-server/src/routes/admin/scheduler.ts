@@ -59,6 +59,7 @@ export const ALLOWED_JOB_KEYS = [
   "nightly_tier1",
   "weekly_state",
   "hourly_linker",
+  "ga_matches",
 ] as const;
 export type AllowedJobKey = (typeof ALLOWED_JOB_KEYS)[number];
 
@@ -94,6 +95,11 @@ export const JOB_METADATA: ReadonlyArray<{
   {
     jobKey: "hourly_linker",
     description: "Hourly canonical-club linker",
+    cronExpression: null,
+  },
+  {
+    jobKey: "ga_matches",
+    description: "Girls Academy matches (GotSport event 42137) — requires GOTSPORT_SESSION_COOKIE in Replit Secrets",
     cronExpression: null,
   },
 ] as const;
