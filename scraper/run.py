@@ -402,6 +402,20 @@ def _handle_gotsport_matches(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_ga_matches(args: argparse.Namespace) -> None:
+    import os
+    cookie = os.environ.get("GOTSPORT_SESSION_COOKIE")
+    if not cookie:
+        logger.warning("[ga-matches] GOTSPORT_SESSION_COOKIE not set; may hit CAPTCHA")
+    _run_gotsport_matches(
+        event_id="42137",
+        season=args.season,
+        league_name=args.league_name or "Girls Academy",
+        dry_run=args.dry_run,
+        session_cookie=cookie,
+    )
+
+
 def _handle_odp_rosters(args: argparse.Namespace) -> None:
     from odp_runner import run_odp_rosters, print_summary as _odp_print_summary
     summary = run_odp_rosters(
@@ -3921,6 +3935,8 @@ def _handle_ncaa_crawl_athletics_pages(args: argparse.Namespace) -> None:
 SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "gotsport-matches": _handle_gotsport_matches,
     "gotsport_matches": _handle_gotsport_matches,
+    "ga-matches": _handle_ga_matches,
+    "ga_matches": _handle_ga_matches,
     "sincsports-events": _handle_sincsports_events,
     "sincsports_events": _handle_sincsports_events,
     "link-canonical-clubs": _handle_link_canonical_clubs,
@@ -4042,6 +4058,7 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
 # here: they're a compatibility shim, not user-facing.
 SOURCE_HELP: dict[str, str] = {
     "gotsport-matches": "populates matches from GotSport schedules (requires --event-id)",
+    "ga-matches": "populate Girls Academy matches from GotSport event 42137 (requires GOTSPORT_SESSION_COOKIE env var)",
     "gotsport-matches-batch": "batch matches across all GotSport events",
     "sincsports-matches": "populates tournament_matches from SincSports schedule (requires --tid)",
     "athleteone-matches": "populates matches + tournament_matches from all ECNL AthleteOne org_seasons",
@@ -4128,8 +4145,9 @@ def _run_gotsport_matches(
     season: Optional[str],
     league_name: Optional[str],
     dry_run: bool,
+    session_cookie: Optional[str] = None,
 ) -> None:
-    from extractors.gotsport_matches import scrape_gotsport_matches
+    from extractors.gotsport_matches import scrape_gotsport_matches, GotSportAuthError
     from ingest.matches_writer import insert_matches
 
     scraper_key = f"gotsport-matches:{event_id}"
@@ -4146,7 +4164,20 @@ def _run_gotsport_matches(
             event_id,
             default_season=season,
             default_league=league_name,
+            session_cookie=session_cookie,
         )
+    except GotSportAuthError as exc:
+        logger.error("[gotsport-matches] auth failure event=%s: %s", event_id, exc)
+        if run_log is not None:
+            run_log.finish_failed(FailureKind.NETWORK, error_message=str(exc))
+        alert_scraper_failure(
+            scraper_key=scraper_key,
+            failure_kind=FailureKind.NETWORK.value,
+            error_message=str(exc),
+            source_url=f"https://system.gotsport.com/org_event/events/{event_id}/schedules",
+            league_name=league_name or f"gotsport-event-{event_id}",
+        )
+        return
     except Exception as exc:
         kind = _classify_exception(exc)
         logger.error("[gotsport-matches] failed: %s", exc)
