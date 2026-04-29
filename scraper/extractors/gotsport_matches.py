@@ -101,6 +101,34 @@ _HEADERS = {"User-Agent": USER_AGENT}
 _BASE = "https://system.gotsport.com"
 _RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
 
+# Strings present on Cloudflare CAPTCHA / challenge pages.
+_AUTH_WALL_MARKERS = (
+    "cf-browser-verification",
+    "just a moment",
+    "enable javascript",
+    "attention required",
+    "access denied",
+)
+# Strings present on GotSport's login redirect page.
+_LOGIN_MARKERS = (
+    'action="/users/sign_in"',
+    'action="/login"',
+    'name="user[email]"',
+)
+
+
+class GotSportAuthError(RuntimeError):
+    """Raised when GotSport returns an auth/CAPTCHA page instead of schedule HTML.
+
+    Typically means GOTSPORT_SESSION_COOKIE is missing or expired.
+    """
+
+
+def _looks_like_auth_wall(html: str) -> bool:
+    """Return True if html looks like a CAPTCHA or login redirect, not a schedule page."""
+    lower = html.lower()
+    return any(m in lower for m in _AUTH_WALL_MARKERS + _LOGIN_MARKERS)
+
 
 # ---------------------------------------------------------------------------
 # HTTP
@@ -115,10 +143,17 @@ def _is_retryable(exc: Exception) -> bool:
     return False
 
 
-def _get_with_retry(url: str, timeout: int = 20) -> requests.Response:
+def _get_with_retry(
+    url: str,
+    timeout: int = 20,
+    session_cookie: Optional[str] = None,
+) -> requests.Response:
+    # Non-mutating: build a fresh headers dict so _HEADERS is never modified.
+    headers = {**_HEADERS, "Cookie": session_cookie} if session_cookie else _HEADERS
+
     def _fetch() -> requests.Response:
         try:
-            r = requests.get(url, headers=_HEADERS, timeout=timeout)
+            r = requests.get(url, headers=headers, timeout=timeout)
             r.raise_for_status()
             return r
         except requests.RequestException as exc:
@@ -130,7 +165,7 @@ def _get_with_retry(url: str, timeout: int = 20) -> requests.Response:
         _fetch,
         max_retries=MAX_RETRIES,
         base_delay=RETRY_BASE_DELAY_SECONDS,
-        label=f"gotsport-matches:{url}",
+        label=f"gotsport-matches:{url}",  # URL only — never log headers/cookie
     )
 
 
@@ -138,7 +173,10 @@ def _get_with_retry(url: str, timeout: int = 20) -> requests.Response:
 # Group discovery
 # ---------------------------------------------------------------------------
 
-def _discover_group_ids(event_id: int | str) -> List[str]:
+def _discover_group_ids(
+    event_id: int | str,
+    session_cookie: Optional[str] = None,
+) -> List[str]:
     """Fetch the event home page and return all division group IDs found.
 
     The event home embeds links of the form
@@ -146,10 +184,14 @@ def _discover_group_ids(event_id: int | str) -> List[str]:
     for every division in the event. Collecting them is enough to build
     the ``?date=All&group=<ID>`` URLs that return the full per-division
     schedule as static HTML.
+
+    Raises:
+        GotSportAuthError: if the response looks like a CAPTCHA or login
+            page, meaning ``session_cookie`` is missing or expired.
     """
     url = f"{_BASE}/org_event/events/{event_id}"
     try:
-        r = _get_with_retry(url)
+        r = _get_with_retry(url, session_cookie=session_cookie)
     except (TransientError, requests.RequestException) as exc:
         logger.error("[gotsport-matches] event home fetch failed event=%s: %s", event_id, exc)
         return []
@@ -167,6 +209,12 @@ def _discover_group_ids(event_id: int | str) -> List[str]:
             if gid not in seen:
                 seen.add(gid)
                 group_ids.append(gid)
+
+    if not group_ids and _looks_like_auth_wall(r.text):
+        raise GotSportAuthError(
+            f"GotSport event {event_id}: got auth/CAPTCHA page instead of schedule. "
+            "Refresh GOTSPORT_SESSION_COOKIE."
+        )
 
     logger.info("[gotsport-matches] event %s → %d group(s) discovered", event_id, len(group_ids))
     return group_ids
@@ -925,6 +973,7 @@ def scrape_gotsport_matches(
     default_division: Optional[str] = None,
     default_season: Optional[str] = None,
     default_league: Optional[str] = None,
+    session_cookie: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Fetch all GotSport match rows for ``event_id``.
 
@@ -935,13 +984,23 @@ def scrape_gotsport_matches(
     3. If no groups are found, fall back to a direct ``source_url`` fetch
        parsed with the legacy Strategy A/B parsers.
 
+    Args:
+        session_cookie: Raw ``Cookie`` header value (e.g. ``_session_id=abc123``).
+            Required for events that sit behind a GotSport login wall or
+            Cloudflare CAPTCHA. Set via the ``GOTSPORT_SESSION_COOKIE`` env var.
+            When None, requests are sent without a Cookie header.
+
+    Raises:
+        GotSportAuthError: if the event home page looks like a CAPTCHA or
+            login redirect. Means the cookie is missing or expired.
+
     Returns a list of dicts shaped for
     ``scraper.ingest.matches_writer.insert_matches``.
     """
     stats: Dict[str, int] = {"dropped_non_canonicalizable": 0}
 
     # --- Group-based discovery (primary path) --------------------------------
-    group_ids = _discover_group_ids(event_id)
+    group_ids = _discover_group_ids(event_id, session_cookie=session_cookie)
     if group_ids:
         all_matches: List[Dict[str, Any]] = []
         for group_id in group_ids:
@@ -951,7 +1010,7 @@ def scrape_gotsport_matches(
             )
             logger.debug("[gotsport-matches] fetching group %s: %s", group_id, group_url)
             try:
-                r = _get_with_retry(group_url)
+                r = _get_with_retry(group_url, session_cookie=session_cookie)
             except (TransientError, requests.RequestException) as exc:
                 logger.warning(
                     "[gotsport-matches] fetch failed event=%s group=%s: %s",
@@ -984,7 +1043,7 @@ def scrape_gotsport_matches(
     url = source_url or f"{_BASE}/org_event/events/{event_id}/schedules"
     logger.info("[gotsport-matches] no groups found, fetching %s", url)
     try:
-        r = _get_with_retry(url)
+        r = _get_with_retry(url, session_cookie=session_cookie)
     except (TransientError, requests.RequestException) as exc:
         logger.error("[gotsport-matches] fetch failed for event %s: %s", event_id, exc)
         return []

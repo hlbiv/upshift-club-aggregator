@@ -632,3 +632,127 @@ def test_dedup_does_not_collapse_dates_a_second_apart():
     ]
     out = _dedup_matches(rows)
     assert len(out) == 2
+
+
+# ---------------------------------------------------------------------------
+# Session-cookie injection (ga-matches / GOTSPORT_SESSION_COOKIE)
+# ---------------------------------------------------------------------------
+
+def test_session_cookie_injected_in_all_requests(monkeypatch):
+    """When session_cookie is set, every requests.get call must include
+    Cookie: <value> in its headers — both the event-home discovery fetch
+    and each per-group schedule fetch.
+    """
+    from unittest.mock import patch, MagicMock
+    from extractors.gotsport_matches import scrape_gotsport_matches
+
+    # Minimal schedule HTML: one group link on the event home page, one
+    # match row on the group schedule page.
+    event_home_html = """
+    <html><body>
+      <a href="/org_event/events/42137/schedules?group=99">Division A</a>
+    </body></html>
+    """
+    schedule_html = """
+    <html><body>
+    <table>
+      <thead><tr><th>Match #</th><th>Time</th><th>Home Team</th>
+                 <th>Results</th><th>Away Team</th></tr></thead>
+      <tbody>
+        <tr><td>1001</td><td>2025-09-07 10:00</td><td>Concorde Fire SC</td>
+            <td>2-1</td><td>NTH Tophat</td></tr>
+      </tbody>
+    </table>
+    </body></html>
+    """
+
+    calls: list = []
+
+    def fake_get(url, headers=None, timeout=None):
+        calls.append({"url": url, "headers": headers or {}})
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.text = schedule_html if "group=99" in url else event_home_html
+        resp.raise_for_status = lambda: None
+        return resp
+
+    with patch("extractors.gotsport_matches.requests.get", side_effect=fake_get):
+        scrape_gotsport_matches(42137, session_cookie="tok=abc123")
+
+    assert calls, "requests.get was never called"
+    for call in calls:
+        assert call["headers"].get("Cookie") == "tok=abc123", (
+            f"Cookie header missing or wrong on {call['url']}: {call['headers']}"
+        )
+
+
+def test_no_cookie_omits_cookie_header(monkeypatch):
+    """When session_cookie is None, the Cookie header must be absent entirely —
+    guards against Cookie: None (string) leaking into requests.
+    """
+    from unittest.mock import patch, MagicMock
+    from extractors.gotsport_matches import scrape_gotsport_matches
+
+    event_home_html = """
+    <html><body>
+      <a href="/org_event/events/99999/schedules?group=1">Div</a>
+    </body></html>
+    """
+    schedule_html = """
+    <html><body>
+    <table>
+      <thead><tr><th>Match #</th><th>Home Team</th><th>Away Team</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Concorde Fire SC</td><td>NTH Tophat</td></tr>
+      </tbody>
+    </table>
+    </body></html>
+    """
+
+    calls: list = []
+
+    def fake_get(url, headers=None, timeout=None):
+        calls.append({"url": url, "headers": headers or {}})
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.text = schedule_html if "group=1" in url else event_home_html
+        resp.raise_for_status = lambda: None
+        return resp
+
+    with patch("extractors.gotsport_matches.requests.get", side_effect=fake_get):
+        scrape_gotsport_matches(99999, session_cookie=None)
+
+    assert calls, "requests.get was never called"
+    for call in calls:
+        assert "Cookie" not in call["headers"], (
+            f"Cookie header present when it should be absent on {call['url']}: "
+            f"{call['headers']}"
+        )
+
+
+def test_auth_wall_raises_gotsport_auth_error():
+    """When the event home page returns a Cloudflare CAPTCHA page (no group
+    links, contains a known auth-wall marker), GotSportAuthError is raised.
+    """
+    from unittest.mock import patch, MagicMock
+    from extractors.gotsport_matches import scrape_gotsport_matches, GotSportAuthError
+
+    captcha_html = """
+    <html><head><title>Just a moment...</title></head>
+    <body>
+      <div id="cf-browser-verification">
+        <p>Checking your browser before accessing the site.</p>
+      </div>
+    </body></html>
+    """
+
+    def fake_get(url, headers=None, timeout=None):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.text = captcha_html
+        resp.raise_for_status = lambda: None
+        return resp
+
+    with patch("extractors.gotsport_matches.requests.get", side_effect=fake_get):
+        with pytest.raises(GotSportAuthError, match="auth/CAPTCHA"):
+            scrape_gotsport_matches(42137, session_cookie="stale=xyz")
