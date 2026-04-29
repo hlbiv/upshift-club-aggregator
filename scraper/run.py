@@ -637,6 +637,27 @@ def _handle_totalglobalsports_matches(args: argparse.Namespace) -> None:
         )
 
 
+def _handle_mlsnext_matches(args: argparse.Namespace) -> None:
+    from extractors.mlsnext_matches import scrape_mlsnext_matches
+    from ingest.matches_writer import insert_matches
+
+    rows = scrape_mlsnext_matches(
+        league_name=args.league_name or "MLS NEXT",
+        season=args.season,
+    )
+    if not rows:
+        logger.warning("[mlsnext-matches] 0 matches scraped")
+        return
+    if args.dry_run:
+        logger.info("[dry-run] would upsert %d MLS NEXT matches", len(rows))
+        return
+    counts = insert_matches(rows, dry_run=False)
+    logger.info(
+        "[mlsnext-matches] inserted=%d updated=%d skipped=%d",
+        counts["inserted"], counts["updated"], counts["skipped"],
+    )
+
+
 def _handle_gotsport_rosters(args: argparse.Namespace) -> None:
     from gotsport_rosters_runner import run_gotsport_rosters
     from gotsport_rosters_runner import print_summary as _gr_print_summary
@@ -3938,6 +3959,9 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "tgs_matches": _handle_totalglobalsports_matches,
     "totalglobalsports-matches": _handle_totalglobalsports_matches,
     "totalglobalsports_matches": _handle_totalglobalsports_matches,
+    "mlsnext-matches": _handle_mlsnext_matches,
+    "mlsnext_matches": _handle_mlsnext_matches,
+    "mls-next-matches": _handle_mlsnext_matches,
     "gotsport-rosters": _handle_gotsport_rosters,
     "gotsport_rosters": _handle_gotsport_rosters,
     "tryouts-wordpress": _handle_tryouts_wordpress,
@@ -4022,6 +4046,7 @@ SOURCE_HELP: dict[str, str] = {
     "sincsports-matches": "populates tournament_matches from SincSports schedule (requires --tid)",
     "athleteone-matches": "populates matches + tournament_matches from all ECNL AthleteOne org_seasons",
     "tgs-matches": "populates matches from TGS (STXCL NPL) schedules (optional --event-id; default: all KNOWN_EVENT_IDS)",
+    "mlsnext-matches": "populates matches from MLS NEXT (Modular11) schedules for all age groups U13-U19",
     "gotsport-events": "populates events + event_teams from GotSport",
     "gotsport-rosters": "populates club_roster_snapshots from GotSport rosters",
     "totalglobalsports-events": "populates events + event_teams from TotalGlobalSports (alias: tgs-events)",
