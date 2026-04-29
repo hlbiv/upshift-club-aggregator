@@ -76,6 +76,11 @@ _RAPIDFUZZ_AVAILABLE = fuzz is not None and rf_process is not None
 # Raw-name stripping
 # ---------------------------------------------------------------------------
 
+# US Club Soccer National Cup suffix: "AYSO United 64 CA" / "CDA Slammers 64 CA S"
+# The "64" is the bracket size, followed by a 2-3 letter state code and an
+# optional "S" (small-sided) marker. Strip before other normalization passes.
+_USCLUB_64_PATTERN = re.compile(r"\s+64\s+[A-Z]{2,3}(\s+S)?\s*$")
+
 # Match U12 / U-12 / U 12 style age tokens.
 _AGE_PATTERN = re.compile(r"\bU-?\s*\d{1,2}\b", flags=re.IGNORECASE)
 # Four-digit birth-year tokens typical of youth soccer: 2004-2016 window.
@@ -121,6 +126,9 @@ def strip_team_descriptors(raw: str) -> str:
     s = raw.strip()
     if not s:
         return ""
+    # Strip US Club Soccer National Cup suffix before other passes so "64 CA"
+    # doesn't survive as a stray token (e.g. "AYSO United 64 CA" → "AYSO United").
+    s = _USCLUB_64_PATTERN.sub("", s)
     # Strip age patterns + birth years first (they're unambiguous).
     s = _AGE_PATTERN.sub(" ", s)
     s = _BIRTH_YEAR_PATTERN.sub(" ", s)
