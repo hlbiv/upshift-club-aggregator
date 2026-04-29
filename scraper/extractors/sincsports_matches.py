@@ -154,30 +154,37 @@ def _fetch_division_links(tid: str, year: int) -> List[Tuple[str, str, str]]:
     that ran in 2025 but haven't yet in 2026 are still scraped.
     """
     years_to_try = [year, year - 1] if year > 2000 else [year]
-    last_exc: Optional[Exception] = None
+    actual_year: Optional[int] = None
 
     for yr in years_to_try:
         url = f"{_BASE_URL}/schedule.aspx?div=N&tid={tid}&year={yr}&stid={tid}&syear={yr}"
         try:
             r = requests.get(url, headers=_HEADERS, timeout=25)
             r.raise_for_status()
+            actual_year = yr
+            break
         except requests.HTTPError as exc:
-            if exc.response is not None and exc.response.status_code == 403 and yr != years_to_try[-1]:
-                logger.debug(
-                    "[SincSports matches] 403 for tid=%s year=%d — retrying with year=%d",
-                    tid, yr, yr - 1,
-                )
-                last_exc = exc
+            is_403 = exc.response is not None and exc.response.status_code == 403
+            if is_403:
+                if yr != years_to_try[-1]:
+                    logger.debug(
+                        "[SincSports matches] 403 for tid=%s year=%d — retrying with year=%d",
+                        tid, yr, yr - 1,
+                    )
+                # 403 = no schedule published for this year; try next or give up.
                 continue
             logger.error("[SincSports matches] division listing failed tid=%s: %s", tid, exc)
             return []
         except requests.RequestException as exc:
             logger.error("[SincSports matches] division listing failed tid=%s: %s", tid, exc)
             return []
-        actual_year = yr
-        break  # successful response — exit the year loop
-    else:
-        logger.error("[SincSports matches] division listing failed tid=%s (all years tried): %s", tid, last_exc)
+
+    if actual_year is None:
+        # All years returned 403 — tournament is listed but schedule not yet published.
+        logger.debug(
+            "[SincSports matches] tid=%s: no schedule published for years %s (403 on all)",
+            tid, years_to_try,
+        )
         return []
 
     if actual_year != year:
