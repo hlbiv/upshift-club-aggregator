@@ -96,6 +96,21 @@ def test_strip_gotsport_ga_suffix():
     assert strip_team_descriptors("GA Rush") == "GA Rush"
 
 
+def test_strip_gotsport_state_suffix():
+    """GotSport appends 2-letter state codes to disambiguate regional programs.
+    Strip them so 'Beach FC VA' resolves to 'Beach FC'.
+    """
+    assert strip_team_descriptors("Beach FC VA") == "Beach FC"
+    assert strip_team_descriptors("Concorde Fire GA") == "Concorde Fire"  # GA = league suffix (handled first)
+    assert strip_team_descriptors("FC Tucson AZ") == "FC Tucson"
+    assert strip_team_descriptors("West Florida Flames FL") == "West Florida Flames"
+    # SC must NOT be stripped — it's also "Soccer Club" in club names.
+    assert strip_team_descriptors("City SC") == "City SC"
+    assert strip_team_descriptors("Omaha SC") == "Omaha SC"
+    # Mid-string state codes must NOT be stripped (only trailing).
+    assert strip_team_descriptors("Fairfax VA Union") == "Fairfax VA Union"
+
+
 # ---------------------------------------------------------------------------
 # Pass-3 subset guard — task #85 regression
 # ---------------------------------------------------------------------------
