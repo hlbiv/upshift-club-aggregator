@@ -114,6 +114,21 @@ AGE_GROUPS: Dict[int, str] = {
 
 _GENDER_MAP = {"MALE": "male", "FEMALE": "female"}
 
+# Maps Modular11 schedule_type slugs → tournament_matches.match_type CHECK values.
+# Valid DB values: 'group' | 'knockout' | 'placement' | 'friendly' | NULL.
+_MATCH_TYPE_MAP: Dict[str, Optional[str]] = {
+    "groupplay":    "group",
+    "hdgroupplay":  "group",
+    "adgroupplay":  "group",
+    "championship": "knockout",
+    "playoffs":     "knockout",
+    "premier":      "knockout",
+    "showcase":     "friendly",
+    "hdshowcase":   "friendly",
+    "adshowcase":   "friendly",
+    "bestof":       "placement",
+}
+
 _DATE_FORMATS = [
     "%m/%d/%y %I:%M%p",
     "%m/%d/%y %I:%M %p",
@@ -449,7 +464,7 @@ def _parse_page(
             "flight":            schedule_entry.schedule_type,
             "group_name":        field_name,
             "bracket_round":     bracket_round_note,
-            "match_type":        "group_play",
+            "match_type":        _MATCH_TYPE_MAP.get(schedule_entry.schedule_type),
             "status":            status,
             "source":            "mlsnext",
             "source_url":        source_url,
