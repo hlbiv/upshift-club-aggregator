@@ -93,7 +93,7 @@ _USCLUB_64_PATTERN = re.compile(r"\s+64\s+[A-Z]{2,3}(\s+S)?\s*$")
 # trailing word in a real club name (GA = Girls Academy, not Georgia —
 # a Georgia club would be "City SC (Alpharetta, GA)" not "City SC GA").
 _GOTSPORT_LEAGUE_SUFFIX_PATTERN = re.compile(
-    r"\s+(?:GA|ECNL|NPL|USYS|USSF)\s*$"
+    r"\s+\(?(?:GA|ECNL|NPL|USYS|USSF)\)?\s*$"
 )
 
 # GotSport state-code suffixes: GotSport appends a 2-letter US state
@@ -105,9 +105,9 @@ _GOTSPORT_LEAGUE_SUFFIX_PATTERN = re.compile(
 # other 2-letter state abbreviation is safe to strip as a trailing token.
 # GA is already handled by _GOTSPORT_LEAGUE_SUFFIX_PATTERN above.
 _GOTSPORT_STATE_SUFFIX_PATTERN = re.compile(
-    r"\s+(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|"
+    r"\s+\(?(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|"
     r"MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SD|TN|"
-    r"TX|UT|VT|VA|WA|WV|WI|WY)\s*$"
+    r"TX|UT|VT|VA|WA|WV|WI|WY)\)?\s*$"
 )
 
 # Match U12 / U-12 / U 12 style age tokens.
