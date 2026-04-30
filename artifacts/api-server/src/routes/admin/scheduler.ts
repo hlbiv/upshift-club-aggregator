@@ -60,6 +60,7 @@ export const ALLOWED_JOB_KEYS = [
   "weekly_state",
   "hourly_linker",
   "ga_matches",
+  "mlsnext_events",
 ] as const;
 export type AllowedJobKey = (typeof ALLOWED_JOB_KEYS)[number];
 
@@ -100,6 +101,11 @@ export const JOB_METADATA: ReadonlyArray<{
   {
     jobKey: "ga_matches",
     description: "Girls Academy matches (GotSport event 42137) — requires GOTSPORT_SESSION_COOKIE in Replit Secrets",
+    cronExpression: null,
+  },
+  {
+    jobKey: "mlsnext_events",
+    description: "MLS NEXT showcase/tournament matches (Cup=72, Qualifiers=74, Fest=75, GA Cup=80, Flex=88) — all five events",
     cronExpression: null,
   },
 ] as const;

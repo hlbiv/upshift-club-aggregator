@@ -672,6 +672,39 @@ def _handle_mlsnext_matches(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_mlsnext_events_matches(args: argparse.Namespace) -> None:
+    from extractors.mlsnext_events_matches import (
+        scrape_mlsnext_event_matches,
+        scrape_all_mlsnext_events,
+        EVENT_REGISTRY,
+    )
+    from ingest.tournament_matches_writer import insert_tournament_matches
+
+    # --event-id targets a single event; omitting scrapes all registered events.
+    if args.event_id:
+        try:
+            event_id = int(args.event_id)
+        except ValueError:
+            logger.error("[mlsnext-events] --event-id must be an integer, got %r", args.event_id)
+            return
+        rows = scrape_mlsnext_event_matches(event_id, season=args.season)
+    else:
+        rows = scrape_all_mlsnext_events(season=args.season)
+
+    if not rows:
+        logger.warning("[mlsnext-events] 0 matches scraped")
+        return
+    if args.dry_run:
+        logger.info("[dry-run] would upsert %d MLS NEXT event matches", len(rows))
+        return
+    counts = insert_tournament_matches(rows, dry_run=False)
+    logger.info(
+        "[mlsnext-events] inserted=%d updated=%d skipped=%d presweep_upgraded=%d",
+        counts["inserted"], counts["updated"], counts["skipped"],
+        counts.get("presweep_upgraded", 0),
+    )
+
+
 def _handle_gotsport_rosters(args: argparse.Namespace) -> None:
     from gotsport_rosters_runner import run_gotsport_rosters
     from gotsport_rosters_runner import print_summary as _gr_print_summary
@@ -3978,6 +4011,9 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "mlsnext-matches": _handle_mlsnext_matches,
     "mlsnext_matches": _handle_mlsnext_matches,
     "mls-next-matches": _handle_mlsnext_matches,
+    "mlsnext-events": _handle_mlsnext_events_matches,
+    "mlsnext_events": _handle_mlsnext_events_matches,
+    "mls-next-events": _handle_mlsnext_events_matches,
     "gotsport-rosters": _handle_gotsport_rosters,
     "gotsport_rosters": _handle_gotsport_rosters,
     "tryouts-wordpress": _handle_tryouts_wordpress,
@@ -4064,6 +4100,7 @@ SOURCE_HELP: dict[str, str] = {
     "athleteone-matches": "populates matches + tournament_matches from all ECNL AthleteOne org_seasons",
     "tgs-matches": "populates matches from TGS (STXCL NPL) schedules (optional --event-id; default: all KNOWN_EVENT_IDS)",
     "mlsnext-matches": "populates matches from MLS NEXT (Modular11) schedules for all age groups U13-U19",
+    "mlsnext-events": "populates tournament_matches from MLS NEXT events (Cup=72, Qualifiers=74, Fest=75, GA Cup=80, Flex=88); optional --event-id to target one",
     "gotsport-events": "populates events + event_teams from GotSport",
     "gotsport-rosters": "populates club_roster_snapshots from GotSport rosters",
     "totalglobalsports-events": "populates events + event_teams from TotalGlobalSports (alias: tgs-events)",
