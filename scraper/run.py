@@ -4013,7 +4013,6 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "mls-next-matches": _handle_mlsnext_matches,
     "mlsnext-events": _handle_mlsnext_events_matches,
     "mlsnext_events": _handle_mlsnext_events_matches,
-    "mls-next-events": _handle_mlsnext_events_matches,
     "gotsport-rosters": _handle_gotsport_rosters,
     "gotsport_rosters": _handle_gotsport_rosters,
     "tryouts-wordpress": _handle_tryouts_wordpress,
