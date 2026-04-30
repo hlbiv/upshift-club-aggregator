@@ -39,6 +39,7 @@ export const eventsSourceEnum = pgEnum("events_source_enum", [
   "totalglobalsports",
   "usclub_sanctioned",
   "athleteone",
+  "mlsnext",
 ]);
 
 // Separate enum for `club_roster_snapshots.source` so roster-specific
