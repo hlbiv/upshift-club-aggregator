@@ -86,10 +86,11 @@ def test_strip_pre_ecnl_descriptor():
 
 
 def test_strip_gotsport_ga_suffix():
-    """GotSport appends ' GA' (Girls Academy) to every team in GA events.
-    The suffix must be stripped so 'City SC GA' resolves to 'City SC'.
+    """GotSport appends ' GA' or ' (GA)' to every team in GA events.
+    Both forms must be stripped so 'City SC GA' / 'City SC (GA)' resolve to 'City SC'.
     """
     assert strip_team_descriptors("City SC GA") == "City SC"
+    assert strip_team_descriptors("City SC (GA)") == "City SC"
     assert strip_team_descriptors("SoCal Reds FC GA") == "SoCal Reds FC"
     assert strip_team_descriptors("SC del Sol GA") == "SC del Sol"
     # Mid-string GA must NOT be stripped (only trailing).
@@ -97,13 +98,19 @@ def test_strip_gotsport_ga_suffix():
 
 
 def test_strip_gotsport_state_suffix():
-    """GotSport appends 2-letter state codes to disambiguate regional programs.
-    Strip them so 'Beach FC VA' resolves to 'Beach FC'.
+    """GotSport appends state codes as ' VA' or ' (VA)' to disambiguate programs.
+    Both forms must be stripped so 'Beach FC (VA)' / 'Beach FC VA' resolve to 'Beach FC'.
     """
+    # Parenthetical form — the actual format GotSport uses in event 42137.
+    assert strip_team_descriptors("Beach FC (VA)") == "Beach FC"
+    assert strip_team_descriptors("FC Tucson (AZ)") == "FC Tucson"
+    assert strip_team_descriptors("West Florida Flames (FL)") == "West Florida Flames"
+    # Bare form (no parens) also handled.
     assert strip_team_descriptors("Beach FC VA") == "Beach FC"
-    assert strip_team_descriptors("Concorde Fire GA") == "Concorde Fire"  # GA = league suffix (handled first)
     assert strip_team_descriptors("FC Tucson AZ") == "FC Tucson"
-    assert strip_team_descriptors("West Florida Flames FL") == "West Florida Flames"
+    # GA handled by the league-suffix pattern first.
+    assert strip_team_descriptors("Concorde Fire (GA)") == "Concorde Fire"
+    assert strip_team_descriptors("Concorde Fire GA") == "Concorde Fire"
     # SC must NOT be stripped — it's also "Soccer Club" in club names.
     assert strip_team_descriptors("City SC") == "City SC"
     assert strip_team_descriptors("Omaha SC") == "Omaha SC"
