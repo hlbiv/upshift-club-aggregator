@@ -14,6 +14,8 @@ Populates:
   - ynt_call_ups.club_id                (from ynt_call_ups.club_name_raw)
   - odp_roster_entries.club_id          (from odp_roster_entries.club_name_raw)
   - player_id_selections.club_id        (from player_id_selections.club_name_raw)
+  - tournament_matches.home_club_id     (from tournament_matches.home_team_name)
+  - tournament_matches.away_club_id     (from tournament_matches.away_team_name)
 
 Resolution strategy (4 passes, each optimistic, short-circuits on first hit):
   1. Exact alias match          SELECT club_id FROM club_aliases WHERE alias_name = ?
@@ -466,6 +468,32 @@ def _update_match_side(cur, row_id: int, side: str, club_id: int) -> None:
     )
 
 
+def _fetch_null_tournament_matches(cur, side: str, limit: Optional[int]) -> List[Tuple[int, str]]:
+    assert side in ("home", "away")
+    club_col = f"{side}_club_id"
+    name_col = f"{side}_team_name"
+    sql = (
+        f"SELECT id, {name_col} FROM tournament_matches "
+        f"WHERE {club_col} IS NULL "
+        f"AND {name_col} IS NOT NULL AND {name_col} <> '' "
+        f"ORDER BY id"
+    )
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+    cur.execute(sql)
+    return list(cur.fetchall())
+
+
+def _update_tournament_match_side(cur, row_id: int, side: str, club_id: int) -> None:
+    assert side in ("home", "away")
+    club_col = f"{side}_club_id"
+    cur.execute(
+        f"UPDATE tournament_matches SET {club_col} = %s "
+        f"WHERE id = %s AND {club_col} IS NULL",
+        (club_id, row_id),
+    )
+
+
 def _fetch_null_roster_snapshots(
     cur, limit: Optional[int]
 ) -> List[Tuple[int, str]]:
@@ -659,6 +687,8 @@ class LinkerStats:
     ynt_call_ups_linked: int = 0
     odp_roster_entries_linked: int = 0
     player_id_selections_linked: int = 0
+    tournament_matches_home_linked: int = 0
+    tournament_matches_away_linked: int = 0
     unmatched_names: Counter = field(default_factory=Counter)
     pass_hits: Counter = field(default_factory=Counter)
     aliases_written: int = 0
@@ -675,6 +705,8 @@ class LinkerStats:
             + self.ynt_call_ups_linked
             + self.odp_roster_entries_linked
             + self.player_id_selections_linked
+            + self.tournament_matches_home_linked
+            + self.tournament_matches_away_linked
         )
 
     def unmatched_sample(self, n: int = 20) -> List[str]:
@@ -692,6 +724,8 @@ class LinkerStats:
             "ynt_call_ups_linked": self.ynt_call_ups_linked,
             "odp_roster_entries_linked": self.odp_roster_entries_linked,
             "player_id_selections_linked": self.player_id_selections_linked,
+            "tournament_matches_home_linked": self.tournament_matches_home_linked,
+            "tournament_matches_away_linked": self.tournament_matches_away_linked,
             "pass_1_alias_hits": self.pass_hits.get(1, 0),
             "pass_2_canonical_hits": self.pass_hits.get(2, 0),
             "pass_3_fuzzy_hits": self.pass_hits.get(3, 0),
@@ -753,11 +787,13 @@ def link_all(
         ynt_rows = _fetch_null_ynt_call_ups(cur, limit)
         odp_rows = _fetch_null_odp_roster_entries(cur, limit)
         player_id_rows = _fetch_null_player_id_selections(cur, limit)
+        tournament_home = _fetch_null_tournament_matches(cur, "home", limit)
+        tournament_away = _fetch_null_tournament_matches(cur, "away", limit)
         log.info(
             "Candidates: %d event_teams, %d matches.home, %d matches.away, "
             "%d roster_snapshots, %d roster_diffs, %d tryouts, "
             "%d commitments, %d ynt_call_ups, %d odp_roster_entries, "
-            "%d player_id_selections",
+            "%d player_id_selections, %d tournament_matches.home, %d tournament_matches.away",
             len(event_team_rows),
             len(matches_home),
             len(matches_away),
@@ -768,6 +804,8 @@ def link_all(
             len(ynt_rows),
             len(odp_rows),
             len(player_id_rows),
+            len(tournament_home),
+            len(tournament_away),
         )
 
         def _handle(raw: str) -> ResolveResult:
@@ -882,6 +920,24 @@ def link_all(
             if not dry_run:
                 _update_player_id_selection(cur, row_id, res.club_id)
 
+        # tournament_matches.home
+        for row_id, raw in tournament_home:
+            res = _handle(raw)
+            if res.club_id is None:
+                continue
+            stats.tournament_matches_home_linked += 1
+            if not dry_run:
+                _update_tournament_match_side(cur, row_id, "home", res.club_id)
+
+        # tournament_matches.away
+        for row_id, raw in tournament_away:
+            res = _handle(raw)
+            if res.club_id is None:
+                continue
+            stats.tournament_matches_away_linked += 1
+            if not dry_run:
+                _update_tournament_match_side(cur, row_id, "away", res.club_id)
+
         if dry_run:
             conn.rollback()
         else:
@@ -950,6 +1006,7 @@ def run_cli(dry_run: bool = False, limit: Optional[int] = None) -> int:
         f"{stats.ynt_call_ups_linked} ynt_call_ups, "
         f"{stats.odp_roster_entries_linked} odp_roster_entries, "
         f"{stats.player_id_selections_linked} player_id_selections, "
+        f"{stats.tournament_matches_home_linked + stats.tournament_matches_away_linked} tournament_match sides, "
         f"{len(stats.unmatched_names)} unmatched unique raw names."
     )
     if stats.unmatched_names:
