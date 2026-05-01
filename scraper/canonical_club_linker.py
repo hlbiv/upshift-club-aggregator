@@ -116,6 +116,11 @@ _GOTSPORT_STATE_SUFFIX_PATTERN = re.compile(
 _AGE_PATTERN = re.compile(r"\bU-?\s*\d{1,2}\b", flags=re.IGNORECASE)
 # Four-digit birth-year tokens typical of youth soccer: 2004-2016 window.
 _BIRTH_YEAR_PATTERN = re.compile(r"\b(?:19[89]\d|200\d|201[0-9]|202\d)\b")
+# Short 2-digit birth-year tokens (e.g. "07", "08", "09" as standalone word).
+# Only strip 2-digit numbers in the range 00-29 (plausible birth years) to
+# avoid nuking meaningful 2-digit tokens like "FC 90" or "1904 FC".
+# Applied AFTER _TEAM_TAG_PATTERN so "G08" is already gone.
+_SHORT_YEAR_PATTERN = re.compile(r"\b(?:0[0-9]|1[0-9]|2[0-9])\b")
 # Combined age+gender team tags: "16G", "17B", "07G", "2010B", "10g", etc.
 # (Common in ECNL/Pre-ECNL team naming — "FC Dallas 16G Pre-ECNL McAnally".)
 # Includes a bare "G/B" suffix to a 1–4 digit number; uppercase or lower.
@@ -127,8 +132,16 @@ _TEAM_TAG_PATTERN = re.compile(r"\b(?:\d{1,4}[GgBb]|[GgBb]\d{1,4})\b")
 # within a single club (e.g. "SOLAR NTX" = Solar Soccer Club North Texas
 # division). These appear as standalone tokens mid-name; strip them so the
 # residual club token can fuzzy-match the canonical.
+# Multi-word regional division tags must be stripped before the single-word
+# pass below. "S Cal" / "N Cal" are two tokens but act as a unit (Southern /
+# Northern California division). Applied first so residual single letters
+# don't survive into the stopword filter.
+_REGIONAL_DIV_MULTIWORD_PATTERN = re.compile(
+    r"\b(?:[SsNnEeWw]\s+Cal|So(?:uthern)?\s+Cal(?:ifornia)?|No(?:rthern)?\s+Cal(?:ifornia)?)\b",
+    flags=re.IGNORECASE,
+)
 _REGIONAL_DIV_PATTERN = re.compile(
-    r"\b(?:NTX|WTX|ETX|STX|NCA|SCA|NVA|SVA|NNJ|SNJ|NCO|SCO|NGA|SGA)\b",
+    r"\b(?:NTX|WTX|ETX|STX|NCA|SCA|NVA|SVA|NNJ|SNJ|NCO|SCO|NGA|SGA|S\.?Cal|N\.?Cal)\b",
     flags=re.IGNORECASE,
 )
 # Gender / program / division / generic tokens to strip. Conservative: we
@@ -145,6 +158,8 @@ _STOPWORDS: frozenset = frozenset({
     "m", "f", "b", "g",
     "academy", "elite", "premier", "select", "classic",
     "gold", "silver", "bronze", "white", "black", "red", "blue", "green",
+    "yellow", "orange", "purple", "pink", "maroon", "navy", "gray", "grey",
+    "crimson", "scarlet", "teal", "tan", "lime",
     "ecnl", "enpl", "npl", "mls", "usl", "nal", "eal", "edp",
     "rl", "national", "regional",
     "youth", "pre",
@@ -178,9 +193,12 @@ def strip_team_descriptors(raw: str) -> str:
     # pattern first (GA = Girls Academy); the state pattern is the fallback
     # for suffixes like VA, NC, TX that the league pattern doesn't cover.
     s = _GOTSPORT_STATE_SUFFIX_PATTERN.sub("", s)
-    # Strip regional division tags (e.g. "SOLAR NTX G08 07" → "SOLAR 07").
-    # These appear as mid-name tokens in MLS NEXT / GotSport when a club
-    # sub-divides by geography (NTX = North Texas, WTX = West Texas, etc.).
+    # Strip multi-word regional tags first (e.g. "S Cal", "N Cal" = Southern /
+    # Northern California US Club division). Must run before the single-token
+    # regional pass so "S" doesn't survive as an orphan letter.
+    s = _REGIONAL_DIV_MULTIWORD_PATTERN.sub(" ", s)
+    # Strip single-token regional division tags (e.g. "SOLAR NTX" → "SOLAR").
+    # NTX = North Texas, WTX = West Texas, NCA/SCA = Northern/Southern CA, etc.
     s = _REGIONAL_DIV_PATTERN.sub(" ", s)
     # Strip age patterns + birth years first (they're unambiguous).
     s = _AGE_PATTERN.sub(" ", s)
@@ -188,6 +206,9 @@ def strip_team_descriptors(raw: str) -> str:
     # Strip combined age+gender team tags like "16G", "17B" before
     # punctuation pass (which would otherwise leave them intact).
     s = _TEAM_TAG_PATTERN.sub(" ", s)
+    # Strip residual 2-digit birth-year tokens (e.g. "SOLAR 07") that survive
+    # after the 4-digit year and team-tag passes.
+    s = _SHORT_YEAR_PATTERN.sub(" ", s)
     # Split on hyphens BEFORE the stopword pass so "Pre-ECNL" decomposes
     # into ["Pre", "ECNL"] (both individually stripped). Keeping hyphens
     # would leave "Pre-ECNL" as one indivisible token that no stopword
