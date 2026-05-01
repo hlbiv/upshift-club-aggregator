@@ -418,6 +418,30 @@ class FakeCursor:
                 if r["id"] == row_id and r["club_id"] is None:
                     r["club_id"] = club_id
                     self.state["writes"].append(("player_id_selections", row_id, club_id))
+        elif sql.startswith("SELECT id, home_team_name FROM tournament_matches"):
+            self._last_result = [
+                (r["id"], r["home_team_name"])
+                for r in self.state["tournament_matches"]
+                if r["home_club_id"] is None
+            ]
+        elif sql.startswith("SELECT id, away_team_name FROM tournament_matches"):
+            self._last_result = [
+                (r["id"], r["away_team_name"])
+                for r in self.state["tournament_matches"]
+                if r["away_club_id"] is None
+            ]
+        elif sql.startswith("UPDATE tournament_matches SET home_club_id"):
+            club_id, row_id = params
+            for r in self.state["tournament_matches"]:
+                if r["id"] == row_id and r["home_club_id"] is None:
+                    r["home_club_id"] = club_id
+                    self.state["writes"].append(("tournament_matches", "home", row_id, club_id))
+        elif sql.startswith("UPDATE tournament_matches SET away_club_id"):
+            club_id, row_id = params
+            for r in self.state["tournament_matches"]:
+                if r["id"] == row_id and r["away_club_id"] is None:
+                    r["away_club_id"] = club_id
+                    self.state["writes"].append(("tournament_matches", "away", row_id, club_id))
         elif sql.startswith("UPDATE event_teams"):
             club_id, row_id = params
             for r in self.state["event_teams"]:
@@ -486,6 +510,7 @@ def _base_state():
         "ynt_call_ups": [],
         "odp_roster_entries": [],
         "player_id_selections": [],
+        "tournament_matches": [],
         "writes": [],
     }
 
@@ -581,6 +606,33 @@ def test_link_all_dry_run_does_not_write():
     assert conn.rolled_back and not conn.committed
     # And no alias was written even though there would be a fuzzy hit.
     assert not any(w[0] == "alias_insert" for w in state["writes"])
+
+
+def test_fuzzy_unsafe_subset_falls_through_to_better_candidate():
+    """
+    Regression: extractOne returned a single-token canonical (e.g. "Fire")
+    that scored 100 via token_set_ratio because its token appeared anywhere
+    in the query. _is_unsafe_subset_match blocked it, but the old code then
+    returned no-match (pass 4) instead of continuing to the next candidate.
+
+    The fix switches to extract(limit=10) and iterates past unsafe hits, so
+    "Concorde Fire Bergen" now resolves to "Concorde Fire" (the next safe
+    candidate) rather than falling through to no-match.
+    """
+    state = _base_state()
+    # Add a single-token canonical "Fire" that will score 100 via subset
+    # match against "Concorde Fire Bergen" but must be skipped as unsafe.
+    state["canonical_clubs"].append((199, "Fire"))
+    state["event_teams"].append({
+        "id": 50,
+        "team_name_raw": "Concorde Fire Bergen 2012 Girls",
+        "canonical_club_id": None,
+    })
+    conn = FakeConn(state)
+    stats = link_all(conn, dry_run=False)
+    # Should resolve to Concorde Fire (101), NOT "Fire" (199), NOT no-match.
+    assert stats.event_teams_linked == 1
+    assert state["event_teams"][0]["canonical_club_id"] == 101
 
 
 def test_link_all_idempotent_skips_non_null_rows():

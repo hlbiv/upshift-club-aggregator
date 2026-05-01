@@ -303,47 +303,49 @@ def resolve_raw_team_name(
         return ResolveResult(None, 4)
 
     if _RAPIDFUZZ_AVAILABLE:
-        match = rf_process.extractOne(
+        # Use extract (top-N) instead of extractOne so we can skip unsafe
+        # subset hits and fall through to the next best candidate.
+        # Single-word canonicals like "Stars" or "Galaxy" score 100 via
+        # token_set_ratio whenever their single token appears anywhere in
+        # the query, but _is_unsafe_subset_match blocks those. Without
+        # iterating past them, names like "Cedar Stars Bergen" get no-match
+        # instead of resolving to "Cedar Stars Academy – Bergen".
+        candidates = rf_process.extract(
             query,
             idx.fuzzy_choices,
             scorer=fuzz.token_set_ratio,
             score_cutoff=threshold,
+            limit=10,
         )
-        if match is None:
-            return ResolveResult(None, 4)
-
-        matched_choice, score, match_idx = match
-        if _is_unsafe_subset_match(query, matched_choice):
-            return ResolveResult(None, 4)
-        club_id = idx.fuzzy_club_ids[match_idx]
-        return ResolveResult(club_id, 3, score=int(score), matched_choice=matched_choice)
+        for matched_choice, score, match_idx in candidates:
+            if _is_unsafe_subset_match(query, matched_choice):
+                continue
+            club_id = idx.fuzzy_club_ids[match_idx]
+            return ResolveResult(club_id, 3, score=int(score), matched_choice=matched_choice)
+        return ResolveResult(None, 4)
 
     # Stdlib fallback — approximates rapidfuzz.fuzz.token_set_ratio
     # using difflib. Required when rapidfuzz isn't installed; keeps
     # pass-3 alive rather than silently dropping to pass 4 (the 0/224
     # regression root cause). Slower than the C backend but linker runs
     # nightly on a fixed batch so the cost is acceptable.
+    # Same top-N iteration pattern as the rapidfuzz path above: collect
+    # all candidates above the threshold, sort by score desc, skip unsafe.
     cutoff = threshold / 100.0
-    best_score = 0.0
-    best_idx: Optional[int] = None
-    best_choice: Optional[str] = None
+    scored: list = []
     for i, choice in enumerate(idx.fuzzy_choices):
         r = _difflib_token_set_ratio(query, choice)
-        if r >= cutoff and r > best_score:
-            best_score = r
-            best_idx = i
-            best_choice = choice
+        if r >= cutoff:
+            scored.append((r, i, choice))
+    scored.sort(key=lambda x: x[0], reverse=True)
 
-    if best_idx is None:
-        return ResolveResult(None, 4)
-
-    if best_choice is not None and _is_unsafe_subset_match(query, best_choice):
-        return ResolveResult(None, 4)
-
-    club_id = idx.fuzzy_club_ids[best_idx]
-    return ResolveResult(
-        club_id, 3, score=int(round(best_score * 100)), matched_choice=best_choice
-    )
+    for best_score, best_idx, best_choice in scored:
+        if not _is_unsafe_subset_match(query, best_choice):
+            club_id = idx.fuzzy_club_ids[best_idx]
+            return ResolveResult(
+                club_id, 3, score=int(round(best_score * 100)), matched_choice=best_choice
+            )
+    return ResolveResult(None, 4)
 
 
 def _is_unsafe_subset_match(query: str, matched_choice: str) -> bool:
