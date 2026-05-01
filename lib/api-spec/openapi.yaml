@@ -22,6 +22,8 @@ tags:
     description: Duplicate detection, coverage gaps, and league overlap analytics
   - name: colleges
     description: NCAA / NAIA college directory operations
+  - name: tryouts
+    description: Tryout listing and sitemap index operations
   - name: admin
     description: >
       Human-admin surface mounted at `/v1/admin/*` (full path
@@ -522,6 +524,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CoachSearchResponse"
+
+  /tryouts/index:
+    get:
+      operationId: getTryoutsIndex
+      tags: [tryouts]
+      summary: Index of state/age-group/gender combinations with upcoming tryouts
+      description: >
+        Returns every (state, age_group, gender) combination that has at least
+        one active upcoming tryout (status = 'upcoming' AND tryout_date >= today).
+        Null state or age_group rows are excluded. gender may be null.
+        Used to generate SEO sitemaps and browse pages at /tryouts/[state]/[age-gender]/.
+      security: []
+      responses:
+        "200":
+          description: Index of tryout facets with counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TryoutsIndexResponse"
 
   /analytics/duplicates:
     get:
@@ -4990,3 +5011,46 @@ components:
         - isProAcademy
         - competitiveTier
         - previousCompetitiveTier
+
+    TryoutsIndexItem:
+      type: object
+      description: >
+        A single facet combination returned by GET /tryouts/index. Represents
+        a (state, age_group, gender) tuple with at least one upcoming tryout.
+      properties:
+        state:
+          type: string
+          description: Two-letter US state code (e.g. GA, TX)
+        age_group:
+          type: string
+          description: Age group code (e.g. U14, U15)
+        gender:
+          type: string
+          nullable: true
+          description: "Gender string as stored (e.g. boys, girls, M, F) — null if not set on the tryout row"
+        count:
+          type: integer
+          description: Number of upcoming tryouts in this state/age-group/gender combination
+      required:
+        - state
+        - age_group
+        - gender
+        - count
+
+    TryoutsIndexResponse:
+      type: object
+      description: >
+        Response for GET /tryouts/index. Returns every distinct
+        (state, age_group, gender) combination that has at least one upcoming
+        tryout. total = count of distinct combinations (not sum of tryout counts).
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TryoutsIndexItem"
+        total:
+          type: integer
+          description: Total number of distinct state/age-group/gender combinations
+      required:
+        - items
+        - total
