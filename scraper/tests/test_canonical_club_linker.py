@@ -127,6 +127,24 @@ def test_strip_edp_div_code():
     assert strip_team_descriptors("Shore FC 64 NJ W") == "Shore FC"
 
 
+def test_strip_leading_year_bracket():
+    # "Gold" is a color stopword, so it's stripped too — the key check is
+    # that the leading "NN (YYU)" prefix is gone and the club root remains.
+    assert strip_team_descriptors("10 (16U) TUSA Gold") == "TUSA"
+    assert strip_team_descriptors("07 (19U) CFC Cosmos") == "CFC Cosmos"
+    assert strip_team_descriptors("13 (13U) FCA Inter") == "FCA Inter"
+
+
+def test_strip_edp_elite_64_and_parenthetical():
+    # "Elite 64" stripped, parenthetical state-division code stripped.
+    assert strip_team_descriptors("Shore FC Elite 64 (NJ-E)") == "Shore FC"
+    # "Green" is a color stopword so it's stripped along with Elite 64 / 08B / (NY-E).
+    assert strip_team_descriptors("Asphalt Green SC Elite 64 08B (NY-E)") == "Asphalt SC"
+    # EDP strips "Elite 64"; "U08B" survives (U-prefix prevents team-tag match)
+    # but the underscore alias in the DB resolves "Future_SA U08B" correctly.
+    assert strip_team_descriptors("Future_SA U08B Elite 64") == "Future_SA U08B"
+
+
 # ---------------------------------------------------------------------------
 # Pass-3 subset guard — task #85 regression
 # ---------------------------------------------------------------------------
