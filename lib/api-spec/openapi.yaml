@@ -404,6 +404,78 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /clubs/{id}/results:
+    get:
+      operationId: getClubResults
+      tags: [clubs]
+      summary: Win/loss/draw record for a club
+      description: >
+        Returns all club_results rows for the given club, ordered by season
+        descending then league ascending. club_results is a materialized
+        rollup recomputed nightly from the matches table.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Club results record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubResultsResponse"
+        "400":
+          description: Invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /matches:
+    get:
+      operationId: listMatches
+      tags: [matches]
+      summary: Paginated match listing with optional filters
+      description: >
+        Returns matches ordered by match_date descending. Optionally filter
+        by club_id (home OR away), season, and source.
+      parameters:
+        - name: club_id
+          in: query
+          schema:
+            type: integer
+          description: Filter by canonical club ID (home or away)
+        - name: season
+          in: query
+          schema:
+            type: string
+          description: Season substring filter (ILIKE)
+        - name: source
+          in: query
+          schema:
+            type: string
+          description: Source substring filter (ILIKE)
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated match list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchListResponse"
+
   /coaches/search:
     get:
       operationId: searchCoaches
@@ -2549,6 +2621,152 @@ components:
           type: string
       required:
         - error
+
+    ClubResultItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        season:
+          type: string
+        league:
+          type: string
+          nullable: true
+        division:
+          type: string
+          nullable: true
+        age_group:
+          type: string
+          nullable: true
+        gender:
+          type: string
+          nullable: true
+        wins:
+          type: integer
+        losses:
+          type: integer
+        draws:
+          type: integer
+        goals_for:
+          type: integer
+        goals_against:
+          type: integer
+        matches_played:
+          type: integer
+        last_calculated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - season
+        - wins
+        - losses
+        - draws
+        - goals_for
+        - goals_against
+        - matches_played
+        - last_calculated_at
+
+    ClubResultsResponse:
+      type: object
+      properties:
+        club_id:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClubResultItem"
+      required:
+        - club_id
+        - results
+
+    MatchItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        event_id:
+          type: integer
+          nullable: true
+        home_club_id:
+          type: integer
+          nullable: true
+        away_club_id:
+          type: integer
+          nullable: true
+        home_team_name:
+          type: string
+        away_team_name:
+          type: string
+        home_club_name:
+          type: string
+          nullable: true
+        away_club_name:
+          type: string
+          nullable: true
+        home_score:
+          type: integer
+          nullable: true
+        away_score:
+          type: integer
+          nullable: true
+        match_date:
+          type: string
+          nullable: true
+        age_group:
+          type: string
+          nullable: true
+        gender:
+          type: string
+          nullable: true
+        division:
+          type: string
+          nullable: true
+        season:
+          type: string
+          nullable: true
+        league:
+          type: string
+          nullable: true
+        status:
+          type: string
+        source:
+          type: string
+          nullable: true
+        source_url:
+          type: string
+          nullable: true
+        platform_match_id:
+          type: string
+          nullable: true
+        scraped_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - home_team_name
+        - away_team_name
+        - status
+        - scraped_at
+
+    MatchListResponse:
+      type: object
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/MatchItem"
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+      required:
+        - matches
+        - total
+        - page
+        - page_size
 
     Club:
       type: object

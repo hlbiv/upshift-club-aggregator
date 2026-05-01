@@ -119,7 +119,18 @@ _BIRTH_YEAR_PATTERN = re.compile(r"\b(?:19[89]\d|200\d|201[0-9]|202\d)\b")
 # Combined age+gender team tags: "16G", "17B", "07G", "2010B", "10g", etc.
 # (Common in ECNL/Pre-ECNL team naming — "FC Dallas 16G Pre-ECNL McAnally".)
 # Includes a bare "G/B" suffix to a 1–4 digit number; uppercase or lower.
-_TEAM_TAG_PATTERN = re.compile(r"\b\d{1,4}[GgBb]\b")
+# Also matches the reversed form "G08", "B12", "G10" used by MLS NEXT /
+# GotSport where the gender letter precedes the 2-digit birth year.
+_TEAM_TAG_PATTERN = re.compile(r"\b(?:\d{1,4}[GgBb]|[GgBb]\d{1,4})\b")
+
+# Regional division tags used by MLS NEXT / GotSport to sub-divide programs
+# within a single club (e.g. "SOLAR NTX" = Solar Soccer Club North Texas
+# division). These appear as standalone tokens mid-name; strip them so the
+# residual club token can fuzzy-match the canonical.
+_REGIONAL_DIV_PATTERN = re.compile(
+    r"\b(?:NTX|WTX|ETX|STX|NCA|SCA|NVA|SVA|NNJ|SNJ|NCO|SCO|NGA|SGA)\b",
+    flags=re.IGNORECASE,
+)
 # Gender / program / division / generic tokens to strip. Conservative: we
 # KEEP "FC", "SC", "AC", "CF" because those are canonical club-name parts
 # (Concorde FC, Hurricanes SC). `normalizer._canonical` strips them
@@ -167,6 +178,10 @@ def strip_team_descriptors(raw: str) -> str:
     # pattern first (GA = Girls Academy); the state pattern is the fallback
     # for suffixes like VA, NC, TX that the league pattern doesn't cover.
     s = _GOTSPORT_STATE_SUFFIX_PATTERN.sub("", s)
+    # Strip regional division tags (e.g. "SOLAR NTX G08 07" → "SOLAR 07").
+    # These appear as mid-name tokens in MLS NEXT / GotSport when a club
+    # sub-divides by geography (NTX = North Texas, WTX = West Texas, etc.).
+    s = _REGIONAL_DIV_PATTERN.sub(" ", s)
     # Strip age patterns + birth years first (they're unambiguous).
     s = _AGE_PATTERN.sub(" ", s)
     s = _BIRTH_YEAR_PATTERN.sub(" ", s)
