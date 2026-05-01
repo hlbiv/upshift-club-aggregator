@@ -337,3 +337,4 @@ export * from "./video-sources";
 export * from "./tournament-matches";
 export * from "./coach-licenses";
 export * from "./rankings";
+export * from "./linker";

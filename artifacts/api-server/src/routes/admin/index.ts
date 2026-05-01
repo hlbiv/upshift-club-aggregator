@@ -28,6 +28,7 @@ import {
   buildScraperSchedulesRouter,
   buildSchedulerJobsRouter,
 } from "./scheduler";
+import linkerRouter from "./linker";
 
 export const unauthAdminRouter: IRouter = Router();
 unauthAdminRouter.use(loginRouter);
@@ -48,3 +49,4 @@ authedAdminRouter.use("/coverage", coverageRouter);
 authedAdminRouter.use("/scraper-schedules", buildScraperSchedulesRouter());
 authedAdminRouter.use("/scheduler-jobs", buildSchedulerJobsRouter());
 authedAdminRouter.patch("/colleges/:id/resolve-url", resolveCollegeUrlHandler);
+authedAdminRouter.use("/linker", linkerRouter);
