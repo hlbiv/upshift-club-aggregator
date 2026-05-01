@@ -14,6 +14,7 @@ import {
   Map,
   Settings2,
   ShieldAlert,
+  Swords,
   Trophy,
   Workflow,
   type LucideIcon,
@@ -77,6 +78,7 @@ export default function Sidebar() {
       items: [
         { label: "Coverage", to: "/coverage", icon: Map },
         { label: "Growth", to: "/growth", icon: LineChart },
+        { label: "Matches", to: "/matches", icon: Swords },
       ],
     },
     {
