@@ -121,6 +121,11 @@ _BIRTH_YEAR_PATTERN = re.compile(r"\b(?:19[89]\d|200\d|201[0-9]|202\d)\b")
 # avoid nuking meaningful 2-digit tokens like "FC 90" or "1904 FC".
 # Applied AFTER _TEAM_TAG_PATTERN so "G08" is already gone.
 _SHORT_YEAR_PATTERN = re.compile(r"\b(?:0[0-9]|1[0-9]|2[0-9])\b")
+# Leading GotSport year-bracket: "10 (16U) ", "07 (19U) ", etc.
+# GotSport formats team names as "NN (YYU) Club Name" where NN is a 2-digit
+# sequence number and YYU is the age group. Strip the whole prefix before
+# any other substitution so later passes see just the club name.
+_LEADING_YEAR_BRACKET_PATTERN = re.compile(r"^\d{2}\s*\(\d{2}U\)\s*", re.IGNORECASE)
 # Combined age+gender team tags: "16G", "17B", "07G", "2010B", "10g", etc.
 # (Common in ECNL/Pre-ECNL team naming — "FC Dallas 16G Pre-ECNL McAnally".)
 # Includes a bare "G/B" suffix to a 1–4 digit number; uppercase or lower.
@@ -132,8 +137,14 @@ _TEAM_TAG_PATTERN = re.compile(r"\b(?:\d{1,4}[GgBb]|[GgBb]\d{1,4})\b")
 # mid-name: "64 NY E", "64 PA W", "64 NJ E", etc. The "64" is the bracket
 # size followed by a 2-3 letter state code and a direction letter (E/W/N).
 # Also matches bare "64" as a trailing token when the rest was already stripped.
+# "Elite 64" — appears after age/gender tags are stripped (e.g. "Future_SA U08B Elite 64").
+# "(NY-E)" / "(PA-E)" / "(PA-W)" — parenthetical state-division codes appended
+# by GotSport in EDP events (e.g. "Asphalt Green SC Elite 64 08B (NY-E)").
 _EDP_DIV_PATTERN = re.compile(
-    r"\b64(?:\s+[A-Z]{2,3}\s+[EWN])?\b", re.IGNORECASE
+    r"\bElite\s+64\b"
+    r"|\b64(?:\s+[A-Z]{2,3}\s+[EWN])?\b"
+    r"|\([A-Z]{2}-[EWN]\)",
+    re.IGNORECASE,
 )
 
 # Regional division tags used by MLS NEXT / GotSport to sub-divide programs
@@ -191,6 +202,9 @@ def strip_team_descriptors(raw: str) -> str:
     s = raw.strip()
     if not s:
         return ""
+    # Strip leading GotSport year-bracket prefix (e.g. "10 (16U) TUSA Gold" → "TUSA Gold").
+    # Applied first so subsequent passes see only the club-name portion.
+    s = _LEADING_YEAR_BRACKET_PATTERN.sub("", s)
     # Strip US Club Soccer National Cup suffix before other passes so "64 CA"
     # doesn't survive as a stray token (e.g. "AYSO United 64 CA" → "AYSO United").
     s = _USCLUB_64_PATTERN.sub("", s)
