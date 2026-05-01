@@ -128,6 +128,14 @@ _SHORT_YEAR_PATTERN = re.compile(r"\b(?:0[0-9]|1[0-9]|2[0-9])\b")
 # GotSport where the gender letter precedes the 2-digit birth year.
 _TEAM_TAG_PATTERN = re.compile(r"\b(?:\d{1,4}[GgBb]|[GgBb]\d{1,4})\b")
 
+# EDP Soccer (Eastern Development Program) league division codes embedded
+# mid-name: "64 NY E", "64 PA W", "64 NJ E", etc. The "64" is the bracket
+# size followed by a 2-3 letter state code and a direction letter (E/W/N).
+# Also matches bare "64" as a trailing token when the rest was already stripped.
+_EDP_DIV_PATTERN = re.compile(
+    r"\b64(?:\s+[A-Z]{2,3}\s+[EWN])?\b", re.IGNORECASE
+)
+
 # Regional division tags used by MLS NEXT / GotSport to sub-divide programs
 # within a single club (e.g. "SOLAR NTX" = Solar Soccer Club North Texas
 # division). These appear as standalone tokens mid-name; strip them so the
@@ -200,6 +208,9 @@ def strip_team_descriptors(raw: str) -> str:
     # Strip single-token regional division tags (e.g. "SOLAR NTX" → "SOLAR").
     # NTX = North Texas, WTX = West Texas, NCA/SCA = Northern/Southern CA, etc.
     s = _REGIONAL_DIV_PATTERN.sub(" ", s)
+    # Strip EDP Soccer division codes (e.g. "Asphalt SC 64 NY E" → "Asphalt SC").
+    # Also removes a bare trailing "64" that survives from other stripping passes.
+    s = _EDP_DIV_PATTERN.sub(" ", s)
     # Strip age patterns + birth years first (they're unambiguous).
     s = _AGE_PATTERN.sub(" ", s)
     s = _BIRTH_YEAR_PATTERN.sub(" ", s)

@@ -118,6 +118,15 @@ def test_strip_gotsport_state_suffix():
     assert strip_team_descriptors("Fairfax VA Union") == "Fairfax VA Union"
 
 
+def test_strip_edp_div_code():
+    """EDP Soccer embeds division codes like '64 NY E' / '64 PA W' mid-name.
+    All three parts (bracket-size, state, direction) must be stripped together.
+    """
+    assert strip_team_descriptors("Asphalt SC 64 NY E") == "Asphalt SC"
+    assert strip_team_descriptors("West Mont United 64 PA E") == "West Mont United"
+    assert strip_team_descriptors("Shore FC 64 NJ W") == "Shore FC"
+
+
 # ---------------------------------------------------------------------------
 # Pass-3 subset guard — task #85 regression
 # ---------------------------------------------------------------------------
