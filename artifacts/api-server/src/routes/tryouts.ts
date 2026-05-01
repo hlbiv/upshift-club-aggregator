@@ -30,7 +30,7 @@ import {
   type NextFunction,
 } from "express";
 import { db } from "@workspace/db";
-import { tryouts } from "@workspace/db/schema";
+import { tryouts, tryoutAlertSubscriptions } from "@workspace/db/schema";
 import {
   eq,
   ilike,
@@ -44,6 +44,7 @@ import {
   TryoutSubmitBody,
   TryoutPublic,
 } from "@hlbiv/api-zod";
+import { z } from "zod";
 import { parsePagination, buildWhere } from "../lib/pagination";
 
 function escapeLike(raw: string): string {
@@ -431,6 +432,38 @@ export function makeTryoutsRouter(
       });
     } catch (err) {
       next(err);
+    }
+  });
+
+  router.post("/tryouts/alerts", async (req, res, next): Promise<void> => {
+    try {
+      const bodySchema = z.object({
+        email: z.string().email(),
+        zipCode: z.string().min(5).max(10),
+        radiusMiles: z.number().int().min(5).max(200).default(25),
+        ageGroup: z.string().max(20).optional(),
+        gender: z.enum(['male', 'female', 'any']).optional(),
+        minTier: z.string().max(50).optional(),
+      })
+
+      const parsed = bodySchema.safeParse(req.body)
+      if (!parsed.success) {
+        res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() })
+        return
+      }
+
+      const { email, zipCode, radiusMiles, ageGroup, gender, minTier } = parsed.data
+
+      await db.execute(sql`
+        INSERT INTO tryout_alert_subscriptions (email, zip_code, radius_miles, age_group, gender, min_tier, created_at, updated_at)
+        VALUES (${email}, ${zipCode}, ${radiusMiles}, ${ageGroup ?? null}, ${gender ?? null}, ${minTier ?? null}, NOW(), NOW())
+        ON CONFLICT (email, zip_code, COALESCE(age_group, ''), COALESCE(gender, ''))
+        DO UPDATE SET radius_miles = ${radiusMiles}, min_tier = ${minTier ?? null}, updated_at = NOW()
+      `)
+
+      res.status(201).json({ subscribed: true, email, zipCode })
+    } catch (err) {
+      next(err)
     }
   });
 
