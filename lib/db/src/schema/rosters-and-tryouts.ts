@@ -30,6 +30,7 @@ import {
   uniqueIndex,
   check,
   index,
+  varchar,
 } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 import { canonicalClubs } from "./index";
@@ -280,3 +281,33 @@ export const rosterQualityFlagsRelations = relations(
 
 export type RosterQualityFlag = typeof rosterQualityFlags.$inferSelect;
 export type InsertRosterQualityFlag = typeof rosterQualityFlags.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// tryout_alert_subscriptions — parent sign-up for tryout email alerts.
+// ---------------------------------------------------------------------------
+
+export const tryoutAlertSubscriptions = pgTable(
+  'tryout_alert_subscriptions',
+  {
+    id: serial('id').primaryKey(),
+    email: varchar('email', { length: 255 }).notNull(),
+    zipCode: varchar('zip_code', { length: 10 }).notNull(),
+    radiusMiles: integer('radius_miles').notNull().default(25),
+    ageGroup: varchar('age_group', { length: 20 }),
+    gender: varchar('gender', { length: 10 }),
+    minTier: varchar('min_tier', { length: 50 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('tryout_alerts_email_zip_bracket_uq').on(
+      table.email,
+      table.zipCode,
+      sql`COALESCE(${table.ageGroup}, '')`,
+      sql`COALESCE(${table.gender}, '')`
+    ),
+  ]
+)
+
+export type TryoutAlertSubscription = typeof tryoutAlertSubscriptions.$inferSelect
+export type NewTryoutAlertSubscription = typeof tryoutAlertSubscriptions.$inferInsert

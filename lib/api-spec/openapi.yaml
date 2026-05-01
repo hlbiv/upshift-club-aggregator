@@ -23,7 +23,7 @@ tags:
   - name: colleges
     description: NCAA / NAIA college directory operations
   - name: tryouts
-    description: Tryout listing and sitemap index operations
+    description: Tryout listings, sitemap index, and alert subscriptions
   - name: admin
     description: >
       Human-admin surface mounted at `/v1/admin/*` (full path
@@ -711,6 +711,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GirlsPipelineResponse"
+
+  /tryouts/alerts:
+    post:
+      summary: Subscribe to tryout alerts
+      operationId: subscribeTryoutAlerts
+      tags:
+        - tryouts
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TryoutAlertSubscriptionRequest'
+      responses:
+        '201':
+          description: Subscription created or updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TryoutAlertSubscriptionResponse'
+        '400':
+          description: Invalid request body
 
   # ===========================================================================
   # Admin surface — `/v1/admin/*`.
@@ -5139,3 +5162,37 @@ components:
       required:
         - items
         - total
+
+    TryoutAlertSubscriptionRequest:
+      type: object
+      required: [email, zipCode]
+      properties:
+        email:
+          type: string
+          format: email
+        zipCode:
+          type: string
+          minLength: 5
+          maxLength: 10
+        radiusMiles:
+          type: integer
+          minimum: 5
+          maximum: 200
+          default: 25
+        ageGroup:
+          type: string
+        gender:
+          type: string
+          enum: [male, female, any]
+        minTier:
+          type: string
+    TryoutAlertSubscriptionResponse:
+      type: object
+      required: [subscribed, email, zipCode]
+      properties:
+        subscribed:
+          type: boolean
+        email:
+          type: string
+        zipCode:
+          type: string

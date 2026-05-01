@@ -23,7 +23,8 @@
     "pino": "^9",
     "pino-http": "^10",
     "swagger-ui-express": "^5.0.1",
-    "yaml": "^2.8.3"
+    "yaml": "^2.8.3",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
