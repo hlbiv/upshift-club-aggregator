@@ -96,17 +96,25 @@ export default function SearchPage() {
                         id #{c.id}
                       </p>
                     </div>
-                    {c.website ? (
-                      <a
-                        href={c.website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Link
+                        to={`/clubs/${c.id}`}
+                        className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
                       >
-                        Site
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : null}
+                        View
+                      </Link>
+                      {c.website ? (
+                        <a
+                          href={c.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                        >
+                          Site
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>

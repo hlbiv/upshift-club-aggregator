@@ -21,6 +21,7 @@ import CoveragePage from "./pages/Coverage";
 import CoverageLeaguePage from "./pages/CoverageLeague";
 import SchedulerPage from "./pages/Scheduler";
 import MatchesPage from "./pages/Matches";
+import ClubDetailPage from "./pages/ClubDetail";
 
 /**
  * Admin dashboard router (rev 2 — sidebar shell + per-check data quality).
@@ -214,6 +215,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <MatchesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/clubs/:id"
+        element={
+          <ProtectedRoute>
+            <ClubDetailPage />
           </ProtectedRoute>
         }
       />
