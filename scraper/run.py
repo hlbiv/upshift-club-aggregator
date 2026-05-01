@@ -3961,6 +3961,40 @@ def _handle_ncaa_crawl_athletics_pages(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_sincsports_rankings(args: argparse.Namespace) -> None:
+    from extractors.sincsports_rankings import scrape_sincsports_rankings
+    from ingest.rankings_writer import insert_rankings
+
+    rows = scrape_sincsports_rankings(
+        age_groups=None,   # default: U09–U19
+        genders=None,      # default: ['B', 'G']
+        season=args.season,
+        state="National",
+    )
+
+    if not rows:
+        logger.warning(
+            "[sincsports-rankings] 0 rows scraped. "
+            "SincSports rankings are dynamically loaded via JavaScript/AJAX — "
+            "the static HTML parser found no pre-rendered rows. "
+            "A Playwright-based fetch (--source sincsports-rankings with JS support) "
+            "is needed for full data capture."
+        )
+        return
+
+    if args.dry_run:
+        logger.info(
+            "[dry-run] would upsert %d sincsports ranking rows", len(rows),
+        )
+        return
+
+    counts = insert_rankings(rows, dry_run=False)
+    logger.info(
+        "[sincsports-rankings] inserted=%d updated=%d skipped=%d",
+        counts["inserted"], counts["updated"], counts["skipped"],
+    )
+
+
 # Kebab-case is the canonical, documented form in the CLI help output;
 # snake-case aliases exist only because early scripts sometimes passed
 # them. Keep both in SOURCE_HANDLERS but ONLY kebab in SOURCE_HELP (snake
@@ -4086,6 +4120,8 @@ SOURCE_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "validate_college_websites": _handle_validate_college_websites,
     "ncaa-enrich-websites-conferences": _handle_ncaa_enrich_websites_conferences,
     "ncaa_enrich_websites_conferences": _handle_ncaa_enrich_websites_conferences,
+    "sincsports-rankings": _handle_sincsports_rankings,
+    "sincsports_rankings": _handle_sincsports_rankings,
 }
 
 # One entry per UNIQUE source (kebab form only). Used to build the
@@ -4151,6 +4187,7 @@ SOURCE_HELP: dict[str, str] = {
     "ncaa-crawl-athletics-pages": "fill colleges.soccer_program_url by GETting each school's athletics homepage (colleges.website) and extracting soccer-program links from the page HTML. CMS-agnostic — works for BlueStar, AthleticNet, custom .edu sites, and any platform that links to a soccer page. Only requires a hard hit (soccer keyword in the href path). Targets rows where website IS NOT NULL AND soccer_program_url IS NULL. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both (default both), --limit N (default 300), --dry-run.",
     "ncaa-enrich-websites-conferences": "fill colleges.website for D2/D3 rows by scraping conference member-school directories. Maps colleges.conference to a curated conference→URL dict, fetches each member page, extracts (school_name, athletics_url) pairs, fuzzy-matches (token_set_ratio >= 88) to college rows, and writes website where NULL. Never overwrites existing data. Optional --division D2|D3|both (default both), --gender, --limit N (default 500), --dry-run.",
     "validate-college-websites": "HEAD-check every colleges.website (where soccer_program_url IS NULL) and set website=NULL for any that fail DNS resolution (NameResolutionError = domain gone/expired). Keeps 403/429/timeout values — those sites are alive but blocking. Run before ncaa-resolve-urls-wikipedia to clear stale domains so Wikipedia can re-fill them. Optional --division D1|D2|D3|NAIA, --gender mens|womens|both (default both), --limit N (default 1000), --dry-run.",
+    "sincsports-rankings": "scrape SincSports USA Rank club rankings (soccer.sincsports.com/rank.aspx) into club_rankings table. NOTE: rankings page is dynamically loaded via JS/AJAX — static parser only captures server-pre-rendered rows; full capture requires a Playwright-based follow-up. Optional --season.",
 }
 
 
