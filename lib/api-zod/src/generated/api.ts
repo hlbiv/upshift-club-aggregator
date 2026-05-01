@@ -414,6 +414,96 @@ export const GetClubStaffResponse = zod.object({
 });
 
 /**
+ * Returns all club_results rows for the given club, ordered by season descending then league ascending. club_results is a materialized rollup recomputed nightly from the matches table.
+
+ * @summary Win/loss/draw record for a club
+ */
+export const GetClubResultsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetClubResultsResponse = zod.object({
+  club_id: zod.number(),
+  results: zod.array(
+    zod.object({
+      id: zod.number(),
+      season: zod.string(),
+      league: zod.string().nullish(),
+      division: zod.string().nullish(),
+      age_group: zod.string().nullish(),
+      gender: zod.string().nullish(),
+      wins: zod.number(),
+      losses: zod.number(),
+      draws: zod.number(),
+      goals_for: zod.number(),
+      goals_against: zod.number(),
+      matches_played: zod.number(),
+      last_calculated_at: zod.coerce.date(),
+    }),
+  ),
+});
+
+/**
+ * Returns matches ordered by match_date descending. Optionally filter by club_id (home OR away), season, and source.
+
+ * @summary Paginated match listing with optional filters
+ */
+export const listMatchesQueryPageDefault = 1;
+export const listMatchesQueryPageSizeDefault = 20;
+export const listMatchesQueryPageSizeMax = 100;
+
+export const ListMatchesQueryParams = zod.object({
+  club_id: zod.coerce
+    .number()
+    .optional()
+    .describe("Filter by canonical club ID (home or away)"),
+  season: zod.coerce
+    .string()
+    .optional()
+    .describe("Season substring filter (ILIKE)"),
+  source: zod.coerce
+    .string()
+    .optional()
+    .describe("Source substring filter (ILIKE)"),
+  page: zod.coerce.number().default(listMatchesQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .max(listMatchesQueryPageSizeMax)
+    .default(listMatchesQueryPageSizeDefault),
+});
+
+export const ListMatchesResponse = zod.object({
+  matches: zod.array(
+    zod.object({
+      id: zod.number(),
+      event_id: zod.number().nullish(),
+      home_club_id: zod.number().nullish(),
+      away_club_id: zod.number().nullish(),
+      home_team_name: zod.string(),
+      away_team_name: zod.string(),
+      home_club_name: zod.string().nullish(),
+      away_club_name: zod.string().nullish(),
+      home_score: zod.number().nullish(),
+      away_score: zod.number().nullish(),
+      match_date: zod.string().nullish(),
+      age_group: zod.string().nullish(),
+      gender: zod.string().nullish(),
+      division: zod.string().nullish(),
+      season: zod.string().nullish(),
+      league: zod.string().nullish(),
+      status: zod.string(),
+      source: zod.string().nullish(),
+      source_url: zod.string().nullish(),
+      platform_match_id: zod.string().nullish(),
+      scraped_at: zod.coerce.date(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  page_size: zod.number(),
+});
+
+/**
  * @summary Search coaches by club, title, and minimum confidence score
  */
 export const searchCoachesQueryMinConfidenceMin = 0;
@@ -463,6 +553,46 @@ export const SearchCoachesResponse = zod.object({
   page: zod.number(),
   page_size: zod.number(),
 });
+
+/**
+ * Returns every (state, age_group, gender) combination that has at least one active upcoming tryout (status = 'upcoming' AND tryout_date >= today). Null state or age_group rows are excluded. gender may be null. Used to generate SEO sitemaps and browse pages at /tryouts/[state]/[age-gender]/.
+
+ * @summary Index of state/age-group/gender combinations with upcoming tryouts
+ */
+export const GetTryoutsIndexResponse = zod
+  .object({
+    items: zod.array(
+      zod
+        .object({
+          state: zod
+            .string()
+            .describe("Two-letter US state code (e.g. GA, TX)"),
+          age_group: zod.string().describe("Age group code (e.g. U14, U15)"),
+          gender: zod
+            .string()
+            .nullable()
+            .describe(
+              "Gender string as stored (e.g. boys, girls, M, F) — null if not set on the tryout row",
+            ),
+          count: zod
+            .number()
+            .describe(
+              "Number of upcoming tryouts in this state\/age-group\/gender combination",
+            ),
+        })
+        .describe(
+          "A single facet combination returned by GET \/tryouts\/index. Represents a (state, age_group, gender) tuple with at least one upcoming tryout.\n",
+        ),
+    ),
+    total: zod
+      .number()
+      .describe(
+        "Total number of distinct state\/age-group\/gender combinations",
+      ),
+  })
+  .describe(
+    "Response for GET \/tryouts\/index. Returns every distinct (state, age_group, gender) combination that has at least one upcoming tryout. total = count of distinct combinations (not sum of tryout counts).\n",
+  );
 
 /**
  * Returns unordered pairs (`club_a_id < club_b_id`) derived from normalized-name/state clusters. Each pair includes any persisted review decision so an admin UI can walk the queue without a second query. The default `status=pending` view hides pairs that were already decided as merged or rejected.
@@ -672,6 +802,65 @@ export const AnalyticsOverlapResponse = zod.object({
   total: zod.number(),
   page: zod.number(),
   page_size: zod.number(),
+});
+
+/**
+ * Returns clubs appearing in Girls Academy (GA) and/or MLS NEXT Girls leagues via `club_affiliations.source_name` ILIKE match. Each club is enriched with commitment counts for the last 3 graduating classes (2025–2027 relative to 2026) and top 3 coaches ranked by D1 placement count from `coach_effectiveness`.
+
+ * @summary Girls pipeline clubs — GA and MLS NEXT Girls with commitment data
+ */
+export const AnalyticsGirlsPipelineResponse = zod.object({
+  clubs: zod.array(
+    zod.object({
+      clubId: zod.number(),
+      clubName: zod.string(),
+      state: zod.string().nullable(),
+      competitiveTier: zod.string(),
+      leagues: zod
+        .array(zod.string())
+        .describe("Which of Girls Academy \/ MLS NEXT Girls the club is in"),
+      commitmentCount3yr: zod
+        .number()
+        .describe("Commitment count for graduation years 2025–2027"),
+      topCoaches: zod
+        .array(
+          zod.object({
+            coachId: zod.number().nullable(),
+            name: zod.string(),
+            playersPlacedD1: zod.number(),
+          }),
+        )
+        .describe("Top 3 coaches by D1 player placements"),
+    }),
+  ),
+  totalClubs: zod.number(),
+  generatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Subscribe to tryout alerts
+ */
+export const subscribeTryoutAlertsBodyZipCodeMin = 5;
+export const subscribeTryoutAlertsBodyZipCodeMax = 10;
+
+export const subscribeTryoutAlertsBodyRadiusMilesDefault = 25;
+export const subscribeTryoutAlertsBodyRadiusMilesMin = 5;
+export const subscribeTryoutAlertsBodyRadiusMilesMax = 200;
+
+export const SubscribeTryoutAlertsBody = zod.object({
+  email: zod.string().email(),
+  zipCode: zod
+    .string()
+    .min(subscribeTryoutAlertsBodyZipCodeMin)
+    .max(subscribeTryoutAlertsBodyZipCodeMax),
+  radiusMiles: zod
+    .number()
+    .min(subscribeTryoutAlertsBodyRadiusMilesMin)
+    .max(subscribeTryoutAlertsBodyRadiusMilesMax)
+    .default(subscribeTryoutAlertsBodyRadiusMilesDefault),
+  ageGroup: zod.string().optional(),
+  gender: zod.enum(["male", "female", "any"]).optional(),
+  minTier: zod.string().optional(),
 });
 
 /**
@@ -1498,6 +1687,109 @@ export const GetCoachMissesResponse = zod.object({
   total: zod.number(),
   page: zod.number(),
   pageSize: zod.number(),
+});
+
+/**
+ * Paginated list of `college_roster_quality_flags` rows joined to `colleges` (for `college_name`) and `admin_users` (for `resolved_by_email`). Supports filtering by `flag_type`, `resolved` state, and `college_id`.
+
+ * @summary college_roster_quality_flags rows, joined with college context
+ */
+
+export const getCollegeRosterQualityFlagsQueryPageDefault = 1;
+
+export const getCollegeRosterQualityFlagsQueryPageSizeDefault = 50;
+export const getCollegeRosterQualityFlagsQueryPageSizeMax = 200;
+
+export const GetCollegeRosterQualityFlagsQueryParams = zod.object({
+  flag_type: zod
+    .enum(["historical_no_data", "partial_parse", "url_needs_review"])
+    .optional()
+    .describe("Optional filter by flag_type (CHECK-list values)."),
+  resolved: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "If true, return only resolved flags; if false, return only active (unresolved) flags; if omitted, return both.\n",
+    ),
+  college_id: zod.coerce.number().min(1).optional(),
+  page: zod.coerce
+    .number()
+    .min(1)
+    .default(getCollegeRosterQualityFlagsQueryPageDefault),
+  page_size: zod.coerce
+    .number()
+    .min(1)
+    .max(getCollegeRosterQualityFlagsQueryPageSizeMax)
+    .default(getCollegeRosterQualityFlagsQueryPageSizeDefault),
+});
+
+export const GetCollegeRosterQualityFlagsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      collegeId: zod.number(),
+      collegeName: zod.string(),
+      academicYear: zod.string(),
+      flagType: zod.enum([
+        "historical_no_data",
+        "partial_parse",
+        "url_needs_review",
+      ]),
+      metadata: zod.record(zod.string(), zod.unknown()),
+      createdAt: zod.coerce.date(),
+      resolvedAt: zod.coerce.date().nullable(),
+      resolvedByEmail: zod.string().nullable(),
+      resolutionNote: zod.string().nullable(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
+ * Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on the flag. The `colleges` row is NOT mutated by this endpoint — use `resolve-url` to update the URL and resolve in one transaction.
+Returns 400 if the flag is already resolved, 404 if unknown id.
+
+ * @summary Mark a college_roster_quality_flags row as resolved
+ */
+
+export const ResolveCollegeRosterQualityFlagParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const ResolveCollegeRosterQualityFlagBody = zod.object({
+  note: zod.string().optional().describe("Optional resolution note."),
+});
+
+/**
+ * Accepts `{ new_soccer_program_url: string }`. In a single transaction:
+  1. Validates the flag exists and is unresolved.
+  2. Updates `colleges.soccer_program_url` for the flag's `college_id`.
+  3. Marks the flag resolved with `resolution_note = 'url_provided'`.
+
+Returns 400 if the URL is missing/invalid or the flag is already resolved, 404 if the flag id is unknown.
+
+ * @summary Resolve a college quality flag by providing the corrected soccer_program_url
+ */
+
+export const ResolveCollegeRosterQualityFlagWithUrlParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const ResolveCollegeRosterQualityFlagWithUrlBody = zod.object({
+  new_soccer_program_url: zod
+    .string()
+    .url()
+    .describe(
+      "The corrected soccer program URL to write to colleges.soccer_program_url.",
+    ),
+});
+
+export const ResolveCollegeRosterQualityFlagWithUrlResponse = zod.object({
+  success: zod.boolean(),
+  college_id: zod.number(),
+  new_soccer_program_url: zod.string(),
 });
 
 /**

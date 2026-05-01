@@ -13,6 +13,58 @@ export interface ErrorResponse {
   error: string;
 }
 
+export interface ClubResultItem {
+  id: number;
+  season: string;
+  league?: string | null;
+  division?: string | null;
+  age_group?: string | null;
+  gender?: string | null;
+  wins: number;
+  losses: number;
+  draws: number;
+  goals_for: number;
+  goals_against: number;
+  matches_played: number;
+  last_calculated_at: string;
+}
+
+export interface ClubResultsResponse {
+  club_id: number;
+  results: ClubResultItem[];
+}
+
+export interface MatchItem {
+  id: number;
+  event_id?: number | null;
+  home_club_id?: number | null;
+  away_club_id?: number | null;
+  home_team_name: string;
+  away_team_name: string;
+  home_club_name?: string | null;
+  away_club_name?: string | null;
+  home_score?: number | null;
+  away_score?: number | null;
+  match_date?: string | null;
+  age_group?: string | null;
+  gender?: string | null;
+  division?: string | null;
+  season?: string | null;
+  league?: string | null;
+  status: string;
+  source?: string | null;
+  source_url?: string | null;
+  platform_match_id?: string | null;
+  scraped_at: string;
+}
+
+export interface MatchListResponse {
+  matches: MatchItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface Club {
   id: number;
   club_name_canonical: string;
@@ -315,6 +367,31 @@ export interface OverlapResponse {
   total: number;
   page: number;
   page_size: number;
+}
+
+export interface GirlsPipelineCoach {
+  coachId: number | null;
+  name: string;
+  playersPlacedD1: number;
+}
+
+export interface GirlsPipelineClub {
+  clubId: number;
+  clubName: string;
+  state: string | null;
+  competitiveTier: string;
+  /** Which of Girls Academy / MLS NEXT Girls the club is in */
+  leagues: string[];
+  /** Commitment count for graduation years 2025–2027 */
+  commitmentCount3yr: number;
+  /** Top 3 coaches by D1 player placements */
+  topCoaches: GirlsPipelineCoach[];
+}
+
+export interface GirlsPipelineResponse {
+  clubs: GirlsPipelineClub[];
+  totalClubs: number;
+  generatedAt: string;
 }
 
 export interface AdminLoginRequest {
@@ -772,6 +849,48 @@ export interface CoachMissesResponse {
   pageSize: number;
 }
 
+export type CollegeRosterQualityFlagItemFlagType =
+  (typeof CollegeRosterQualityFlagItemFlagType)[keyof typeof CollegeRosterQualityFlagItemFlagType];
+
+export const CollegeRosterQualityFlagItemFlagType = {
+  historical_no_data: "historical_no_data",
+  partial_parse: "partial_parse",
+  url_needs_review: "url_needs_review",
+} as const;
+
+export type CollegeRosterQualityFlagItemMetadata = { [key: string]: unknown };
+
+export interface CollegeRosterQualityFlagItem {
+  id: number;
+  collegeId: number;
+  collegeName: string;
+  academicYear: string;
+  flagType: CollegeRosterQualityFlagItemFlagType;
+  metadata: CollegeRosterQualityFlagItemMetadata;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedByEmail: string | null;
+  resolutionNote: string | null;
+}
+
+export interface CollegeRosterQualityFlagsResponse {
+  items: CollegeRosterQualityFlagItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ResolveCollegeRosterQualityFlagWithUrlRequest {
+  /** The corrected soccer program URL to write to colleges.soccer_program_url. */
+  new_soccer_program_url: string;
+}
+
+export interface ResolveCollegeRosterQualityFlagWithUrlResponse {
+  success: boolean;
+  college_id: number;
+  new_soccer_program_url: string;
+}
+
 /**
  * Records added across the five headline ingest tables since a point in time.
  */
@@ -1084,6 +1203,63 @@ export interface UpdateProAcademyResponse {
   previousCompetitiveTier: UpdateProAcademyResponsePreviousCompetitiveTier;
 }
 
+/**
+ * A single facet combination returned by GET /tryouts/index. Represents a (state, age_group, gender) tuple with at least one upcoming tryout.
+
+ */
+export interface TryoutsIndexItem {
+  /** Two-letter US state code (e.g. GA, TX) */
+  state: string;
+  /** Age group code (e.g. U14, U15) */
+  age_group: string;
+  /** Gender string as stored (e.g. boys, girls, M, F) — null if not set on the tryout row */
+  gender: string | null;
+  /** Number of upcoming tryouts in this state/age-group/gender combination */
+  count: number;
+}
+
+/**
+ * Response for GET /tryouts/index. Returns every distinct (state, age_group, gender) combination that has at least one upcoming tryout. total = count of distinct combinations (not sum of tryout counts).
+
+ */
+export interface TryoutsIndexResponse {
+  items: TryoutsIndexItem[];
+  /** Total number of distinct state/age-group/gender combinations */
+  total: number;
+}
+
+export type TryoutAlertSubscriptionRequestGender =
+  (typeof TryoutAlertSubscriptionRequestGender)[keyof typeof TryoutAlertSubscriptionRequestGender];
+
+export const TryoutAlertSubscriptionRequestGender = {
+  male: "male",
+  female: "female",
+  any: "any",
+} as const;
+
+export interface TryoutAlertSubscriptionRequest {
+  email: string;
+  /**
+   * @minLength 5
+   * @maxLength 10
+   */
+  zipCode: string;
+  /**
+   * @minimum 5
+   * @maximum 200
+   */
+  radiusMiles?: number;
+  ageGroup?: string;
+  gender?: TryoutAlertSubscriptionRequestGender;
+  minTier?: string;
+}
+
+export interface TryoutAlertSubscriptionResponse {
+  subscribed: boolean;
+  email: string;
+  zipCode: string;
+}
+
 export type ListClubsParams = {
   /**
    * Filter by US state abbreviation or full name (ILIKE match)
@@ -1191,6 +1367,26 @@ export type SearchEventsParams = {
    * Filter events with start_date <= this date (ISO 8601, e.g. 2025-06-30)
    */
   start_date_to?: string;
+  page?: number;
+  /**
+   * @maximum 100
+   */
+  page_size?: number;
+};
+
+export type ListMatchesParams = {
+  /**
+   * Filter by canonical club ID (home or away)
+   */
+  club_id?: number;
+  /**
+   * Season substring filter (ILIKE)
+   */
+  season?: string;
+  /**
+   * Source substring filter (ILIKE)
+   */
+  source?: string;
   page?: number;
   /**
    * @maximum 100
@@ -1525,6 +1721,45 @@ export const GetCoachMissesGender = {
   womens: "womens",
 } as const;
 
+export type GetCollegeRosterQualityFlagsParams = {
+  /**
+   * Optional filter by flag_type (CHECK-list values).
+   */
+  flag_type?: GetCollegeRosterQualityFlagsFlagType;
+  /**
+ * If true, return only resolved flags; if false, return only active (unresolved) flags; if omitted, return both.
+
+ */
+  resolved?: boolean;
+  /**
+   * @minimum 1
+   */
+  college_id?: number;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  page_size?: number;
+};
+
+export type GetCollegeRosterQualityFlagsFlagType =
+  (typeof GetCollegeRosterQualityFlagsFlagType)[keyof typeof GetCollegeRosterQualityFlagsFlagType];
+
+export const GetCollegeRosterQualityFlagsFlagType = {
+  historical_no_data: "historical_no_data",
+  partial_parse: "partial_parse",
+  url_needs_review: "url_needs_review",
+} as const;
+
+export type ResolveCollegeRosterQualityFlagBody = {
+  /** Optional resolution note. */
+  note?: string;
+};
+
 export type GetProAcademiesParams = {
   flag?: GetProAcademiesFlag;
   /**
@@ -1625,51 +1860,3 @@ export const GetCoverageLeagueDetailStatus = {
   never_scraped: "never_scraped",
   stale: "stale",
 } as const;
-
-// ---------------------------------------------------------------------------
-// college_roster_quality_flags — GET list + PATCH resolve-url
-// ---------------------------------------------------------------------------
-
-export type GetCollegeRosterQualityFlagsParams = {
-  flag_type?: "historical_no_data" | "partial_parse" | "url_needs_review";
-  /** If true, return only resolved flags; if false, return only active flags; if omitted, return both. */
-  resolved?: boolean;
-  college_id?: number;
-  /** @minimum 1 */
-  page?: number;
-  /**
-   * @minimum 1
-   * @maximum 200
-   */
-  page_size?: number;
-};
-
-export type CollegeRosterQualityFlagItem = {
-  id: number;
-  collegeId: number;
-  collegeName: string;
-  academicYear: string;
-  flagType: "historical_no_data" | "partial_parse" | "url_needs_review";
-  metadata: Record<string, unknown>;
-  createdAt: string;
-  resolvedAt: string | null;
-  resolvedByEmail: string | null;
-  resolutionNote: string | null;
-};
-
-export type CollegeRosterQualityFlagsResponse = {
-  items: CollegeRosterQualityFlagItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-};
-
-export type ResolveCollegeRosterQualityFlagWithUrlBody = {
-  new_soccer_program_url: string;
-};
-
-export type ResolveCollegeRosterQualityFlagWithUrlResponse = {
-  success: boolean;
-  college_id: number;
-  new_soccer_program_url: string;
-};
