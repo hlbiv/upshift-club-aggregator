@@ -389,6 +389,51 @@ export function makeTryoutsRouter(
     },
   );
 
+  // Index of (state, age_group, gender) combinations with at least one
+  // upcoming tryout — used by the player platform to generate SEO
+  // sitemaps and browse pages at /tryouts/[state]/[age-gender]/.
+  //
+  // Only rows where status='upcoming' AND tryout_date >= now AND
+  // locationState IS NOT NULL AND ageGroup IS NOT NULL are included.
+  // gender can be null (rows with null gender appear with gender=null).
+  // Result is ordered state ASC, age_group ASC, gender ASC.
+  // total = count of distinct combos (not sum of tryout counts).
+  router.get("/tryouts/index", async (_req, res, next): Promise<void> => {
+    try {
+      const now = new Date();
+      const rows = await db
+        .select({
+          state: tryouts.locationState,
+          ageGroup: tryouts.ageGroup,
+          gender: tryouts.gender,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(tryouts)
+        .where(
+          buildWhere([
+            eq(tryouts.status, "upcoming"),
+            gte(tryouts.tryoutDate, now),
+            isNotNull(tryouts.locationState),
+            isNotNull(tryouts.ageGroup),
+          ]),
+        )
+        .groupBy(tryouts.locationState, tryouts.ageGroup, tryouts.gender)
+        .orderBy(asc(tryouts.locationState), asc(tryouts.ageGroup), asc(tryouts.gender));
+
+      res.json({
+        items: rows.map((r) => ({
+          state: r.state!,
+          age_group: r.ageGroup!,
+          gender: r.gender ?? null,
+          count: r.count,
+        })),
+        total: rows.length,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.get("/tryouts/:id", async (req, res, next): Promise<void> => {
     try {
       const id = Number(req.params.id);

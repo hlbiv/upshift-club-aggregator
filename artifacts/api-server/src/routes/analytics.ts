@@ -671,4 +671,117 @@ router.get(
   },
 );
 
+// ---------------------------------------------------------------------------
+// GET /analytics/girls-pipeline
+// Returns clubs appearing in Girls Academy (GA) and/or MLS NEXT Girls leagues,
+// enriched with commitment counts for the last 3 graduating classes and top
+// coaches by D1 placement rate.
+// ---------------------------------------------------------------------------
+
+router.get("/analytics/girls-pipeline", async (_req, res, next): Promise<void> => {
+  try {
+    // Current year context: graduation years of interest are 2025, 2026, 2027
+    // (last year, current year, next year relative to 2026)
+    const gradYears = [2025, 2026, 2027];
+    const gradYearMin = gradYears[0]!;
+    const gradYearMax = gradYears[gradYears.length - 1]!;
+
+    // Step 1: Find all clubs affiliated with GA or MLS NEXT Girls via
+    // club_affiliations.source_name ILIKE match. Aggregate the matching
+    // league names so we can return which pipeline(s) each club is in.
+    const clubRows = await execRows(sql`
+      WITH pipeline_affiliations AS (
+        SELECT
+          ca.club_id,
+          array_agg(DISTINCT ca.source_name ORDER BY ca.source_name) AS matching_leagues
+        FROM club_affiliations ca
+        WHERE
+          ca.source_name ILIKE '%girls academy%'
+          OR ca.source_name ILIKE '%mls next girls%'
+        GROUP BY ca.club_id
+      ),
+      commitment_counts AS (
+        SELECT
+          c.club_id,
+          COUNT(*)::int AS commitment_count
+        FROM commitments c
+        WHERE c.graduation_year >= ${gradYearMin}
+          AND c.graduation_year <= ${gradYearMax}
+          AND c.club_id IS NOT NULL
+        GROUP BY c.club_id
+      ),
+      top_coaches AS (
+        SELECT
+          cd.club_id,
+          json_agg(
+            json_build_object(
+              'coachId', cd.coach_id,
+              'name', cd.coach_name,
+              'playersPlacedD1', COALESCE(ce.players_placed_d1, 0)
+            )
+            ORDER BY COALESCE(ce.players_placed_d1, 0) DESC
+          ) AS coaches_json,
+          ROW_NUMBER() OVER (PARTITION BY cd.club_id ORDER BY MAX(COALESCE(ce.players_placed_d1, 0)) DESC) AS rn
+        FROM coach_discoveries cd
+        LEFT JOIN coach_effectiveness ce ON ce.coach_id = cd.coach_id
+        WHERE cd.club_id IS NOT NULL
+        GROUP BY cd.club_id, cd.coach_id, cd.coach_name, ce.players_placed_d1
+      ),
+      top3_coaches AS (
+        SELECT
+          club_id,
+          json_agg(
+            json_build_object(
+              'coachId', (coaches_json->0->>'coachId')::int,
+              'name', coaches_json->0->>'name',
+              'playersPlacedD1', (coaches_json->0->>'playersPlacedD1')::int
+            )
+            ORDER BY (coaches_json->0->>'playersPlacedD1')::int DESC
+          ) AS top_coaches
+        FROM top_coaches
+        WHERE rn <= 3
+        GROUP BY club_id
+      )
+      SELECT
+        cc.id AS club_id,
+        cc.club_name_canonical AS club_name,
+        cc.state,
+        cc.competitive_tier,
+        pa.matching_leagues AS leagues,
+        COALESCE(cmt.commitment_count, 0) AS commitment_count_3yr,
+        COALESCE(tc.top_coaches, '[]'::json) AS top_coaches
+      FROM pipeline_affiliations pa
+      JOIN canonical_clubs cc ON cc.id = pa.club_id
+      LEFT JOIN commitment_counts cmt ON cmt.club_id = pa.club_id
+      LEFT JOIN top3_coaches tc ON tc.club_id = pa.club_id
+      ORDER BY COALESCE(cmt.commitment_count, 0) DESC, cc.club_name_canonical ASC
+    `);
+
+    const clubs = clubRows.map((r) => ({
+      clubId: Number(r.club_id),
+      clubName: r.club_name as string,
+      state: (r.state as string | null) ?? null,
+      competitiveTier: (r.competitive_tier as string) ?? "competitive",
+      leagues: (r.leagues as string[]) ?? [],
+      commitmentCount3yr: Number(r.commitment_count_3yr),
+      topCoaches: ((r.top_coaches as unknown[]) ?? []).map((c) => {
+        const coach = c as { coachId: number | null; name: string; playersPlacedD1: number };
+        return {
+          coachId: coach.coachId ?? null,
+          name: coach.name ?? "",
+          playersPlacedD1: Number(coach.playersPlacedD1 ?? 0),
+        };
+      }),
+    }));
+
+    res.json({
+      clubs,
+      totalClubs: clubs.length,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
