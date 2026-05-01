@@ -21,6 +21,7 @@ import type {
   ClubDuplicateRejectResponse,
   ClubListResponse,
   ClubRelatedResponse,
+  ClubResultsResponse,
   ClubSearchResponse,
   ClubStaffResponse,
   CoachMissesResponse,
@@ -31,6 +32,7 @@ import type {
   CollegeDuplicateMergeRequest,
   CollegeDuplicateMergeResponse,
   CollegeListResponse,
+  CollegeRosterQualityFlagsResponse,
   CoverageLeagueDetailResponse,
   CoverageLeagueHistoryResponse,
   CoverageLeaguesHistoryResponse,
@@ -47,6 +49,7 @@ import type {
   GaPremierOrphanCleanupResponse,
   GetCoachMissesParams,
   GetCoachQualityFlagsParams,
+  GetCollegeRosterQualityFlagsParams,
   GetCoverageLeagueDetailParams,
   GetCoverageLeagueHistoryParams,
   GetCoverageLeaguesHistoryParams,
@@ -58,6 +61,7 @@ import type {
   GetNumericOnlyNamesParams,
   GetProAcademiesParams,
   GetStaleScrapesParams,
+  GirlsPipelineResponse,
   HealthStatus,
   LeagueClubsResponse,
   LeagueListResponse,
@@ -65,16 +69,21 @@ import type {
   ListClubsParams,
   ListCollegeDuplicatesParams,
   ListCollegesParams,
+  ListMatchesParams,
   ListScrapeHealthParams,
   ListScrapeRunsParams,
   ListScraperScheduleRunsParams,
   ListScraperSchedulesParams,
+  MatchListResponse,
   NavLeakedNamesResponse,
   NumericOnlyNamesResponse,
   OverlapResponse,
   ProAcademiesResponse,
   RejectCollegeDuplicate200,
   RejectCollegeDuplicateBody,
+  ResolveCollegeRosterQualityFlagBody,
+  ResolveCollegeRosterQualityFlagWithUrlRequest,
+  ResolveCollegeRosterQualityFlagWithUrlResponse,
   ResolveCollegeUrlBody,
   ResolveRosterQualityFlagRequest,
   RunNowRequest,
@@ -93,6 +102,9 @@ import type {
   SearchEventsParams,
   SearchResponse,
   StaleScrapesResponse,
+  TryoutAlertSubscriptionRequest,
+  TryoutAlertSubscriptionResponse,
+  TryoutsIndexResponse,
   UpdateProAcademyRequest,
   UpdateProAcademyResponse,
 } from "./api.schemas";
@@ -360,6 +372,56 @@ export const getClubStaff = async (
 };
 
 /**
+ * Returns all club_results rows for the given club, ordered by season descending then league ascending. club_results is a materialized rollup recomputed nightly from the matches table.
+
+ * @summary Win/loss/draw record for a club
+ */
+export const getGetClubResultsUrl = (id: number) => {
+  return `/api/clubs/${id}/results`;
+};
+
+export const getClubResults = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ClubResultsResponse> => {
+  return customFetch<ClubResultsResponse>(getGetClubResultsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Returns matches ordered by match_date descending. Optionally filter by club_id (home OR away), season, and source.
+
+ * @summary Paginated match listing with optional filters
+ */
+export const getListMatchesUrl = (params?: ListMatchesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/matches?${stringifiedParams}`
+    : `/api/matches`;
+};
+
+export const listMatches = async (
+  params?: ListMatchesParams,
+  options?: RequestInit,
+): Promise<MatchListResponse> => {
+  return customFetch<MatchListResponse>(getListMatchesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
  * @summary Search coaches by club, title, and minimum confidence score
  */
 export const getSearchCoachesUrl = (params?: SearchCoachesParams) => {
@@ -383,6 +445,24 @@ export const searchCoaches = async (
   options?: RequestInit,
 ): Promise<CoachSearchResponse> => {
   return customFetch<CoachSearchResponse>(getSearchCoachesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * Returns every (state, age_group, gender) combination that has at least one active upcoming tryout (status = 'upcoming' AND tryout_date >= today). Null state or age_group rows are excluded. gender may be null. Used to generate SEO sitemaps and browse pages at /tryouts/[state]/[age-gender]/.
+
+ * @summary Index of state/age-group/gender combinations with upcoming tryouts
+ */
+export const getGetTryoutsIndexUrl = () => {
+  return `/api/tryouts/index`;
+};
+
+export const getTryoutsIndex = async (
+  options?: RequestInit,
+): Promise<TryoutsIndexResponse> => {
+  return customFetch<TryoutsIndexResponse>(getGetTryoutsIndexUrl(), {
     ...options,
     method: "GET",
   });
@@ -505,6 +585,46 @@ export const analyticsOverlap = async (
     ...options,
     method: "GET",
   });
+};
+
+/**
+ * Returns clubs appearing in Girls Academy (GA) and/or MLS NEXT Girls leagues via `club_affiliations.source_name` ILIKE match. Each club is enriched with commitment counts for the last 3 graduating classes (2025–2027 relative to 2026) and top 3 coaches ranked by D1 placement count from `coach_effectiveness`.
+
+ * @summary Girls pipeline clubs — GA and MLS NEXT Girls with commitment data
+ */
+export const getAnalyticsGirlsPipelineUrl = () => {
+  return `/api/analytics/girls-pipeline`;
+};
+
+export const analyticsGirlsPipeline = async (
+  options?: RequestInit,
+): Promise<GirlsPipelineResponse> => {
+  return customFetch<GirlsPipelineResponse>(getAnalyticsGirlsPipelineUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+/**
+ * @summary Subscribe to tryout alerts
+ */
+export const getSubscribeTryoutAlertsUrl = () => {
+  return `/api/tryouts/alerts`;
+};
+
+export const subscribeTryoutAlerts = async (
+  tryoutAlertSubscriptionRequest: TryoutAlertSubscriptionRequest,
+  options?: RequestInit,
+): Promise<TryoutAlertSubscriptionResponse> => {
+  return customFetch<TryoutAlertSubscriptionResponse>(
+    getSubscribeTryoutAlertsUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(tryoutAlertSubscriptionRequest),
+    },
+  );
 };
 
 /**
@@ -1172,6 +1292,95 @@ export const getCoachMisses = async (
     ...options,
     method: "GET",
   });
+};
+
+/**
+ * Paginated list of `college_roster_quality_flags` rows joined to `colleges` (for `college_name`) and `admin_users` (for `resolved_by_email`). Supports filtering by `flag_type`, `resolved` state, and `college_id`.
+
+ * @summary college_roster_quality_flags rows, joined with college context
+ */
+export const getGetCollegeRosterQualityFlagsUrl = (
+  params?: GetCollegeRosterQualityFlagsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/admin/data-quality/college-roster-quality-flags?${stringifiedParams}`
+    : `/api/v1/admin/data-quality/college-roster-quality-flags`;
+};
+
+export const getCollegeRosterQualityFlags = async (
+  params?: GetCollegeRosterQualityFlagsParams,
+  options?: RequestInit,
+): Promise<CollegeRosterQualityFlagsResponse> => {
+  return customFetch<CollegeRosterQualityFlagsResponse>(
+    getGetCollegeRosterQualityFlagsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * Stamps `resolved_at = NOW()` and `resolved_by = <admin user id>` on the flag. The `colleges` row is NOT mutated by this endpoint — use `resolve-url` to update the URL and resolve in one transaction.
+Returns 400 if the flag is already resolved, 404 if unknown id.
+
+ * @summary Mark a college_roster_quality_flags row as resolved
+ */
+export const getResolveCollegeRosterQualityFlagUrl = (id: number) => {
+  return `/api/v1/admin/data-quality/college-roster-quality-flags/${id}/resolve`;
+};
+
+export const resolveCollegeRosterQualityFlag = async (
+  id: number,
+  resolveCollegeRosterQualityFlagBody?: ResolveCollegeRosterQualityFlagBody,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getResolveCollegeRosterQualityFlagUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resolveCollegeRosterQualityFlagBody),
+  });
+};
+
+/**
+ * Accepts `{ new_soccer_program_url: string }`. In a single transaction:
+  1. Validates the flag exists and is unresolved.
+  2. Updates `colleges.soccer_program_url` for the flag's `college_id`.
+  3. Marks the flag resolved with `resolution_note = 'url_provided'`.
+
+Returns 400 if the URL is missing/invalid or the flag is already resolved, 404 if the flag id is unknown.
+
+ * @summary Resolve a college quality flag by providing the corrected soccer_program_url
+ */
+export const getResolveCollegeRosterQualityFlagWithUrlUrl = (id: number) => {
+  return `/api/v1/admin/data-quality/college-roster-quality-flags/${id}/resolve-url`;
+};
+
+export const resolveCollegeRosterQualityFlagWithUrl = async (
+  id: number,
+  resolveCollegeRosterQualityFlagWithUrlRequest: ResolveCollegeRosterQualityFlagWithUrlRequest,
+  options?: RequestInit,
+): Promise<ResolveCollegeRosterQualityFlagWithUrlResponse> => {
+  return customFetch<ResolveCollegeRosterQualityFlagWithUrlResponse>(
+    getResolveCollegeRosterQualityFlagWithUrlUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(resolveCollegeRosterQualityFlagWithUrlRequest),
+    },
+  );
 };
 
 /**
