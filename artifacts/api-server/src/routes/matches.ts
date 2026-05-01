@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { matches, canonicalClubs } from "@workspace/db/schema";
+import { matches, canonicalClubs, clubResults } from "@workspace/db/schema";
 import { eq, sql, asc, desc, inArray, ilike, gte, lte } from "drizzle-orm";
 import {
   MatchSearchResponse,
   MatchBatchResponse,
   MatchDetailResponse,
+  ClubResultsResponse,
 } from "@hlbiv/api-zod";
 import { parsePagination, buildWhere } from "../lib/pagination";
 
@@ -326,5 +327,97 @@ router.get(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// GET /api/matches — simple paginated match listing with optional filters
+// ---------------------------------------------------------------------------
+
+router.get("/matches", async (req, res, next): Promise<void> => {
+  try {
+    const clubIdRaw = req.query.club_id as string | undefined;
+    const clubId = clubIdRaw ? Number(clubIdRaw) : undefined;
+    const season = req.query.season as string | undefined;
+    const source = req.query.source as string | undefined;
+
+    const { page, pageSize, offset } = parsePagination(
+      req.query.page,
+      req.query.page_size,
+    );
+
+    const clubIdFilter =
+      clubId !== undefined && !isNaN(clubId)
+        ? sql`(${matches.homeClubId} = ${clubId} OR ${matches.awayClubId} = ${clubId})`
+        : undefined;
+
+    const where = buildWhere([
+      clubIdFilter,
+      season ? ilike(matches.season, `%${escapeLike(season)}%`) : undefined,
+      source ? ilike(matches.source, `%${escapeLike(source)}%`) : undefined,
+    ]);
+
+    const [countRow] = await matchCountFrom().where(where);
+    const total = countRow?.count ?? 0;
+
+    const rows = await matchSelectWithClubNames()
+      .where(where)
+      .orderBy(desc(matches.matchDate), desc(matches.id))
+      .limit(pageSize)
+      .offset(offset);
+
+    res.json(
+      MatchSearchResponse.parse({
+        matches: rows.map(mapMatchRow),
+        total,
+        page,
+        page_size: pageSize,
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/clubs/:id/results — club win/loss/draw record
+// ---------------------------------------------------------------------------
+
+router.get("/clubs/:id/results", async (req, res, next): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+
+    const rows = await db
+      .select()
+      .from(clubResults)
+      .where(eq(clubResults.clubId, id))
+      .orderBy(desc(clubResults.season), asc(clubResults.league));
+
+    res.json(
+      ClubResultsResponse.parse({
+        club_id: id,
+        results: rows.map((r) => ({
+          id: r.id,
+          season: r.season,
+          league: r.league ?? null,
+          division: r.division ?? null,
+          age_group: r.ageGroup ?? null,
+          gender: r.gender ?? null,
+          wins: r.wins,
+          losses: r.losses,
+          draws: r.draws,
+          goals_for: r.goalsFor,
+          goals_against: r.goalsAgainst,
+          matches_played: r.matchesPlayed,
+          last_calculated_at: r.lastCalculatedAt.toISOString(),
+        })),
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

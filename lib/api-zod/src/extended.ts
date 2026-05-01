@@ -251,6 +251,30 @@ export const MatchBatchResponse = zod.object({
   total: zod.number(),
 });
 
+const ClubResultItem = zod.object({
+  id: zod.number(),
+  season: zod.string(),
+  league: zod.string().nullable().optional(),
+  division: zod.string().nullable().optional(),
+  age_group: zod.string().nullable().optional(),
+  gender: zod.string().nullable().optional(),
+  wins: zod.number(),
+  losses: zod.number(),
+  draws: zod.number(),
+  goals_for: zod.number(),
+  goals_against: zod.number(),
+  matches_played: zod.number(),
+  last_calculated_at: zod.string(),
+});
+
+/**
+ * @summary Win/loss/draw record for a club
+ */
+export const ClubResultsResponse = zod.object({
+  club_id: zod.number(),
+  results: zod.array(ClubResultItem),
+});
+
 // ---------------------------------------------------------------------------
 // Rosters (D5.2)
 // ---------------------------------------------------------------------------
