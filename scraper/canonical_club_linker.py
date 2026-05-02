@@ -755,6 +755,7 @@ class LinkerStats:
     unmatched_names: Counter = field(default_factory=Counter)
     pass_hits: Counter = field(default_factory=Counter)
     aliases_written: int = 0
+    skipped_ignored: int = 0
 
     def total_linked(self) -> int:
         return (
@@ -794,6 +795,7 @@ class LinkerStats:
             "pass_3_fuzzy_hits": self.pass_hits.get(3, 0),
             "no_match_count": self.pass_hits.get(4, 0),
             "aliases_written": self.aliases_written,
+            "skipped_ignored": self.skipped_ignored,
             "unmatched_unique_count": len(self.unmatched_names),
             "unmatched_sample": self.unmatched_sample(20),
         }
@@ -826,6 +828,31 @@ def link_all(
             len(idx.alias_exact),
             idx.size(),
         )
+
+        # Load the operator-curated ignore set. If the linker_ignores table
+        # does not yet exist (pre-migration), fall back to an empty set with a
+        # warning so this linker version is safe to ship before the migration
+        # runs on Replit.
+        ignore_set: set = set()
+        try:
+            cur.execute("SAVEPOINT linker_ignores_probe")
+            cur.execute("SELECT raw_team_name FROM linker_ignores")
+            ignore_set = {row[0].lower() for row in cur.fetchall()}
+            cur.execute("RELEASE SAVEPOINT linker_ignores_probe")
+            if ignore_set:
+                log.info("Loaded %d linker ignore entries", len(ignore_set))
+        except Exception as _ign_exc:
+            log.warning(
+                "Could not load linker_ignores (table may not exist yet): %s — "
+                "proceeding with empty ignore set",
+                _ign_exc,
+            )
+            # The failed query leaves the cursor in an error state; roll back
+            # to the savepoint so the outer transaction stays valid.
+            try:
+                cur.execute("ROLLBACK TO SAVEPOINT linker_ignores_probe")
+            except Exception:
+                pass  # If savepoint itself failed, we're already clean
         if _RAPIDFUZZ_AVAILABLE:
             log.info(
                 "Fuzzy backend: rapidfuzz (token_set_ratio, threshold=%d)",
@@ -871,7 +898,10 @@ def link_all(
             len(tournament_away),
         )
 
-        def _handle(raw: str) -> ResolveResult:
+        def _handle(raw: str) -> Optional[ResolveResult]:
+            if raw.lower() in ignore_set:
+                stats.skipped_ignored += 1
+                return None
             res = resolve_raw_team_name(raw, idx)
             stats.pass_hits[res.pass_number] += 1
             if res.club_id is None:
@@ -896,7 +926,7 @@ def link_all(
         # event_teams
         for row_id, raw in event_team_rows:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.event_teams_linked += 1
             if not dry_run:
@@ -905,7 +935,7 @@ def link_all(
         # matches.home
         for row_id, raw in matches_home:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.matches_home_linked += 1
             if not dry_run:
@@ -914,7 +944,7 @@ def link_all(
         # matches.away
         for row_id, raw in matches_away:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.matches_away_linked += 1
             if not dry_run:
@@ -923,7 +953,7 @@ def link_all(
         # club_roster_snapshots
         for row_id, raw in roster_snapshot_rows:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.roster_snapshots_linked += 1
             if not dry_run:
@@ -932,7 +962,7 @@ def link_all(
         # roster_diffs
         for row_id, raw in roster_diff_rows:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.roster_diffs_linked += 1
             if not dry_run:
@@ -941,7 +971,7 @@ def link_all(
         # tryouts
         for row_id, raw in tryout_rows:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.tryouts_linked += 1
             if not dry_run:
@@ -950,7 +980,7 @@ def link_all(
         # commitments
         for row_id, raw in commitment_rows:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.commitments_linked += 1
             if not dry_run:
@@ -959,7 +989,7 @@ def link_all(
         # ynt_call_ups
         for row_id, raw in ynt_rows:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.ynt_call_ups_linked += 1
             if not dry_run:
@@ -968,7 +998,7 @@ def link_all(
         # odp_roster_entries
         for row_id, raw in odp_rows:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.odp_roster_entries_linked += 1
             if not dry_run:
@@ -977,7 +1007,7 @@ def link_all(
         # player_id_selections
         for row_id, raw in player_id_rows:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.player_id_selections_linked += 1
             if not dry_run:
@@ -986,7 +1016,7 @@ def link_all(
         # tournament_matches.home
         for row_id, raw in tournament_home:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.tournament_matches_home_linked += 1
             if not dry_run:
@@ -995,7 +1025,7 @@ def link_all(
         # tournament_matches.away
         for row_id, raw in tournament_away:
             res = _handle(raw)
-            if res.club_id is None:
+            if res is None or res.club_id is None:
                 continue
             stats.tournament_matches_away_linked += 1
             if not dry_run:
@@ -1070,6 +1100,7 @@ def run_cli(dry_run: bool = False, limit: Optional[int] = None) -> int:
         f"{stats.odp_roster_entries_linked} odp_roster_entries, "
         f"{stats.player_id_selections_linked} player_id_selections, "
         f"{stats.tournament_matches_home_linked + stats.tournament_matches_away_linked} tournament_match sides, "
+        f"{stats.skipped_ignored} skipped (in ignore list), "
         f"{len(stats.unmatched_names)} unmatched unique raw names."
     )
     if stats.unmatched_names:
