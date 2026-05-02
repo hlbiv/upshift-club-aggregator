@@ -10,6 +10,7 @@ import {
   Layers,
   LineChart,
   Link,
+  Link2,
   ListChecks,
   Map,
   Settings2,
@@ -90,6 +91,11 @@ export default function Sidebar() {
           icon: GitMerge,
           badge: dedupCount,
           badgeTone: "amber",
+        },
+        {
+          label: "Linker",
+          to: "/linker",
+          icon: Link2,
         },
         {
           label: "Nav-leaked names",
